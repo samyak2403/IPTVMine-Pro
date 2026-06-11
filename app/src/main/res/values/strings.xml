@@ -1,0 +1,66 @@
+<resources>
+    <string name="app_name">IPTVMine Pro</string>
+    <!-- About Screen -->
+    <string name="about_app_logo_desc">App Logo</string>
+    <string name="about_version">Version %1$s (%2$d)</string>
+    <string name="about_tagline">Your ultimate IPTV experience.</string>
+    <string name="about_copyright">© %1$d Samyak</string>
+
+    <!-- Add Provider Screen -->
+    <string name="add_provider_icon_desc">Add Provider</string>
+    <string name="title_add_provider">Add Provider</string>
+    <string name="title_update_provider">Update Provider</string>
+    <string name="label_provider_title">Provider Title</string>
+    <string name="placeholder_provider_title">e.g. My IPTV List</string>
+    <string name="label_playlist_url">Playlist URL (.m3u, .m3u8, .mp4, etc)</string>
+    <string name="placeholder_url">http://...</string>
+    <string name="label_user_agent">User Agent (Optional)</string>
+    <string name="placeholder_user_agent">IPTVmine/1.0</string>
+    <string name="msg_required_fields">Title and URL are required</string>
+    <string name="msg_provider_added">Provider added successfully!</string>
+    <string name="msg_provider_updated">Provider updated successfully!</string>
+    <string name="btn_save_provider">Save Provider</string>
+
+    <!-- Category Detail -->
+    <string name="msg_no_channels_in_category">No channels found in this category</string>
+    <string name="msg_match_not_live">This match is not live yet!</string>
+
+    <!-- Generic UI -->
+    <string name="desc_error">Error</string>
+    <string name="desc_no_channels">No channels found</string>
+    <string name="label_no_categories">No categories found</string>
+    <string name="item_count_single">1 item</string>
+    <string name="item_count_plural">%1$d items</string>
+    <string name="msg_no_channels">No channels found</string>
+    <string name="label_player_screen">Player Screen</string>
+
+    <!-- Provider List -->
+    <string name="desc_add_provider">Add Provider</string>
+    <string name="msg_no_providers">No providers added.</string>
+    <string name="title_provider_summary">Provider Summary</string>
+    <string name="label_active_providers">Active Providers:</string>
+    <string name="active_providers_count">%1$d / %2$d</string>
+    <string name="label_total_active_channels">Total Active Channels:</string>
+    <string name="total_channels_count">%1$d channels</string>
+    <string name="loading">Loading...</string>
+    <string name="desc_edit">Edit</string>
+    <string name="desc_delete">Delete</string>
+
+    <!-- Search -->
+    <string name="placeholder_search_channels">Search channels...</string>
+    <string name="desc_back">Back</string>
+    <string name="desc_clear">Clear</string>
+    <string name="category_all">All</string>
+
+    <!-- Settings -->
+    <string name="section_content">Content</string>
+    <string name="setting_manage_providers">Manage Providers</string>
+    <string name="section_about">About Us</string>
+    <string name="setting_about_app">About App</string>
+    <string name="setting_report_bug">Report a Bug</string>
+    <string name="section_legal">Legal</string>
+    <string name="setting_privacy_policy">Privacy Policy</string>
+    <string name="setting_terms_conditions">Terms &amp; Conditions</string>
+    <string name="setting_disclaimer">Disclaimer</string>
+    <string name="desc_navigate">Navigate</string>
+</resources>

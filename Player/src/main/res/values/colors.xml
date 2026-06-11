@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="bg_color">#333333</color>
+
+    <color name="background_color">#121212</color>
+    <color name="text_color">#FFFFFF</color>
+    <color name="hint_color">#CCCCCC</color>
+    <color name="button_text_color">#FFFFFF</color>
+    <color name="button_color">#6200EA</color>
+    <color name="button_color_pressed">#3700B3</color>
+
+
+    <!--    custom colors-->
+    <color name="cool_blue">#0091EA</color>
+    <color name="cool_green">#64DD17</color>
+    <color name="cool_pink">#F50057</color>
+    <color name="yellow">#FFD600</color>
+
+    <color name="primary">#1B023B</color>
+    <color name="secondary">#FF03DAC5</color>
+    
+    <!-- Primary and Accent colors -->
+    <color name="colorPrimary">#6200EE</color>
+    <color name="colorPrimaryDark">#3700B3</color>
+    <color name="colorAccent">#03DAC5</color>
+    
+    <!-- Missing colors -->
+    <color name="box_white_text">#FFFFFF</color>
+    <color name="Red">#F44336</color>
+    
+    <!-- TV Focus colors -->
+    <color name="tv_focus_blue">#448AFF</color>
+    <color name="tv_focus_blue_light">#20448AFF</color>
+    <color name="tv_focus_blue_medium">#30448AFF</color>
+    <color name="tv_focus_blue_dark">#1565C0</color>
+    
+    <!-- TV-specific colors -->
+    <color name="tv_background">#1A1A1A</color>
+    <color name="tv_card_background">#2D2D2D</color>
+    <color name="tv_text_primary">#FFFFFF</color>
+    <color name="tv_text_secondary">#B3FFFFFF</color>
+    <color name="tv_divider">#40FFFFFF</color>
+    
+    <!-- Input field colors (dark theme default) -->
+    <color name="input_background">#2D2D2D</color>
+    <color name="input_stroke">#404040</color>
+    <color name="input_stroke_focused">#6200EE</color>
+    <color name="card_background">#1E1E1E</color>
+</resources>

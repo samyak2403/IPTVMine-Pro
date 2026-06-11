@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV-optimized item selector with prominent focus states for D-pad navigation -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Focused + Selected state -->
+    <item android:state_focused="true" android:state_selected="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/tv_focus_blue_light" />
+            <stroke
+                android:width="6dp"
+                android:color="@color/white" />
+            <corners android:radius="16dp" />
+        </shape>
+    </item>
+    
+    <!-- Focused state (when navigating with D-pad) - most important for TV -->
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/tv_focus_blue_light" />
+            <stroke
+                android:width="6dp"
+                android:color="@color/tv_focus_blue" />
+            <corners android:radius="16dp" />
+        </shape>
+    </item>
+    
+    <!-- Selected state (when item is clicked/selected) -->
+    <item android:state_selected="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/tv_focus_blue_light" />
+            <stroke
+                android:width="4dp"
+                android:color="@color/tv_focus_blue" />
+            <corners android:radius="16dp" />
+        </shape>
+    </item>
+    
+    <!-- Pressed state -->
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/tv_focus_blue_medium" />
+            <stroke
+                android:width="4dp"
+                android:color="@color/tv_focus_blue" />
+            <corners android:radius="16dp" />
+        </shape>
+    </item>
+    
+    <!-- Default state -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <corners android:radius="16dp" />
+        </shape>
+    </item>
+</selector>
