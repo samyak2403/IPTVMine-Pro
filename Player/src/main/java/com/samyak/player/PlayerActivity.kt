@@ -114,12 +114,31 @@ class PlayerActivity : AppCompatActivity() {
         private const val ACTION_PIP_PAUSE = "com.samyak2403.iptvmine.PIP_PAUSE"
         private const val PIP_REQUEST_CODE = 101
 
-        fun start(context: Context, name: String, streamUrl: String) {
+        fun start(context: Context, name: String, streamUrl: String, headers: Map<String, String>? = null) {
             val intent = Intent(context, PlayerActivity::class.java).apply {
                 putExtra("channel_name", name)
                 putExtra("channel_stream_url", streamUrl)
+                if (headers != null) {
+                    val bundle = Bundle()
+                    for ((k, v) in headers) {
+                        bundle.putString(k, v)
+                    }
+                    putExtra("channel_headers", bundle)
+                }
             }
             context.startActivity(intent)
+        }
+    }
+
+    private fun normalizeUrl(url: String): String {
+        val trimmed = url.trim()
+        return when {
+            trimmed.startsWith("//") -> "https:$trimmed"
+            !trimmed.startsWith("http://", ignoreCase = true) && 
+            !trimmed.startsWith("https://", ignoreCase = true) && 
+            !trimmed.startsWith("rtmp://", ignoreCase = true) && 
+            trimmed.isNotEmpty() -> "https://$trimmed"
+            else -> trimmed
         }
     }
 
@@ -128,13 +147,8 @@ class PlayerActivity : AppCompatActivity() {
         setContentView(R.layout.activity_player)
 
         channelName = intent?.getStringExtra("channel_name")
-        channelStreamUrl = intent?.getStringExtra("channel_stream_url")
-        
-        if (channelStreamUrl == null) {
-            Log.e(TAG, "No channel stream url received")
-            finish()
-            return
-        }
+        val rawUrl = intent?.getStringExtra("channel_stream_url")
+        channelStreamUrl = rawUrl?.let { normalizeUrl(it) }
 
         // Detect TV mode
         val uiModeManager = getSystemService(Context.UI_MODE_SERVICE) as android.app.UiModeManager
@@ -142,6 +156,13 @@ class PlayerActivity : AppCompatActivity() {
 
         initializeSupportedFormats()
         initializeViews()
+
+        if (channelStreamUrl.isNullOrBlank()) {
+            Log.e(TAG, "No valid channel stream url received")
+            showError("Invalid stream link: empty or blank")
+            return
+        }
+
         setupBackButton()
         setupFullScreenButton()
         setupPlayPauseButton()
@@ -349,11 +370,36 @@ class PlayerActivity : AppCompatActivity() {
             val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
             isDataSavingEnabled = prefs.getBoolean("data_saving_enabled", false)
             
+            val headersBundle = intent?.getBundleExtra("channel_headers")
+            val headersMap = mutableMapOf<String, String>()
+            var userAgent: String? = null
+            if (headersBundle != null) {
+                for (key in headersBundle.keySet()) {
+                    val value = headersBundle.getString(key)
+                    if (value != null) {
+                        if (key.equals("user-agent", ignoreCase = true)) {
+                            userAgent = value
+                        } else {
+                            headersMap[key] = value
+                        }
+                    }
+                }
+            }
+
             val httpDataSourceFactory = DefaultHttpDataSource.Factory()
                 .setConnectTimeoutMs(15000)
                 .setReadTimeoutMs(15000)
                 .setAllowCrossProtocolRedirects(true)
-                .setUserAgent("IPTVmine/1.0 (Android)")
+
+            if (userAgent != null) {
+                httpDataSourceFactory.setUserAgent(userAgent)
+            } else {
+                httpDataSourceFactory.setUserAgent("IPTVmine/1.0 (Android)")
+            }
+
+            if (headersMap.isNotEmpty()) {
+                httpDataSourceFactory.setDefaultRequestProperties(headersMap)
+            }
 
             // Setup track selector with data saving constraints
             trackSelector = DefaultTrackSelector(this).apply {

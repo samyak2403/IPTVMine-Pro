@@ -44,6 +44,8 @@ import com.samyak.iptvminepro.ui.screens.PlayerScreen
 import com.samyak.iptvminepro.ui.screens.CategoryScreen
 import com.samyak.iptvminepro.ui.screens.CategoryDetailScreen
 import com.samyak.iptvminepro.ui.screens.AboutScreen
+import com.samyak.iptvminepro.ui.screens.ExtensionsScreen
+import com.samyak.iptvminepro.ui.screens.MovieDetailScreen
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -51,6 +53,8 @@ import com.samyak.iptvminepro.ui.screens.SettingsScreen
 import com.samyak.iptvminepro.ui.screens.AddProviderScreen
 import com.samyak.iptvminepro.ui.screens.ProviderListScreen
 import com.samyak.iptvminepro.ui.theme.IPTVMineProTheme
+
+import androidx.compose.material.icons.outlined.Movie
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,6 +69,7 @@ class MainActivity : ComponentActivity() {
 
 sealed class Screen(val route: String, val label: String, val icon: @Composable () -> Unit) {
     object Home : Screen("home", "Home", { Icon(Icons.Outlined.Home, contentDescription = null) })
+    object Movies : Screen("movies?category={category}", "Movies", { Icon(Icons.Outlined.Movie, contentDescription = null) })
     object Category : Screen("category", "Category", { Icon(Icons.Outlined.GridView, contentDescription = null) })
     object Settings : Screen("settings", "Settings", { Icon(Icons.Outlined.Settings, contentDescription = null) })
     object Player : Screen("player", "Player", { }) // Used for navigation but not in bottom bar
@@ -72,6 +77,8 @@ sealed class Screen(val route: String, val label: String, val icon: @Composable 
     object ProviderList : Screen("provider_list", "Provider List", { })
     object CategoryDetail : Screen("category_detail/{categoryName}", "Category Detail", { })
     object About : Screen("about", "About App", { })
+    object Extensions : Screen("extensions", "Extensions", { })
+    object MovieDetail : Screen("movie_detail?link={link}&providerUrl={providerUrl}&scraperValue={scraperValue}", "Movie Detail", { })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -80,6 +87,7 @@ fun MainApp() {
     val navController = rememberNavController()
     val items = listOf(
         Screen.Home,
+        Screen.Movies,
         Screen.Category,
         Screen.Settings
     )
@@ -97,6 +105,7 @@ fun MainApp() {
             if (currentRoute != Screen.AddProvider.route &&
                 currentRoute != Screen.ProviderList.route &&
                 currentRoute != Screen.CategoryDetail.route &&
+                currentRoute != Screen.MovieDetail.route &&
                 currentRoute != Screen.About.route
             ) {
                 NavigationBar(
@@ -134,63 +143,65 @@ fun MainApp() {
             val currentRoute = navBackStackEntry?.destination?.route
             val categoryName = navBackStackEntry?.arguments?.getString("categoryName")
             
-            TopAppBar(
-                title = {
-                    val title = when (currentRoute) {
-                        Screen.ProviderList.route -> "Manage Providers"
-                        Screen.AddProvider.route -> "Add Provider"
-                        Screen.About.route -> "About App"
-                        Screen.CategoryDetail.route -> categoryName ?: "Category"
-                        else -> "IPTV Mine Pro"
-                    }
-                    Text(title)
-                },
-                navigationIcon = {
-                    if (currentRoute == Screen.ProviderList.route ||
-                        currentRoute == Screen.AddProvider.route ||
-                        currentRoute == Screen.CategoryDetail.route ||
-                        currentRoute == Screen.About.route
-                    ) {
-                        FilledIconButton(
-                            onClick = { navController.popBackStack() },
-                            modifier = Modifier
-                                .padding(start = 12.dp)
-                                .size(40.dp),
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = Color.White.copy(alpha = 0.2f),
-                                contentColor = Color.White
-                            ),
-                            shape = CircleShape
+            if (currentRoute != null && currentRoute != Screen.MovieDetail.route) {
+                TopAppBar(
+                    title = {
+                        val title = when (currentRoute) {
+                            Screen.ProviderList.route -> "Manage Providers"
+                            Screen.AddProvider.route -> "Add Provider"
+                            Screen.About.route -> "About App"
+                            Screen.CategoryDetail.route -> categoryName ?: "Category"
+                            else -> "IPTV Mine Pro"
+                        }
+                        Text(title)
+                    },
+                    navigationIcon = {
+                        if (currentRoute == Screen.ProviderList.route ||
+                            currentRoute == Screen.AddProvider.route ||
+                            currentRoute == Screen.CategoryDetail.route ||
+                            currentRoute == Screen.About.route
                         ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
-                                modifier = Modifier.size(20.dp)
-                            )
+                            FilledIconButton(
+                                onClick = { navController.popBackStack() },
+                                modifier = Modifier
+                                    .padding(start = 12.dp)
+                                    .size(40.dp),
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = Color.White.copy(alpha = 0.2f),
+                                    contentColor = Color.White
+                                ),
+                                shape = CircleShape
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
-                    }
-                },
-                actions = {
-                    if (currentRoute != Screen.ProviderList.route &&
-                        currentRoute != Screen.AddProvider.route &&
-                        currentRoute != Screen.CategoryDetail.route &&
-                        currentRoute != Screen.About.route
-                    ) {
-                        val context = androidx.compose.ui.platform.LocalContext.current
-                        IconButton(onClick = { 
-                            context.startActivity(Intent(context, SearchActivity::class.java)) 
-                        }) {
-                            Icon(Icons.Filled.Search, contentDescription = "Search")
+                    },
+                    actions = {
+                        if (currentRoute != Screen.ProviderList.route &&
+                            currentRoute != Screen.AddProvider.route &&
+                            currentRoute != Screen.CategoryDetail.route &&
+                            currentRoute != Screen.About.route
+                        ) {
+                            val context = androidx.compose.ui.platform.LocalContext.current
+                            IconButton(onClick = { 
+                                context.startActivity(Intent(context, SearchActivity::class.java)) 
+                            }) {
+                                Icon(Icons.Filled.Search, contentDescription = "Search")
+                            }
                         }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
-                    titleContentColor = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                        titleContentColor = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
+                        actionIconContentColor = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
+                        navigationIconContentColor = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary
+                    )
                 )
-            )
+            }
         },
     ) { innerPadding ->
         NavHost(
@@ -202,6 +213,7 @@ fun MainApp() {
                 val context = androidx.compose.ui.platform.LocalContext.current
                 HomeScreen(
                     viewModel = channelsViewModel,
+                    navController = navController,
                     onChannelClick = { channel ->
                         if (channel.streamUrl.isEmpty()) {
                             android.widget.Toast.makeText(context, "This match is not live yet!", android.widget.Toast.LENGTH_SHORT).show()
@@ -210,6 +222,25 @@ fun MainApp() {
                         }
                     }
                 ) 
+            }
+            composable(
+                route = Screen.Movies.route,
+                arguments = listOf(navArgument("category") { 
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                })
+            ) { backStackEntry ->
+                val category = backStackEntry.arguments?.getString("category")
+                com.samyak.iptvminepro.ui.screens.MoviesScreen(
+                    initialCategoryTitle = category,
+                    onMovieClick = { post, scraper, provider ->
+                        val encodedLink = android.net.Uri.encode(post.link)
+                        val encodedProviderUrl = android.net.Uri.encode(provider.url)
+                        val scraperValue = scraper.value
+                        navController.navigate("movie_detail?link=$encodedLink&providerUrl=$encodedProviderUrl&scraperValue=$scraperValue")
+                    }
+                )
             }
             composable(Screen.Category.route) {
                 CategoryScreen(
@@ -233,10 +264,32 @@ fun MainApp() {
             composable(Screen.Settings.route) { 
                 SettingsScreen(
                     onNavigateToProviders = { navController.navigate(Screen.ProviderList.route) },
+                    onNavigateToExtensions = { navController.navigate(Screen.Extensions.route) },
                     onNavigateToAbout = { navController.navigate(Screen.About.route) }
                 ) 
             }
+            composable(
+                route = Screen.MovieDetail.route,
+                arguments = listOf(
+                    navArgument("link") { type = NavType.StringType },
+                    navArgument("providerUrl") { type = NavType.StringType },
+                    navArgument("scraperValue") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val link = backStackEntry.arguments?.getString("link") ?: ""
+                val providerUrl = backStackEntry.arguments?.getString("providerUrl") ?: ""
+                val scraperValue = backStackEntry.arguments?.getString("scraperValue") ?: ""
+                MovieDetailScreen(
+                    link = link,
+                    providerUrl = providerUrl,
+                    scraperValue = scraperValue,
+                    navController = navController
+                )
+            }
             composable(Screen.About.route) { AboutScreen() }
+            composable(Screen.Extensions.route) { 
+                ExtensionsScreen(onNavigateBack = { navController.popBackStack() }) 
+            }
             composable(Screen.Player.route) { PlayerScreen() }
             composable(Screen.ProviderList.route) {
                 ProviderListScreen(

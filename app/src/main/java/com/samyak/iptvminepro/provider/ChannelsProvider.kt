@@ -74,7 +74,7 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
         _providers.postValue(list)
         synchronized(sourceUrls) {
             sourceUrls.clear()
-            sourceUrls.addAll(list.filter { it.isActive }.map { it.url })
+            sourceUrls.addAll(list.filter { it.isActive && it.safeType == com.samyak.iptvminepro.model.ProviderType.IPTV }.map { it.url })
         }
     }
 

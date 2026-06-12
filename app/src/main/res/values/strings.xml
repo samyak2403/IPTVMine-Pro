@@ -55,6 +55,12 @@
     <!-- Settings -->
     <string name="section_content">Content</string>
     <string name="setting_manage_providers">Manage Providers</string>
+    <string name="setting_extensions">Extensions</string>
+    <string name="title_extensions">Extensions</string>
+    <string name="tab_installed">Installed</string>
+    <string name="tab_available">Available</string>
+    <string name="btn_install">Install</string>
+    <string name="btn_uninstall">Uninstall</string>
     <string name="section_about">About Us</string>
     <string name="setting_about_app">About App</string>
     <string name="setting_report_bug">Report a Bug</string>

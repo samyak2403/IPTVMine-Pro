@@ -1,56 +1,117 @@
 package com.samyak.iptvminepro.ui.screens
 
-import androidx.compose.animation.core.animateFloatAsState
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import com.samyak.iptvminepro.R
 import com.samyak.iptvminepro.model.Channel
+import com.samyak.iptvminepro.model.VegaPost
+import com.samyak.iptvminepro.model.VegaProvider
+import com.samyak.iptvminepro.model.Provider
+import com.samyak.iptvminepro.model.ProviderType
 import com.samyak.iptvminepro.provider.ChannelsProvider
+import com.samyak.iptvminepro.provider.ProviderRepository
+import com.samyak.iptvminepro.provider.VegaProviderRunner
 import com.samyak.iptvminepro.ui.components.ChannelCard
+import com.samyak.iptvminepro.ui.components.MovieCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: ChannelsProvider = viewModel(),
-    onChannelClick: (Channel) -> Unit = {},
-    onSearchClick: () -> Unit = {}
+    navController: NavController,
+    onChannelClick: (Channel) -> Unit = {}
 ) {
+    val context = LocalContext.current
     val channels by viewModel.channels.observeAsState(emptyList())
     val isLoading by viewModel.isLoading.observeAsState(false)
     val errorMessage by viewModel.error.observeAsState(null)
 
+    val runner = remember { VegaProviderRunner(context) }
+    val providerRepo = remember { ProviderRepository(context) }
+    
+    // Load Vega providers synchronously to avoid race condition with LaunchedEffect keys
+    val activeVegaProviders = remember { providerRepo.getProviders().filter { it.isActive && it.safeType == ProviderType.VEGA } }
+    var selectedProvider by remember { mutableStateOf<Provider?>(null) }
+    var selectedScraper by remember { mutableStateOf<VegaProvider?>(null) }
+    var moviesByCategory by remember { mutableStateOf<Map<String, List<VegaPost>>>(emptyMap()) }
+    var isMoviesLoading by remember { mutableStateOf(false) }
 
+    val extensionRepo = remember { com.samyak.iptvminepro.provider.ExtensionRepository.getInstance(context) }
+    val installedExtensionsState by extensionRepo.installedExtensionsFlow.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.fetchM3UFile()
+    }
+
+    // Load movies from Vega providers - keyed on installedExtensionsState so it re-runs
+    // when extensions change. activeVegaProviders is loaded synchronously above.
+    LaunchedEffect(installedExtensionsState) {
+        if (activeVegaProviders.isNotEmpty()) {
+            isMoviesLoading = true
+            try {
+                val provider = activeVegaProviders.first()
+                selectedProvider = provider
+                val manifest = runner.fetchManifest(provider.url)
+                
+                // Match MoviesScreen logic: prefer installed extensions, fallback to all non-disabled
+                val installed = manifest.filter { it.value in installedExtensionsState }
+                val firstScraper = if (installed.isNotEmpty()) installed.first() else manifest.firstOrNull { !it.disabled } ?: manifest.firstOrNull()
+                
+                if (firstScraper != null) {
+                    selectedScraper = firstScraper
+                    val (catalogs, _) = runner.getCatalog(provider.url, firstScraper.value)
+                    val postsMap = mutableMapOf<String, List<VegaPost>>()
+                    
+                    val catalogsToFetch = catalogs.take(6) // Fetch up to 6 categories for home screen
+                    if (catalogsToFetch.isEmpty()) {
+                        val posts = runner.getPosts(provider.url, firstScraper.value, filter = "", page = 1)
+                        if (posts.isNotEmpty()) {
+                            moviesByCategory = mapOf("Featured" to posts.take(15))
+                        }
+                    } else {
+                        for (cat in catalogsToFetch) {
+                            val posts = runner.getPosts(provider.url, firstScraper.value, filter = cat.filter, page = 1)
+                            if (posts.isNotEmpty()) {
+                                postsMap[cat.title] = posts.take(15)
+                                android.util.Log.d("HomeScreen", "Loaded category: ${cat.title} with ${posts.size} items")
+                                // Update state incrementally to show rows as they load
+                                moviesByCategory = postsMap.toMap()
+                            }
+                        }
+                    }
+                } else {
+                    android.util.Log.w("HomeScreen", "No scraper available from manifest")
+                    moviesByCategory = emptyMap()
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.e("HomeScreen", "Error loading VOD movies for Home: ${e.message}", e)
+                moviesByCategory = emptyMap()
+            } finally {
+                isMoviesLoading = false
+            }
+        } else {
+            moviesByCategory = emptyMap()
+        }
     }
 
     Column(
@@ -58,65 +119,127 @@ fun HomeScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-
-
-        // Content Area
         Box(modifier = Modifier.fillMaxSize()) {
-            if (isLoading && channels.isEmpty()) {
+            if ((isLoading && channels.isEmpty()) || (isMoviesLoading && moviesByCategory.isEmpty())) {
                 CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center),
                     color = MaterialTheme.colorScheme.primary
                 )
-            } else if (!errorMessage.isNullOrEmpty() && channels.isEmpty()) {
-                Column(
-                    modifier = Modifier.align(Alignment.Center).padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    androidx.compose.foundation.Image(
-                        painter = androidx.compose.ui.res.painterResource(id = R.drawable.undraw_files_missing_ntwe),
-                        contentDescription = stringResource(id = R.string.desc_error),
-                        modifier = Modifier.size(200.dp).padding(bottom = 16.dp)
-                    )
-                    Text(
-                        text = errorMessage!!,
-                        color = MaterialTheme.colorScheme.error,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
-            } else if (channels.isEmpty()) {
-                Column(
-                    modifier = Modifier.align(Alignment.Center).padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    androidx.compose.foundation.Image(
-                        painter = androidx.compose.ui.res.painterResource(id = R.drawable.undraw_files_missing_ntwe),
-                        contentDescription = stringResource(id = R.string.desc_no_channels),
-                        modifier = Modifier.size(200.dp).padding(bottom = 16.dp)
-                    )
-                    Text(
-                        text = stringResource(id = R.string.msg_no_channels),
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
             } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 160.dp),
+                val chunkedChannels = remember(channels) { channels.chunked(2) }
+
+                LazyColumn(
                     contentPadding = PaddingValues(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(channels) { channel ->
-                        ChannelCard(channel = channel, onClick = {
-                            onChannelClick(channel)
-                        })
+                    if (moviesByCategory.isNotEmpty()) {
+                        moviesByCategory.forEach { (categoryTitle, movies) ->
+                            item {
+                                Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { 
+                                                val encoded = Uri.encode(categoryTitle)
+                                                navController.navigate("movies?category=$encoded")
+                                            }
+                                            .padding(bottom = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = categoryTitle,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onBackground
+                                        )
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                            contentDescription = "View All",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        items(movies) { movie ->
+                                            MovieCard(
+                                                movie = movie,
+                                                onClick = {
+                                                    val provider = selectedProvider
+                                                    val scraper = selectedScraper
+                                                    if (provider != null && scraper != null) {
+                                                        val encodedLink = Uri.encode(movie.link)
+                                                        val encodedProviderUrl = Uri.encode(provider.url)
+                                                        val scraperValue = scraper.value
+                                                        navController.navigate("movie_detail?link=$encodedLink&providerUrl=$encodedProviderUrl&scraperValue=$scraperValue")
+                                                    }
+                                                },
+                                                modifier = Modifier.width(130.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (channels.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "Live TV Channels",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
+                            )
+                        }
+                        items(chunkedChannels) { rowChannels ->
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                rowChannels.forEach { channel ->
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        ChannelCard(channel = channel, onClick = {
+                                            onChannelClick(channel)
+                                        })
+                                    }
+                                }
+                                if (rowChannels.size < 2) {
+                                    repeat(2 - rowChannels.size) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    } else if (!isLoading && !isMoviesLoading && moviesByCategory.isEmpty()) {
+                        item {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                androidx.compose.foundation.Image(
+                                    painter = androidx.compose.ui.res.painterResource(id = R.drawable.undraw_files_missing_ntwe),
+                                    contentDescription = stringResource(id = R.string.desc_no_channels),
+                                    modifier = Modifier.size(150.dp).padding(bottom = 16.dp)
+                                )
+                                Text(
+                                    text = "No content available",
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        }
                     }
                 }
             }
             
             // Overlay loading indicator for background fetches
-            if (isLoading && channels.isNotEmpty()) {
+            if ((isLoading && channels.isNotEmpty()) || (isMoviesLoading && moviesByCategory.isNotEmpty())) {
                 LinearProgressIndicator(
                     modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter),
                     color = MaterialTheme.colorScheme.primary
@@ -124,29 +247,5 @@ fun HomeScreen(
             }
         }
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun CategoryChip(category: String, isSelected: Boolean, onClick: () -> Unit) {
-    var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (isFocused) 1.1f else 1.0f)
-
-    FilterChip(
-        selected = isSelected,
-        onClick = onClick,
-        label = { Text(text = category, fontSize = 14.sp) },
-        colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primary,
-            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-            containerColor = MaterialTheme.colorScheme.surface,
-            labelColor = MaterialTheme.colorScheme.onSurface
-        ),
-        border = if (isFocused) BorderStroke(2.dp, MaterialTheme.colorScheme.secondary) else null,
-        modifier = Modifier
-            .scale(scale)
-            .onFocusChanged { isFocused = it.isFocused }
-            .focusable()
-    )
 }
 

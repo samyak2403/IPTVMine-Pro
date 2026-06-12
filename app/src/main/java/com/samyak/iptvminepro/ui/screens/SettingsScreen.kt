@@ -23,6 +23,7 @@ import com.samyak.iptvminepro.R
 @Composable
 fun SettingsScreen(
     onNavigateToProviders: () -> Unit,
+    onNavigateToExtensions: () -> Unit,
     onNavigateToAbout: () -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -39,6 +40,11 @@ fun SettingsScreen(
             title = stringResource(id = R.string.setting_manage_providers),
             icon = Icons.AutoMirrored.Filled.List,
             onClick = onNavigateToProviders
+        )
+        SettingsItem(
+            title = stringResource(id = R.string.setting_extensions),
+            icon = Icons.Filled.Extension,
+            onClick = onNavigateToExtensions
         )
 
         SettingsSectionTitle(title = stringResource(id = R.string.section_about))

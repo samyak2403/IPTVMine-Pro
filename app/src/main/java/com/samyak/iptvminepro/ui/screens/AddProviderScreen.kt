@@ -21,6 +21,8 @@ import com.samyak.iptvminepro.provider.ProviderRepository
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 
+import com.samyak.iptvminepro.model.ProviderType
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddProviderScreen(
@@ -34,6 +36,7 @@ fun AddProviderScreen(
     var title by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     var userAgent by remember { mutableStateOf("") }
+    var providerType by remember { mutableStateOf(ProviderType.IPTV) }
 
     LaunchedEffect(editUrl) {
         if (editUrl != null) {
@@ -42,6 +45,7 @@ fun AddProviderScreen(
                 title = provider.title
                 url = provider.url
                 userAgent = provider.userAgent ?: ""
+                providerType = provider.safeType
             }
         }
     }
@@ -75,14 +79,43 @@ fun AddProviderScreen(
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(bottom = 32.dp)
+            modifier = Modifier.padding(bottom = 16.dp)
         )
+
+        // Provider Type Toggle Selector
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            FilterChip(
+                selected = providerType == ProviderType.IPTV,
+                onClick = { providerType = ProviderType.IPTV },
+                label = { Text("IPTV Playlist", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) },
+                modifier = Modifier.weight(1f),
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                )
+            )
+            FilterChip(
+                selected = providerType == ProviderType.VEGA,
+                onClick = { providerType = ProviderType.VEGA },
+                label = { Text("Vega Movies", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) },
+                modifier = Modifier.weight(1f),
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                )
+            )
+        }
 
         OutlinedTextField(
             value = title,
             onValueChange = { title = it },
             label = { Text(stringResource(id = R.string.label_provider_title)) },
-            placeholder = { Text(stringResource(id = R.string.placeholder_provider_title)) },
+            placeholder = { Text(if (providerType == ProviderType.IPTV) stringResource(id = R.string.placeholder_provider_title) else "e.g. Vega-Org Scraper") },
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
             singleLine = true
         )
@@ -90,8 +123,8 @@ fun AddProviderScreen(
         OutlinedTextField(
             value = url,
             onValueChange = { url = it },
-            label = { Text(stringResource(id = R.string.label_playlist_url)) },
-            placeholder = { Text(stringResource(id = R.string.placeholder_url)) },
+            label = { Text(if (providerType == ProviderType.IPTV) stringResource(id = R.string.label_playlist_url) else "Provider URL or identifier (e.g. @vega-org)") },
+            placeholder = { Text(if (providerType == ProviderType.IPTV) stringResource(id = R.string.placeholder_url) else "@vega-org or URL") },
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
             singleLine = true
         )
@@ -110,7 +143,12 @@ fun AddProviderScreen(
                 if (title.isBlank() || url.isBlank()) {
                     Toast.makeText(context, context.getString(R.string.msg_required_fields), Toast.LENGTH_SHORT).show()
                 } else {
-                    val provider = Provider(title.trim(), url.trim(), userAgent.trim().takeIf { it.isNotEmpty() })
+                    val provider = Provider(
+                        title = title.trim(),
+                        url = url.trim(),
+                        userAgent = userAgent.trim().takeIf { it.isNotEmpty() },
+                        type = providerType
+                    )
                     if (editUrl == null) {
                         repository.addProvider(provider)
                         Toast.makeText(context, context.getString(R.string.msg_provider_added), Toast.LENGTH_SHORT).show()

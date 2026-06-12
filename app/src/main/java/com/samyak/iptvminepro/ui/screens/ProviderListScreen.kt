@@ -132,7 +132,9 @@ fun ProviderListScreen(
                         } else {
                             provider.channelCount
                         }
-                        val statusText = if (provider.isActive && channelCount == 0 && isLoading) {
+                        val statusText = if (provider.safeType == com.samyak.iptvminepro.model.ProviderType.VEGA) {
+                            "VOD Scraper"
+                        } else if (provider.isActive && channelCount == 0 && isLoading) {
                             stringResource(id = R.string.loading)
                         } else {
                             stringResource(id = R.string.total_channels_count, channelCount)
@@ -167,36 +169,50 @@ fun ProviderListScreen(
                                     modifier = Modifier
                                         .weight(1f)
                                         .padding(horizontal = 10.dp)
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(
-                                            text = provider.title,
-                                            style = MaterialTheme.typography.titleMedium.copy(
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 16.sp
-                                            ),
-                                            color = Color(0xFF1F2937), // Slate Dark
-                                            modifier = Modifier.weight(1f, fill = false),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Surface(
-                                            color = Color(0xFFE0F2F1), // Light teal background
-                                            shape = RoundedCornerShape(8.dp)
-                                        ) {
-                                            Text(
-                                                text = statusText,
-                                                color = Color(0xFF00796B), // Dark teal text
-                                                style = MaterialTheme.typography.labelSmall,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
+                                  ) {
+                                      Row(
+                                          verticalAlignment = Alignment.CenterVertically,
+                                          modifier = Modifier.fillMaxWidth()
+                                      ) {
+                                          Text(
+                                              text = provider.title,
+                                              style = MaterialTheme.typography.titleMedium.copy(
+                                                  fontWeight = FontWeight.Bold,
+                                                  fontSize = 16.sp
+                                              ),
+                                              color = Color(0xFF1F2937), // Slate Dark
+                                              modifier = Modifier.weight(1f, fill = false),
+                                              maxLines = 1,
+                                              overflow = TextOverflow.Ellipsis
+                                          )
+                                          Spacer(modifier = Modifier.width(8.dp))
+                                          // Provider Type Badge
+                                          Surface(
+                                              color = if (provider.safeType == com.samyak.iptvminepro.model.ProviderType.IPTV) Color(0xFFE0F7FA) else Color(0xFFEDE7F6),
+                                              shape = RoundedCornerShape(8.dp)
+                                          ) {
+                                              Text(
+                                                  text = provider.safeType.name,
+                                                  color = if (provider.safeType == com.samyak.iptvminepro.model.ProviderType.IPTV) Color(0xFF006064) else Color(0xFF512DA8),
+                                                  style = MaterialTheme.typography.labelSmall,
+                                                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                  fontWeight = FontWeight.Bold
+                                              )
+                                          }
+                                          Spacer(modifier = Modifier.width(4.dp))
+                                          Surface(
+                                              color = Color(0xFFE0F2F1), // Light teal background
+                                              shape = RoundedCornerShape(8.dp)
+                                          ) {
+                                              Text(
+                                                  text = statusText,
+                                                  color = Color(0xFF00796B), // Dark teal text
+                                                  style = MaterialTheme.typography.labelSmall,
+                                                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                  fontWeight = FontWeight.Bold
+                                              )
+                                          }
+                                      }
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = provider.url,
