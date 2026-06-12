@@ -46,6 +46,7 @@ import com.samyak.iptvminepro.ui.screens.CategoryDetailScreen
 import com.samyak.iptvminepro.ui.screens.AboutScreen
 import com.samyak.iptvminepro.ui.screens.ExtensionsScreen
 import com.samyak.iptvminepro.ui.screens.MovieDetailScreen
+import com.samyak.iptvminepro.ui.screens.CategoryMoviesScreen
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -79,6 +80,7 @@ sealed class Screen(val route: String, val label: String, val icon: @Composable 
     object About : Screen("about", "About App", { })
     object Extensions : Screen("extensions", "Extensions", { })
     object MovieDetail : Screen("movie_detail?link={link}&providerUrl={providerUrl}&scraperValue={scraperValue}", "Movie Detail", { })
+    object CategoryMovies : Screen("category_movies?categoryName={categoryName}&categoryFilter={categoryFilter}&providerUrl={providerUrl}&scraperValue={scraperValue}", "Category Movies", { })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -106,7 +108,8 @@ fun MainApp() {
                 currentRoute != Screen.ProviderList.route &&
                 currentRoute != Screen.CategoryDetail.route &&
                 currentRoute != Screen.MovieDetail.route &&
-                currentRoute != Screen.About.route
+                currentRoute != Screen.About.route &&
+                currentRoute != Screen.CategoryMovies.route
             ) {
                 NavigationBar(
                     containerColor = Color.White // White background
@@ -143,7 +146,10 @@ fun MainApp() {
             val currentRoute = navBackStackEntry?.destination?.route
             val categoryName = navBackStackEntry?.arguments?.getString("categoryName")
             
-            if (currentRoute != null && currentRoute != Screen.MovieDetail.route) {
+            if (currentRoute != null && 
+                currentRoute != Screen.MovieDetail.route &&
+                currentRoute != Screen.CategoryMovies.route
+            ) {
                 TopAppBar(
                     title = {
                         val title = when (currentRoute) {
@@ -284,6 +290,32 @@ fun MainApp() {
                     providerUrl = providerUrl,
                     scraperValue = scraperValue,
                     navController = navController
+                )
+            }
+            composable(
+                route = Screen.CategoryMovies.route,
+                arguments = listOf(
+                    navArgument("categoryName") { type = NavType.StringType },
+                    navArgument("categoryFilter") { type = NavType.StringType },
+                    navArgument("providerUrl") { type = NavType.StringType },
+                    navArgument("scraperValue") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val categoryName = backStackEntry.arguments?.getString("categoryName") ?: ""
+                val categoryFilter = backStackEntry.arguments?.getString("categoryFilter") ?: ""
+                val providerUrl = backStackEntry.arguments?.getString("providerUrl") ?: ""
+                val scraperValue = backStackEntry.arguments?.getString("scraperValue") ?: ""
+                CategoryMoviesScreen(
+                    categoryName = categoryName,
+                    categoryFilter = categoryFilter,
+                    providerUrl = providerUrl,
+                    scraperValue = scraperValue,
+                    navController = navController,
+                    onMovieClick = { post ->
+                        val encodedLink = android.net.Uri.encode(post.link)
+                        val encodedProviderUrl = android.net.Uri.encode(providerUrl)
+                        navController.navigate("movie_detail?link=$encodedLink&providerUrl=$encodedProviderUrl&scraperValue=$scraperValue")
+                    }
                 )
             }
             composable(Screen.About.route) { AboutScreen() }

@@ -23,6 +23,7 @@ import androidx.navigation.NavController
 import com.samyak.iptvminepro.R
 import com.samyak.iptvminepro.model.Channel
 import com.samyak.iptvminepro.model.VegaPost
+import com.samyak.iptvminepro.model.VegaCatalog
 import com.samyak.iptvminepro.model.VegaProvider
 import com.samyak.iptvminepro.model.Provider
 import com.samyak.iptvminepro.model.ProviderType
@@ -51,7 +52,7 @@ fun HomeScreen(
     val activeVegaProviders = remember { providerRepo.getProviders().filter { it.isActive && it.safeType == ProviderType.VEGA } }
     var selectedProvider by remember { mutableStateOf<Provider?>(null) }
     var selectedScraper by remember { mutableStateOf<VegaProvider?>(null) }
-    var moviesByCategory by remember { mutableStateOf<Map<String, List<VegaPost>>>(emptyMap()) }
+    var moviesByCategory by remember { mutableStateOf<Map<VegaCatalog, List<VegaPost>>>(emptyMap()) }
     var isMoviesLoading by remember { mutableStateOf(false) }
 
     val extensionRepo = remember { com.samyak.iptvminepro.provider.ExtensionRepository.getInstance(context) }
@@ -78,19 +79,19 @@ fun HomeScreen(
                 if (firstScraper != null) {
                     selectedScraper = firstScraper
                     val (catalogs, _) = runner.getCatalog(provider.url, firstScraper.value)
-                    val postsMap = mutableMapOf<String, List<VegaPost>>()
+                    val postsMap = mutableMapOf<VegaCatalog, List<VegaPost>>()
                     
                     val catalogsToFetch = catalogs.take(6) // Fetch up to 6 categories for home screen
                     if (catalogsToFetch.isEmpty()) {
                         val posts = runner.getPosts(provider.url, firstScraper.value, filter = "", page = 1)
                         if (posts.isNotEmpty()) {
-                            moviesByCategory = mapOf("Featured" to posts.take(15))
+                            moviesByCategory = mapOf(VegaCatalog("Featured", "") to posts.take(15))
                         }
                     } else {
                         for (cat in catalogsToFetch) {
                             val posts = runner.getPosts(provider.url, firstScraper.value, filter = cat.filter, page = 1)
                             if (posts.isNotEmpty()) {
-                                postsMap[cat.title] = posts.take(15)
+                                postsMap[cat] = posts.take(15)
                                 android.util.Log.d("HomeScreen", "Loaded category: ${cat.title} with ${posts.size} items")
                                 // Update state incrementally to show rows as they load
                                 moviesByCategory = postsMap.toMap()
@@ -134,22 +135,29 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     if (moviesByCategory.isNotEmpty()) {
-                        moviesByCategory.forEach { (categoryTitle, movies) ->
+                        moviesByCategory.forEach { (catalog, movies) ->
                             item {
                                 Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clickable { 
-                                                val encoded = Uri.encode(categoryTitle)
-                                                navController.navigate("movies?category=$encoded")
+                                                val provider = selectedProvider
+                                                val scraper = selectedScraper
+                                                if (provider != null && scraper != null) {
+                                                    val encodedTitle = Uri.encode(catalog.title)
+                                                    val encodedFilter = Uri.encode(catalog.filter)
+                                                    val encodedProviderUrl = Uri.encode(provider.url)
+                                                    val scraperValue = scraper.value
+                                                    navController.navigate("category_movies?categoryName=$encodedTitle&categoryFilter=$encodedFilter&providerUrl=$encodedProviderUrl&scraperValue=$scraperValue")
+                                                }
                                             }
                                             .padding(bottom = 12.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Text(
-                                            text = categoryTitle,
+                                            text = catalog.title,
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onBackground
