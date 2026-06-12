@@ -200,11 +200,11 @@ fun MoviesScreen(
         }
     }
     
-    // Main UI Layout (Premium Sleek Dark Theme)
+    // Main UI Layout (Premium Light Theme)
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F0E13)) // HSL Tailored premium deep space dark background
+            .background(MaterialTheme.colorScheme.background)
     ) {
         if (vegaProvidersList.isEmpty()) {
             // Empty State
@@ -230,13 +230,13 @@ fun MoviesScreen(
                         text = "VOD Movies & Series",
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     Text(
                         text = "Please add a Vega Movies provider in Settings to browse and play movies and web series.",
                         fontSize = 15.sp,
-                        color = Color(0xFF9CA3AF),
+                        color = Color(0xFF6B7280),
                         textAlign = TextAlign.Center,
                         lineHeight = 22.sp
                     )
@@ -254,7 +254,7 @@ fun MoviesScreen(
                     OutlinedButton(
                         onClick = { dropdownExpanded = true },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
                     ) {
                         Text(selectedProvider?.title ?: "Select Provider")
                     }
@@ -276,39 +276,6 @@ fun MoviesScreen(
                     }
                 }
             }
-            
-            // Search Bar (Premium Sleek Input)
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("Search movies, TV shows...", color = Color(0xFF9CA3AF)) },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = "Search", tint = Color(0xFF26A69A)) },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = {
-                            searchQuery = ""
-                            loadMovies(false)
-                        }) {
-                            Icon(Icons.Filled.Close, contentDescription = "Clear", tint = Color(0xFF9CA3AF))
-                        }
-                    }
-                },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { loadMovies(false) }),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFF26A69A), // Teal focus
-                    unfocusedBorderColor = Color(0xFF2C2A36),
-                    focusedContainerColor = Color(0xFF16151D),
-                    unfocusedContainerColor = Color(0xFF16151D),
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White
-                ),
-                shape = RoundedCornerShape(12.dp)
-            )
             
             // Scraper Selector Tabs
             if (isScrapersLoading) {
@@ -335,8 +302,8 @@ fun MoviesScreen(
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = Color(0xFF26A69A),
                                 selectedLabelColor = Color.White,
-                                containerColor = Color(0xFF1D1B26),
-                                labelColor = Color(0xFF9CA3AF)
+                                containerColor = Color(0xFFF5F5F5),
+                                labelColor = Color(0xFF6B7280)
                             ),
                             border = null,
                             shape = RoundedCornerShape(8.dp)
@@ -363,9 +330,9 @@ fun MoviesScreen(
                                 selectedContainerColor = Color(0xFF26A69A).copy(alpha = 0.2f),
                                 selectedLabelColor = Color(0xFF26A69A),
                                 containerColor = Color.Transparent,
-                                labelColor = Color(0xFF9CA3AF)
+                                labelColor = Color(0xFF6B7280)
                             ),
-                            border = if (isSelected) BorderStroke(1.dp, Color(0xFF26A69A)) else BorderStroke(1.dp, Color(0xFF2C2A36)),
+                            border = if (isSelected) BorderStroke(1.dp, Color(0xFF26A69A)) else BorderStroke(1.dp, Color(0xFFE0E0E0)),
                             shape = RoundedCornerShape(20.dp)
                         )
                     }
