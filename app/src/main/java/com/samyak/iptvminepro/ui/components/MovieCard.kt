@@ -38,6 +38,35 @@ fun MovieCard(
     val scale by animateFloatAsState(if (isFocused) 1.05f else 1.0f)
     val context = LocalContext.current
 
+    val resolvedImageUrl = remember(movie.image) {
+        val img = movie.image
+        if (img.startsWith("//")) {
+            "https:$img"
+        } else {
+            img
+        }
+    }
+
+    val refererHeader = remember(resolvedImageUrl) {
+        try {
+            val uri = android.net.Uri.parse(resolvedImageUrl)
+            val host = uri.host
+            if (host != null) {
+                val parts = host.split(".")
+                if (parts.size >= 2) {
+                    val domain = parts.takeLast(2).joinToString(".")
+                    "https://$domain/"
+                } else {
+                    "https://$host/"
+                }
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -57,7 +86,13 @@ fun MovieCard(
         Box(modifier = Modifier.fillMaxSize()) {
             AsyncImage(
                 model = ImageRequest.Builder(context)
-                    .data(movie.image)
+                    .data(resolvedImageUrl)
+                    .apply {
+                        addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                        if (refererHeader != null) {
+                            addHeader("Referer", refererHeader)
+                        }
+                    }
                     .crossfade(true)
                     .build(),
                 contentDescription = movie.title,
