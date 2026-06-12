@@ -632,6 +632,11 @@ class VegaProviderRunner(private val context: Context) {
             function wrapElements(elements, doc) {
                 const wrapped = {
                     length: elements.length,
+                    [Symbol.iterator]: function*() {
+                        for (let i = 0; i < this.length; i++) {
+                            yield this[i];
+                        }
+                    },
                     text: function() {
                         if (elements.length === 0) return "";
                         return Array.from(elements).map(el => el.textContent).join(" ").trim();
