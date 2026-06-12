@@ -90,6 +90,7 @@ fun ExtensionsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                windowInsets = WindowInsets(0, 0, 0, 0),
                 title = { Text(stringResource(id = R.string.title_extensions)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {

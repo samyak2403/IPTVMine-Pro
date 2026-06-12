@@ -110,7 +110,8 @@ fun MainApp() {
                 currentRoute != Screen.CategoryDetail.route &&
                 currentRoute != Screen.MovieDetail.route &&
                 currentRoute != Screen.About.route &&
-                currentRoute != Screen.CategoryMovies.route
+                currentRoute != Screen.CategoryMovies.route &&
+                currentRoute != Screen.Extensions.route
             ) {
                 NavigationBar(
                     containerColor = Color.White // White background
@@ -149,7 +150,8 @@ fun MainApp() {
             
             if (currentRoute != null && 
                 currentRoute != Screen.MovieDetail.route &&
-                currentRoute != Screen.CategoryMovies.route
+                currentRoute != Screen.CategoryMovies.route &&
+                currentRoute != Screen.Extensions.route
             ) {
                 TopAppBar(
                     title = {
