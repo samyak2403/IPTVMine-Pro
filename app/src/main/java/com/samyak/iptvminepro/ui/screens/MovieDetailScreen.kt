@@ -429,7 +429,15 @@ fun MovieDetailScreen(
                                                         )
                                                     }
                                                 } else {
-                                                    val episodes = episodesMap[vegaLink.episodesLink]
+                                                    val episodes = episodesMap[vegaLink.episodesLink]?.filter { ep ->
+                                                        val titleLower = ep.title.lowercase()
+                                                        !titleLower.contains("note") &&
+                                                        !titleLower.contains("warning") &&
+                                                        !titleLower.contains("download") &&
+                                                        !titleLower.contains("join") &&
+                                                        !titleLower.contains("telegram") &&
+                                                        !titleLower.contains("click")
+                                                    }
                                                     if (episodes == null || episodes.isEmpty()) {
                                                         Text("No episodes loaded.", color = Color.Gray, fontSize = 13.sp)
                                                     } else {

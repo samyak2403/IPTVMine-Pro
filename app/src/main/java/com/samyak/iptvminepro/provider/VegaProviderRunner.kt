@@ -913,7 +913,10 @@ class VegaProviderRunner(private val context: Context) {
         for (module in modules) {
             try {
                 val fileUrl = "$resolvedRepo/dist/$providerValue/$module.js"
-                val js = fetchFile(fileUrl)
+                var js = fetchFile(fileUrl)
+                if (providerValue.equals("vega", ignoreCase = true) && module == "stream") {
+                    js = patchVegaStreamJs(js)
+                }
                 val base64Js = android.util.Base64.encodeToString(js.toByteArray(), android.util.Base64.NO_WRAP)
                 val wrapper = """
                     (function() {
@@ -1358,5 +1361,21 @@ class VegaProviderRunner(private val context: Context) {
                 return result.toString()
             }
         }
+    }
+
+    private fun patchVegaStreamJs(js: String): String {
+        var patched = js
+        
+        // 1. Add undefined/null protection to hubcloudExtractor
+        val target1 = "function hubcloudExtractor(link,signal,axios,cheerio,headers2){return __async(this,null,function*(){var _a,_b,_c,_d,_e,_f,_g;try{"
+        val replacement1 = "function hubcloudExtractor(link,signal,axios,cheerio,headers2){return __async(this,null,function*(){if(!link||link===\"undefined\")return[];var _a,_b,_c,_d,_e,_f,_g;try{"
+        patched = patched.replace(target1, replacement1)
+
+        // 2. Add bypass for direct cloud/drive links in getStream
+        val target2 = "\"movie\"===type){const dotlinkText=(yield axios(`\${'$'}{link}`,{headers:headers})).data;link=(dotlinkText.match(/<a\\\\s+href=\\\"([^\\\"]*cloud\\\\.[^\\\"]*)\\\"/i)||[])[1];"
+        val replacement2 = "\"movie\"===type && link && !link.includes(\"cloud\") && !link.includes(\"pixeld\") && !link.includes(\"dev\")){try{const dotlinkText=(yield axios(`\${'$'}{link}`,{headers:headers})).data;const matchedLink=(dotlinkText.match(/<a\\\\s+href=\\\"([^\\\"]*cloud\\\\.[^\\\"]*)\\\"/i)||[])[1];if(matchedLink)link=matchedLink;}catch(e){console.log(\"dotlink error\",e);}}"
+        patched = patched.replace(target2, replacement2)
+        
+        return patched
     }
 }
