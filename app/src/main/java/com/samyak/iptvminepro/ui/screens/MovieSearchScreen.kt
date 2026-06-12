@@ -83,7 +83,7 @@ fun MovieSearchScreen(
     val loadMovies: (Boolean) -> Unit = { isNextPage ->
         val provider = selectedProvider
         val scraper = selectedScraper
-        if (provider != null && scraper != null && !isLoading && searchQuery.isNotBlank()) {
+        if (provider != null && scraper != null && !isLoading) {
             isLoading = true
             if (!isNextPage) {
                 page = 1
@@ -92,7 +92,11 @@ fun MovieSearchScreen(
             }
             scope.launch {
                 try {
-                    val newMovies = runner.getSearchPosts(provider.url, scraper.value, searchQuery.trim(), page)
+                    val newMovies = if (searchQuery.isNotBlank()) {
+                        runner.getSearchPosts(provider.url, scraper.value, searchQuery.trim(), page)
+                    } else {
+                        runner.getPosts(provider.url, scraper.value, filter = "", page = page)
+                    }
                     if (newMovies.isEmpty()) {
                         hasMore = false
                     } else {
@@ -113,11 +117,8 @@ fun MovieSearchScreen(
 
     // Trigger search when query changes
     LaunchedEffect(searchQuery, selectedScraper) {
-        if (searchQuery.isNotBlank() && selectedScraper != null) {
+        if (selectedScraper != null) {
             loadMovies(false)
-        } else if (searchQuery.isBlank()) {
-            movies = emptyList()
-            hasMore = false
         }
     }
 
@@ -200,14 +201,6 @@ fun MovieSearchScreen(
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
                             text = "Please add a Vega Movies provider in Settings",
-                            color = Color(0xFF6B7280),
-                            fontSize = 16.sp
-                        )
-                    }
-                } else if (searchQuery.isBlank()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "Type query to search movies...",
                             color = Color(0xFF6B7280),
                             fontSize = 16.sp
                         )
