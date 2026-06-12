@@ -101,6 +101,7 @@ fun MainApp() {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        containerColor = Color(0xFF26A69A),
         bottomBar = {
             val navBackStackEntry by navController.currentBackStackEntryAsState()
             val currentRoute = navBackStackEntry?.destination?.route

@@ -180,7 +180,7 @@ fun CategoryMoviesScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .background(Color(0xFF0F0E13)) // HSL Tailored premium deep space dark background
+                    .background(Color.White)
             ) {
                 val gridState = rememberLazyGridState()
 
