@@ -11,6 +11,10 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import com.samyak.iptvminepro.provider.ProviderRepository
+import com.samyak.iptvminepro.model.ProviderType
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -28,6 +32,9 @@ fun SettingsScreen(
     onNavigateToAbout: () -> Unit
 ) {
     val scrollState = rememberScrollState()
+    val context = LocalContext.current
+    val providerRepo = remember { ProviderRepository(context) }
+    val hasActiveVegaProvider = providerRepo.getProviders().any { it.isActive && it.safeType == ProviderType.VEGA }
 
     Column(
         modifier = Modifier
@@ -43,11 +50,13 @@ fun SettingsScreen(
             icon = Icons.AutoMirrored.Filled.List,
             onClick = onNavigateToProviders
         )
-        SettingsItem(
-            title = stringResource(id = R.string.setting_extensions),
-            icon = Icons.Filled.Extension,
-            onClick = onNavigateToExtensions
-        )
+        if (hasActiveVegaProvider) {
+            SettingsItem(
+                title = stringResource(id = R.string.setting_extensions),
+                icon = Icons.Filled.Extension,
+                onClick = onNavigateToExtensions
+            )
+        }
 
         SettingsSectionTitle(title = stringResource(id = R.string.section_about))
         SettingsItem(
