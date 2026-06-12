@@ -72,9 +72,9 @@ fun HomeScreen(
                 selectedProvider = provider
                 val manifest = runner.fetchManifest(provider.url)
                 
-                // Match MoviesScreen logic: prefer installed extensions, fallback to all non-disabled
+                // Match MoviesScreen logic: only use installed extensions
                 val installed = manifest.filter { it.value in installedExtensionsState }
-                val firstScraper = if (installed.isNotEmpty()) installed.first() else manifest.firstOrNull { !it.disabled } ?: manifest.firstOrNull()
+                val firstScraper = if (installed.isNotEmpty()) installed.first() else null
                 
                 if (firstScraper != null) {
                     selectedScraper = firstScraper

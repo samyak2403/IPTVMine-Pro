@@ -87,8 +87,8 @@ fun MoviesScreen(
                 val manifest = runner.fetchManifest(provider.url)
                 val installed = manifest.filter { it.value in installedExtensionsState }
                 
-                // Fallback: If none are explicitly installed, show all non-disabled extensions
-                scrapers = if (installed.isNotEmpty()) installed else manifest.filter { !it.disabled }
+                // Only show installed extensions
+                scrapers = installed
                 
                 Log.d("MoviesScreen", "Loaded ${manifest.size} scrapers, using ${scrapers.size} (installed: ${installed.size})")
                 

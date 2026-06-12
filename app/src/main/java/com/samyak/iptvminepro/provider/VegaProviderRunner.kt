@@ -185,6 +185,20 @@ class VegaProviderRunner(private val context: Context) {
                 // Signal that the WebView is ready for JS evaluation
                 webViewReady.complete(Unit)
             }
+
+            @Suppress("DeprecatedCallableMember")
+            override fun onReceivedError(view: WebView?, errorCode: Int, description: String?, failingUrl: String?) {
+                Log.w(TAG, "WebView load error: $description")
+                // Signal completion to avoid blocking the coroutine chain
+                webViewReady.complete(Unit)
+            }
+
+            override fun onReceivedSslError(view: WebView?, handler: android.webkit.SslErrorHandler?, error: android.net.http.SslError?) {
+                Log.w(TAG, "WebView SSL error: $error")
+                handler?.cancel()
+                // Signal completion to avoid blocking the coroutine chain
+                webViewReady.complete(Unit)
+            }
         }
         webViewInstance.webChromeClient = object : android.webkit.WebChromeClient() {
             override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
@@ -217,6 +231,16 @@ class VegaProviderRunner(private val context: Context) {
         webView = webViewInstance
     }
 
+    private suspend fun awaitWebViewReady() {
+        try {
+            withTimeout(15_000) { webViewReady.await() }
+        } catch (e: TimeoutCancellationException) {
+            Log.w(TAG, "WebView readiness gate timed out after 15s, proceeding with evaluation")
+            // Mark as complete so future evaluation requests in the chain don't block
+            webViewReady.complete(Unit)
+        }
+    }
+
     // Helper to evaluate JS and await the result
     private suspend fun evalJsAsync(jsCode: String): String {
         val deferred = CompletableDeferred<String>()
@@ -235,14 +259,14 @@ class VegaProviderRunner(private val context: Context) {
         """.trimIndent()
         
         // Wait for WebView to be ready (page loaded) before evaluating JS
-        withTimeout(15_000) { webViewReady.await() }
+        awaitWebViewReady()
         
         withContext(Dispatchers.Main) {
             if (webView == null) {
                 setupWebView()
                 // Wait again for the new WebView to be ready
                 withContext(Dispatchers.Default) {
-                    withTimeout(15_000) { webViewReady.await() }
+                    awaitWebViewReady()
                 }
             }
             webView?.evaluateJavascript(wrappedJs, null)
@@ -259,13 +283,13 @@ class VegaProviderRunner(private val context: Context) {
 
     private suspend fun evalJsDirect(jsCode: String) {
         // Wait for WebView to be ready before evaluating JS
-        withTimeout(15_000) { webViewReady.await() }
+        awaitWebViewReady()
         
         withContext(Dispatchers.Main) {
             if (webView == null) {
                 setupWebView()
                 withContext(Dispatchers.Default) {
-                    withTimeout(15_000) { webViewReady.await() }
+                    awaitWebViewReady()
                 }
             }
             webView?.evaluateJavascript(jsCode, null)
@@ -937,7 +961,9 @@ class VegaProviderRunner(private val context: Context) {
                         if (!window.vegaModules['$providerValue']) window.vegaModules['$providerValue'] = {};
                         var moduleExports = module.exports;
                         if (moduleExports && moduleExports.__esModule && moduleExports.default) {
-                            moduleExports = Object.assign({}, moduleExports, moduleExports.default);
+                            if (typeof moduleExports.default === 'object' && moduleExports.default !== null) {
+                                moduleExports = Object.assign({}, moduleExports, moduleExports.default);
+                            }
                         }
                         window.vegaModules['$providerValue']['$module'] = moduleExports || {};
                         window.AndroidBridge.onResult('__CALLBACK_ID__', 'ok');
@@ -988,8 +1014,8 @@ class VegaProviderRunner(private val context: Context) {
         loadScraper(repoUrl, providerValue)
         val jsCode = """
             let mod = (window.vegaModules['$providerValue'] || {})['catalog'] || {};
-            let catalogArr = mod.catalog || [];
-            let genresArr = mod.genres || [];
+            let catalogArr = mod.catalog || (mod.default && mod.default.catalog) || [];
+            let genresArr = mod.genres || (mod.default && mod.default.genres) || [];
             window.AndroidBridge.onResult('__CALLBACK_ID__', JSON.stringify({ catalog: catalogArr, genres: genresArr }));
         """.trimIndent()
         
@@ -1020,7 +1046,22 @@ class VegaProviderRunner(private val context: Context) {
         val jsCode = """
             try {
                 const mod = window.vegaModules['$providerValue']['posts'];
-                const fn = mod.getPosts || mod.default?.getPosts || mod;
+                let fn = null;
+                if (typeof mod === 'function') {
+                    fn = mod;
+                } else if (mod) {
+                    if (typeof mod.getPosts === 'function') {
+                        fn = mod.getPosts;
+                    } else if (mod.default && typeof mod.default === 'function') {
+                        fn = mod.default;
+                    } else if (mod.default && typeof mod.default.getPosts === 'function') {
+                        fn = mod.default.getPosts;
+                    } else if (typeof mod.default === 'object' && mod.default) {
+                        fn = mod.default.getPosts || mod.default;
+                    } else {
+                        fn = mod;
+                    }
+                }
                 const res = await fn({ filter: '$safeFilter', page: $page, provider: '$providerValue', providerValue: '$providerValue', providerContext: window.providerContext });
                 window.AndroidBridge.onResult('__CALLBACK_ID__', JSON.stringify(res || []));
             } catch(e) {
@@ -1049,14 +1090,19 @@ class VegaProviderRunner(private val context: Context) {
         val jsCode = """
             try {
                 const mod = (window.vegaModules['$providerValue'] || {})['posts'];
+                let fn = null;
                 if (mod) {
-                    const fn = mod.getSearchPosts || mod.default?.getSearchPosts;
-                    if (fn) {
-                        const res = await fn({ searchQuery: '$safeQuery', page: $page, providerValue: '$providerValue', signal: null, providerContext: window.providerContext });
-                        window.AndroidBridge.onResult('__CALLBACK_ID__', JSON.stringify(res || []));
-                    } else {
-                        window.AndroidBridge.onResult('__CALLBACK_ID__', '[]');
+                    if (typeof mod.getSearchPosts === 'function') {
+                        fn = mod.getSearchPosts;
+                    } else if (mod.default && typeof mod.default === 'function') {
+                        fn = mod.default;
+                    } else if (mod.default && typeof mod.default.getSearchPosts === 'function') {
+                        fn = mod.default.getSearchPosts;
                     }
+                }
+                if (fn) {
+                    const res = await fn({ searchQuery: '$safeQuery', page: $page, providerValue: '$providerValue', signal: null, providerContext: window.providerContext });
+                    window.AndroidBridge.onResult('__CALLBACK_ID__', JSON.stringify(res || []));
                 } else {
                     window.AndroidBridge.onResult('__CALLBACK_ID__', '[]');
                 }
@@ -1086,7 +1132,22 @@ class VegaProviderRunner(private val context: Context) {
         val jsCode = """
             try {
                 const mod = window.vegaModules['$providerValue']['meta'];
-                const fn = mod.getMeta || mod.default?.getMeta || mod;
+                let fn = null;
+                if (typeof mod === 'function') {
+                    fn = mod;
+                } else if (mod) {
+                    if (typeof mod.getMeta === 'function') {
+                        fn = mod.getMeta;
+                    } else if (mod.default && typeof mod.default === 'function') {
+                        fn = mod.default;
+                    } else if (mod.default && typeof mod.default.getMeta === 'function') {
+                        fn = mod.default.getMeta;
+                    } else if (typeof mod.default === 'object' && mod.default) {
+                        fn = mod.default.getMeta || mod.default;
+                    } else {
+                        fn = mod;
+                    }
+                }
                 const res = await fn({ link: '$safeLink', provider: '$providerValue', providerValue: '$providerValue', providerContext: window.providerContext });
                 window.AndroidBridge.onResult('__CALLBACK_ID__', JSON.stringify(res || {}));
             } catch(e) {
@@ -1143,7 +1204,18 @@ class VegaProviderRunner(private val context: Context) {
             try {
                 const mod = (window.vegaModules['$providerValue'] || {})['stream'];
                 if (!mod) { window.AndroidBridge.onResult('__CALLBACK_ID__', '[]'); return; }
-                const fn = mod.getStream || mod.default?.getStream;
+                let fn = null;
+                if (typeof mod === 'function') {
+                    fn = mod;
+                } else {
+                    if (typeof mod.getStream === 'function') {
+                        fn = mod.getStream;
+                    } else if (mod.default && typeof mod.default === 'function') {
+                        fn = mod.default;
+                    } else if (mod.default && typeof mod.default.getStream === 'function') {
+                        fn = mod.default.getStream;
+                    }
+                }
                 if (!fn) { window.AndroidBridge.onResult('__CALLBACK_ID__', '[]'); return; }
                 const res = await fn({ link: '$safeLink', type: '$safeType', signal: null, providerContext: window.providerContext });
                 window.AndroidBridge.onResult('__CALLBACK_ID__', JSON.stringify(res || []));
@@ -1183,7 +1255,18 @@ class VegaProviderRunner(private val context: Context) {
             try {
                 const mod = (window.vegaModules['$providerValue'] || {})['episodes'];
                 if (mod) {
-                    const fn = mod.getEpisodes || mod.default?.getEpisodes;
+                    let fn = null;
+                    if (typeof mod === 'function') {
+                        fn = mod;
+                    } else {
+                        if (typeof mod.getEpisodes === 'function') {
+                            fn = mod.getEpisodes;
+                        } else if (mod.default && typeof mod.default === 'function') {
+                            fn = mod.default;
+                        } else if (mod.default && typeof mod.default.getEpisodes === 'function') {
+                            fn = mod.default.getEpisodes;
+                        }
+                    }
                     if (fn) {
                         const res = await fn({ url: '$safeUrl', providerContext: window.providerContext });
                         window.AndroidBridge.onResult('__CALLBACK_ID__', JSON.stringify(res || []));

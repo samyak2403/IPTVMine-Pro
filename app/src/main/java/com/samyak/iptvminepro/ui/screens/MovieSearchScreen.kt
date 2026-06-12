@@ -69,8 +69,7 @@ fun MovieSearchScreen(
             try {
                 val manifest = runner.fetchManifest(provider.url)
                 val installed = manifest.filter { it.value in installedExtensionsState }
-                val scrapers = if (installed.isNotEmpty()) installed else manifest.filter { !it.disabled }
-                selectedScraper = scrapers.firstOrNull()
+                selectedScraper = installed.firstOrNull()
             } catch (e: Exception) {
                 Log.e("MovieSearchScreen", "Error loading scrapers", e)
             } finally {
@@ -208,7 +207,7 @@ fun MovieSearchScreen(
                 } else if (movies.isEmpty() && !isLoading && !isScrapersLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            text = "No movies or shows found",
+                            text = if (installedExtensionsState.isEmpty()) "No extensions installed. Please install an extension from Settings." else "No movies or shows found",
                             color = Color(0xFF6B7280),
                             fontSize = 16.sp
                         )
