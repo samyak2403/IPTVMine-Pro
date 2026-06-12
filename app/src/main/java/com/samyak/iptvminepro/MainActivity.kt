@@ -47,6 +47,7 @@ import com.samyak.iptvminepro.ui.screens.AboutScreen
 import com.samyak.iptvminepro.ui.screens.ExtensionsScreen
 import com.samyak.iptvminepro.ui.screens.MovieDetailScreen
 import com.samyak.iptvminepro.ui.screens.CategoryMoviesScreen
+import com.samyak.iptvminepro.ui.screens.MovieSearchScreen
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -81,6 +82,7 @@ sealed class Screen(val route: String, val label: String, val icon: @Composable 
     object Extensions : Screen("extensions", "Extensions", { })
     object MovieDetail : Screen("movie_detail?link={link}&providerUrl={providerUrl}&scraperValue={scraperValue}", "Movie Detail", { })
     object CategoryMovies : Screen("category_movies?categoryName={categoryName}&categoryFilter={categoryFilter}&providerUrl={providerUrl}&scraperValue={scraperValue}", "Category Movies", { })
+    object MovieSearch : Screen("movie_search", "Movie Search", { })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -111,7 +113,8 @@ fun MainApp() {
                 currentRoute != Screen.MovieDetail.route &&
                 currentRoute != Screen.About.route &&
                 currentRoute != Screen.CategoryMovies.route &&
-                currentRoute != Screen.Extensions.route
+                currentRoute != Screen.Extensions.route &&
+                currentRoute != Screen.MovieSearch.route
             ) {
                 NavigationBar(
                     containerColor = Color.White // White background
@@ -151,7 +154,8 @@ fun MainApp() {
             if (currentRoute != null && 
                 currentRoute != Screen.MovieDetail.route &&
                 currentRoute != Screen.CategoryMovies.route &&
-                currentRoute != Screen.Extensions.route
+                currentRoute != Screen.Extensions.route &&
+                currentRoute != Screen.MovieSearch.route
             ) {
                 TopAppBar(
                     title = {
@@ -195,9 +199,8 @@ fun MainApp() {
                             currentRoute != Screen.CategoryDetail.route &&
                             currentRoute != Screen.About.route
                         ) {
-                            val context = androidx.compose.ui.platform.LocalContext.current
                             IconButton(onClick = { 
-                                context.startActivity(Intent(context, SearchActivity::class.java)) 
+                                navController.navigate(Screen.MovieSearch.route)
                             }) {
                                 Icon(Icons.Filled.Search, contentDescription = "Search")
                             }
@@ -322,6 +325,17 @@ fun MainApp() {
                 )
             }
             composable(Screen.About.route) { AboutScreen() }
+            composable(Screen.MovieSearch.route) {
+                MovieSearchScreen(
+                    navController = navController,
+                    onMovieClick = { post, scraper, provider ->
+                        val encodedLink = android.net.Uri.encode(post.link)
+                        val encodedProviderUrl = android.net.Uri.encode(provider.url)
+                        val scraperValue = scraper.value
+                        navController.navigate("movie_detail?link=$encodedLink&providerUrl=$encodedProviderUrl&scraperValue=$scraperValue")
+                    }
+                )
+            }
             composable(Screen.Extensions.route) { 
                 ExtensionsScreen(onNavigateBack = { navController.popBackStack() }) 
             }
