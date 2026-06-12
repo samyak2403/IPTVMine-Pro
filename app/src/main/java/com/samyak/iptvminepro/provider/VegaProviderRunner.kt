@@ -1377,8 +1377,8 @@ class VegaProviderRunner(private val context: Context) {
         patched = patched.replace(target1, replacement1)
 
         // 2. Add bypass for direct cloud/drive links in getStream
-        val target2 = "\"movie\"===type){const dotlinkText=(yield axios(`${'$'}{link}`,{headers:headers})).data;link=(dotlinkText.match(/<a\\s+href=\"([^\"]*cloud\\.[^\"]*)\"/i)||[])[1];"
-        val replacement2 = "\"movie\"===type && link && !link.includes(\"cloud\") && !link.includes(\"pixeld\") && !link.includes(\"dev\")){try{const dotlinkText=(yield axios(`${'$'}{link}`,{headers:headers})).data;const matchedLink=(dotlinkText.match(/<a\\s+href=\"([^\"]*cloud\\.[^\"]*)\"/i)||[])[1];if(matchedLink)link=matchedLink;}catch(e){console.log(\"dotlink error\",e);}}"
+        val target2 = "\"movie\"===type){"
+        val replacement2 = "\"movie\"===type && link && !link.includes(\"cloud\") && !link.includes(\"pixeld\") && !link.includes(\"dev\")){"
         patched = patched.replace(target2, replacement2)
         
         return patched
