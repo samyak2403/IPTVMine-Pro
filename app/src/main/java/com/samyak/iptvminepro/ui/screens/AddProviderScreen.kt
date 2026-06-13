@@ -82,38 +82,17 @@ fun AddProviderScreen(
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        // Provider Type Toggle Selector
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            FilterChip(
-                selected = providerType == ProviderType.IPTV,
-                onClick = { providerType = ProviderType.IPTV },
-                label = { Text("IPTV Playlist", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) },
-                modifier = Modifier.weight(1f),
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primary,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                )
-            )
-            FilterChip(
-                selected = providerType == ProviderType.VEGA,
-                onClick = { providerType = ProviderType.VEGA },
-                label = { Text("Vega Movies", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) },
-                modifier = Modifier.weight(1f),
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primary,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                )
-            )
-        }
-
         OutlinedTextField(
             value = title,
-            onValueChange = { title = it },
+            onValueChange = { 
+                title = it
+                val trimmedUrl = url.trim()
+                providerType = if (trimmedUrl.startsWith("@") || trimmedUrl.contains("vega", ignoreCase = true) || it.contains("vega", ignoreCase = true)) {
+                    ProviderType.VEGA
+                } else {
+                    ProviderType.IPTV
+                }
+            },
             label = { Text(stringResource(id = R.string.label_provider_title)) },
             placeholder = { Text(if (providerType == ProviderType.IPTV) stringResource(id = R.string.placeholder_provider_title) else "e.g. Vega-Org Scraper") },
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
@@ -122,7 +101,15 @@ fun AddProviderScreen(
 
         OutlinedTextField(
             value = url,
-            onValueChange = { url = it },
+            onValueChange = { 
+                url = it
+                val trimmed = it.trim()
+                providerType = if (trimmed.startsWith("@") || trimmed.contains("vega", ignoreCase = true) || title.contains("vega", ignoreCase = true)) {
+                    ProviderType.VEGA
+                } else {
+                    ProviderType.IPTV
+                }
+            },
             label = { Text(if (providerType == ProviderType.IPTV) stringResource(id = R.string.label_playlist_url) else "Provider URL or identifier (e.g. @vega-org)") },
             placeholder = { Text(if (providerType == ProviderType.IPTV) stringResource(id = R.string.placeholder_url) else "@vega-org or URL") },
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
