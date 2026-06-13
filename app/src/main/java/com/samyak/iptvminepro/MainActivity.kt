@@ -63,6 +63,7 @@ import androidx.compose.material.icons.outlined.Movie
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.samyak.iptvminepro.download.DownloadManager.init(applicationContext)
         setContent {
             IPTVMineProTheme {
                 MainApp()
@@ -85,6 +86,7 @@ sealed class Screen(val route: String, val label: String, val icon: @Composable 
     object MovieDetail : Screen("movie_detail?link={link}&providerUrl={providerUrl}&scraperValue={scraperValue}", "Movie Detail", { })
     object CategoryMovies : Screen("category_movies?categoryName={categoryName}&categoryFilter={categoryFilter}&providerUrl={providerUrl}&scraperValue={scraperValue}", "Category Movies", { })
     object MovieSearch : Screen("movie_search", "Movie Search", { })
+    object Downloads : Screen("downloads", "Downloads", { })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -133,7 +135,8 @@ fun MainApp() {
                 currentRoute != Screen.About.route &&
                 currentRoute != Screen.CategoryMovies.route &&
                 currentRoute != Screen.Extensions.route &&
-                currentRoute != Screen.MovieSearch.route
+                currentRoute != Screen.MovieSearch.route &&
+                currentRoute != Screen.Downloads.route
             ) {
                 NavigationBar(
                     containerColor = Color.White // White background
@@ -183,6 +186,7 @@ fun MainApp() {
                             Screen.AddProvider.route -> "Add Provider"
                             Screen.About.route -> "About App"
                             Screen.CategoryDetail.route -> categoryName ?: "Category"
+                            Screen.Downloads.route -> "Downloads"
                             else -> "IPTV Mine Pro"
                         }
                         Text(title)
@@ -191,7 +195,8 @@ fun MainApp() {
                         if (currentRoute == Screen.ProviderList.route ||
                             currentRoute == Screen.AddProvider.route ||
                             currentRoute == Screen.CategoryDetail.route ||
-                            currentRoute == Screen.About.route
+                            currentRoute == Screen.About.route ||
+                            currentRoute == Screen.Downloads.route
                         ) {
                             FilledIconButton(
                                 onClick = { navController.popBackStack() },
@@ -216,7 +221,8 @@ fun MainApp() {
                         if (currentRoute != Screen.ProviderList.route &&
                             currentRoute != Screen.AddProvider.route &&
                             currentRoute != Screen.CategoryDetail.route &&
-                            currentRoute != Screen.About.route
+                            currentRoute != Screen.About.route &&
+                            currentRoute != Screen.Downloads.route
                         ) {
                             IconButton(onClick = { 
                                 navController.navigate(Screen.MovieSearch.route)
@@ -296,8 +302,14 @@ fun MainApp() {
                 SettingsScreen(
                     onNavigateToProviders = { navController.navigate(Screen.ProviderList.route) },
                     onNavigateToExtensions = { navController.navigate(Screen.Extensions.route) },
-                    onNavigateToAbout = { navController.navigate(Screen.About.route) }
+                    onNavigateToAbout = { navController.navigate(Screen.About.route) },
+                    onNavigateToDownloads = { navController.navigate(Screen.Downloads.route) }
                 ) 
+            }
+            composable(Screen.Downloads.route) {
+                com.samyak.iptvminepro.ui.screens.DownloadsScreen(
+                    navController = navController
+                )
             }
             composable(
                 route = Screen.MovieDetail.route,

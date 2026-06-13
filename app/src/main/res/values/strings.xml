@@ -75,4 +75,10 @@
     <string name="setting_terms_conditions">Terms &amp; Conditions</string>
     <string name="setting_disclaimer">Disclaimer</string>
     <string name="desc_navigate">Navigate</string>
+    <string name="setting_downloads">Downloads</string>
+    <string name="tab_downloading">Downloading</string>
+    <string name="tab_downloaded">Downloaded</string>
+    <string name="no_downloads_active">No active downloads</string>
+    <string name="no_downloads_completed">No completed downloads</string>
+    <string name="msg_added_to_downloads">Added to downloads queue</string>
 </resources>
