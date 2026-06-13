@@ -19,10 +19,13 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.util.Rational
+import android.view.GestureDetector
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import android.media.AudioManager
 import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -60,6 +63,22 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var youtubeOverlay: YouTubeOverlay
     private lateinit var progressBar: ProgressBar
     private lateinit var errorTextView: TextView
+
+    // Brightness and volume gesture controls
+    private lateinit var brightnessControlPanel: LinearLayout
+    private lateinit var brightnessProgressBar: ProgressBar
+    private lateinit var brightnessText: TextView
+    private lateinit var volumeControlPanel: LinearLayout
+    private lateinit var volumeProgressBar: ProgressBar
+    private lateinit var volumeText: TextView
+    private lateinit var swipeGestureDetector: GestureDetector
+    private var volumeAccumulator = 0f
+    private var isScrolling = false
+    private val hidePanelsHandler = Handler(Looper.getMainLooper())
+    private val hidePanelsRunnable = Runnable {
+        brightnessControlPanel.visibility = View.GONE
+        volumeControlPanel.visibility = View.GONE
+    }
     private lateinit var backBtn: ImageButton
     private lateinit var playPauseBtn: ImageButton
     private lateinit var fullScreenBtn: ImageButton
@@ -204,6 +223,16 @@ class PlayerActivity : AppCompatActivity() {
         youtubeOverlay = findViewById(R.id.youtube_overlay)
         progressBar = findViewById(R.id.progressBar)
         errorTextView = findViewById(R.id.errorTextView)
+
+        // Volume and brightness control overlays
+        brightnessControlPanel = findViewById(R.id.brightness_control_panel)
+        brightnessProgressBar = findViewById(R.id.brightness_progressbar)
+        brightnessText = findViewById(R.id.brightness_text)
+        volumeControlPanel = findViewById(R.id.volume_control_panel)
+        volumeProgressBar = findViewById(R.id.volume_progressbar)
+        volumeText = findViewById(R.id.volume_text)
+
+        setupSwipeGestures()
 
         backBtn = playerView.findViewById(R.id.backBtn)
         playPauseBtn = playerView.findViewById(R.id.playPauseBtn)
@@ -1483,6 +1512,7 @@ class PlayerActivity : AppCompatActivity() {
         try {
             stopProgressBarUpdates()
             releasePlayer()
+            hidePanelsHandler.removeCallbacksAndMessages(null)
             progressBarHandler?.removeCallbacksAndMessages(null)
             progressBarHandler = null
             progressBarRunnable = null
@@ -1532,5 +1562,132 @@ class PlayerActivity : AppCompatActivity() {
         playerView.visibility = View.GONE
         progressBar.visibility = View.GONE
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupSwipeGestures() {
+        swipeGestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean {
+                volumeAccumulator = 0f
+                isScrolling = false
+                return true
+            }
+
+            override fun onScroll(
+                e1: MotionEvent?,
+                e2: MotionEvent,
+                distanceX: Float,
+                distanceY: Float
+            ): Boolean {
+                isScrolling = true
+                val startEvent = e1 ?: return false
+                val viewWidth = playerView.width
+
+                // Disney+ Hotstar UI: Left 50% = Brightness, Right 50% = Volume
+                if (startEvent.x < viewWidth * 0.5f) {
+                    adjustBrightness(distanceY)
+                } else {
+                    adjustVolume(distanceY)
+                }
+                return true
+            }
+        })
+
+        playerView.setOnTouchListener { _, event ->
+            swipeGestureDetector.onTouchEvent(event)
+
+            val action = event.action
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                val wasScrolling = isScrolling
+                if (isScrolling) {
+                    hidePanelsWithDelay()
+                }
+                isScrolling = false
+                wasScrolling
+            } else {
+                isScrolling
+            }
+        }
+    }
+
+    private fun adjustBrightness(distanceY: Float) {
+        val layoutParams = window.attributes
+        var currentBrightness = layoutParams.screenBrightness
+
+        if (currentBrightness < 0) {
+            currentBrightness = try {
+                android.provider.Settings.System.getInt(
+                    contentResolver,
+                    android.provider.Settings.System.SCREEN_BRIGHTNESS
+                ) / 255f
+            } catch (e: Exception) {
+                0.5f
+            }
+        }
+
+        val delta = distanceY / playerView.height
+        var newBrightness = currentBrightness + delta
+        newBrightness = newBrightness.coerceIn(0.01f, 1.0f)
+
+        layoutParams.screenBrightness = newBrightness
+        window.attributes = layoutParams
+
+        showBrightnessPanel((newBrightness * 100).toInt())
+    }
+
+    private fun adjustVolume(distanceY: Float) {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+
+        val delta = (distanceY / playerView.height) * maxVolume
+        volumeAccumulator += delta
+
+        val volumeChange = volumeChangeForScroll(volumeAccumulator)
+        if (volumeChange != 0) {
+            var newVolume = currentVolume + volumeChange
+            newVolume = newVolume.coerceIn(0, maxVolume)
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
+            volumeAccumulator -= volumeChange
+            showVolumePanel(newVolume, maxVolume)
+        } else {
+            showVolumePanel(currentVolume, maxVolume)
+        }
+    }
+
+    private fun volumeChangeForScroll(accumulator: Float): Int {
+        return if (accumulator >= 1.0f) {
+            accumulator.toInt()
+        } else if (accumulator <= -1.0f) {
+            accumulator.toInt()
+        } else {
+            0
+        }
+    }
+
+    private fun showBrightnessPanel(percentage: Int) {
+        hidePanelsHandler.removeCallbacks(hidePanelsRunnable)
+
+        volumeControlPanel.visibility = View.GONE
+        brightnessControlPanel.visibility = View.VISIBLE
+
+        brightnessProgressBar.progress = percentage
+        brightnessText.text = "$percentage%"
+    }
+
+    private fun showVolumePanel(volume: Int, maxVolume: Int) {
+        hidePanelsHandler.removeCallbacks(hidePanelsRunnable)
+
+        brightnessControlPanel.visibility = View.GONE
+        volumeControlPanel.visibility = View.VISIBLE
+
+        val percentage = ((volume.toFloat() / maxVolume) * 100).toInt()
+        volumeProgressBar.progress = percentage
+        volumeText.text = "$percentage%"
+    }
+
+    private fun hidePanelsWithDelay() {
+        hidePanelsHandler.removeCallbacks(hidePanelsRunnable)
+        hidePanelsHandler.postDelayed(hidePanelsRunnable, 1000L)
     }
 }
