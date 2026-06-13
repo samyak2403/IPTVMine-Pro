@@ -47,6 +47,8 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.samyak.doubletapplayerview.DoubleTapPlayerView
+import com.samyak.doubletapplayerview.youtube.YouTubeOverlay
 import com.samyak.player.R
 
 
@@ -54,7 +56,8 @@ import com.samyak.player.R
 class PlayerActivity : AppCompatActivity() {
 
     private var player: ExoPlayer? = null
-    private lateinit var playerView: PlayerView
+    private lateinit var playerView: DoubleTapPlayerView
+    private lateinit var youtubeOverlay: YouTubeOverlay
     private lateinit var progressBar: ProgressBar
     private lateinit var errorTextView: TextView
     private lateinit var backBtn: ImageButton
@@ -198,6 +201,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun initializeViews() {
         playerView = findViewById(R.id.playerView)
+        youtubeOverlay = findViewById(R.id.youtube_overlay)
         progressBar = findViewById(R.id.progressBar)
         errorTextView = findViewById(R.id.errorTextView)
 
@@ -427,6 +431,19 @@ class PlayerActivity : AppCompatActivity() {
             playerView.controllerHideOnTouch = true
             playerView.controllerShowTimeoutMs = 3000
             playerView.setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+
+            youtubeOverlay
+                .player(player!!)
+                .playerView(playerView)
+                .performListener(object : YouTubeOverlay.PerformListener {
+                    override fun onAnimationStart() {
+                        youtubeOverlay.visibility = View.VISIBLE
+                    }
+
+                    override fun onAnimationEnd() {
+                        youtubeOverlay.visibility = View.GONE
+                    }
+                })
 
             val mediaItem = detectAndCreateMediaItem(channelStreamUrl ?: "")
 

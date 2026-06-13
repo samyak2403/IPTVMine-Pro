@@ -25,3 +25,4 @@ dependencyResolutionManagement {
 rootProject.name = "IPTVMine Pro"
 include(":app")
 include(":Player")
+include(":doubletapplayerview")

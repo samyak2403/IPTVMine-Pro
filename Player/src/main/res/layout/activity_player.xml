@@ -4,7 +4,7 @@
     android:layout_height="match_parent"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <androidx.media3.ui.PlayerView
+    <com.samyak.doubletapplayerview.DoubleTapPlayerView
         android:id="@+id/playerView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -14,7 +14,16 @@
         app:controller_layout_id="@layout/custom_controller"
         app:player_layout_id="@layout/exo_player_view"
         app:use_controller="true"
-        app:resize_mode="fit" />
+        app:resize_mode="fit"
+        app:dtpv_controller="@+id/youtube_overlay" />
+
+    <com.samyak.doubletapplayerview.youtube.YouTubeOverlay
+        android:id="@+id/youtube_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_centerInParent="true"
+        android:visibility="invisible"
+        app:yt_playerView="@+id/playerView" />
 
     <ProgressBar
         android:id="@+id/progressBar"
