@@ -2,8 +2,12 @@ package com.samyak.iptvminepro.utils
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 
 object NetworkUtils {
     
@@ -51,6 +55,45 @@ object NetworkUtils {
             val networkInfo = connectivityManager.activeNetworkInfo
             @Suppress("DEPRECATION")
             networkInfo?.typeName ?: "No Connection"
+        }
+    }
+
+    /**
+     * Observe device network connectivity changes dynamically.
+     */
+    fun observeConnectivity(context: Context): Flow<Boolean> = callbackFlow {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        if (connectivityManager == null) {
+            trySend(false)
+            close()
+            return@callbackFlow
+        }
+
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                trySend(true)
+            }
+
+            override fun onLost(network: Network) {
+                trySend(false)
+            }
+        }
+
+        try {
+            connectivityManager.registerDefaultNetworkCallback(callback)
+        } catch (e: Exception) {
+            trySend(isNetworkAvailable(context))
+        }
+        
+        // Emit current initial state
+        trySend(isNetworkAvailable(context))
+
+        awaitClose {
+            try {
+                connectivityManager.unregisterNetworkCallback(callback)
+            } catch (e: Exception) {
+                // Ignore
+            }
         }
     }
 }

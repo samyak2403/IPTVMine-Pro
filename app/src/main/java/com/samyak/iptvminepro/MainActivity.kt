@@ -19,6 +19,8 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
@@ -97,13 +99,30 @@ fun MainApp() {
     )
 
     val context = androidx.compose.ui.platform.LocalContext.current
-    val repository = androidx.compose.runtime.remember { com.samyak.iptvminepro.provider.ProviderRepository(context) }
+    val repository = remember { com.samyak.iptvminepro.provider.ProviderRepository(context) }
     val channelsViewModel: com.samyak.iptvminepro.provider.ChannelsProvider = viewModel()
     val startDestination = if (repository.getProviders().isEmpty()) Screen.AddProvider.route else Screen.Home.route
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = Color(0xFF26A69A),
+    val isConnected by remember(context) {
+        com.samyak.iptvminepro.utils.NetworkUtils.observeConnectivity(context)
+    }.collectAsState(initial = com.samyak.iptvminepro.utils.NetworkUtils.isNetworkAvailable(context))
+
+    if (!isConnected) {
+        com.samyak.iptvminepro.ui.screens.NoInternetScreen(
+            onRetry = {
+                if (!com.samyak.iptvminepro.utils.NetworkUtils.isNetworkAvailable(context)) {
+                    android.widget.Toast.makeText(
+                        context,
+                        context.getString(R.string.msg_still_offline),
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        )
+    } else {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = Color(0xFF26A69A),
         bottomBar = {
             val navBackStackEntry by navController.currentBackStackEntryAsState()
             val currentRoute = navBackStackEntry?.destination?.route
@@ -365,5 +384,6 @@ fun MainApp() {
                 )
             }
         }
+    }
     }
 }

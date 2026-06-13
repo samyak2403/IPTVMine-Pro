@@ -21,6 +21,12 @@
     <string name="msg_provider_updated">Provider updated successfully!</string>
     <string name="btn_save_provider">Save Provider</string>
 
+    <!-- No Internet Screen -->
+    <string name="title_no_internet">No Internet Connection</string>
+    <string name="msg_no_internet">Please check your network settings and try again.</string>
+    <string name="btn_retry">Retry</string>
+    <string name="msg_still_offline">Still offline. Please check your connection.</string>
+
     <!-- Category Detail -->
     <string name="msg_no_channels_in_category">No channels found in this category</string>
     <string name="msg_match_not_live">This match is not live yet!</string>
