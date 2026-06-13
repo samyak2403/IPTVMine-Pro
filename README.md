@@ -1,5 +1,8 @@
 # IPTVMine Pro
 
+> [!WARNING]
+> **This project is currently under construction.** Features are being actively developed and some parts of the codebase might be unstable.
+
 IPTVMine Pro is a powerful and versatile Android IPTV application built with modern technologies. It allows users to stream Live TV, Movies, and TV Shows by integrating custom provider sources (M3U or Vega-compatible extensions).
 
 ## 🚀 Features
@@ -42,7 +45,7 @@ IPTVMine Pro is a powerful and versatile Android IPTV application built with mod
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/IPTVMine-Pro.git
+   git clone https://github.com/samyak2403/IPTVMine-Pro.git
    ```
 2. Open the project in Android Studio.
 3. Sync Project with Gradle Files.
