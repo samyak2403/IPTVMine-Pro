@@ -51,6 +51,52 @@ class VegaProviderRunner(private val context: Context) {
         }
     }
 
+    private val dohDns = object : Dns {
+        override fun lookup(hostname: String): List<java.net.InetAddress> {
+            if (hostname == "8.8.8.8" || hostname == "8.8.4.4" || hostname == "dns.google") {
+                return Dns.SYSTEM.lookup(hostname)
+            }
+            
+            try {
+                val url = "https://8.8.8.8/resolve?name=$hostname&type=A"
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Accept", "application/json")
+                    .build()
+                
+                val dnsClient = OkHttpClient.Builder()
+                    .connectTimeout(5, TimeUnit.SECONDS)
+                    .readTimeout(5, TimeUnit.SECONDS)
+                    .build()
+                
+                dnsClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string() ?: ""
+                        val json = JSONObject(body)
+                        if (json.has("Answer")) {
+                            val answer = json.getJSONArray("Answer")
+                            val list = mutableListOf<java.net.InetAddress>()
+                            for (i in 0 until answer.length()) {
+                                val obj = answer.getJSONObject(i)
+                                val type = obj.optInt("type", 1)
+                                if (type == 1) { // Type A
+                                    val data = obj.getString("data")
+                                    list.addAll(java.net.InetAddress.getAllByName(data))
+                                }
+                            }
+                            if (list.isNotEmpty()) {
+                                return list
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "DoH lookup failed for $hostname: ${e.message}")
+            }
+            return Dns.SYSTEM.lookup(hostname)
+        }
+    }
+
     private val httpClient = OkHttpClient.Builder()
         .protocols(listOf(Protocol.HTTP_1_1))
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -59,6 +105,7 @@ class VegaProviderRunner(private val context: Context) {
         .followRedirects(true)
         .followSslRedirects(true)
         .cookieJar(cookieJar)
+        .dns(dohDns)
         .addInterceptor { chain ->
             // Retry interceptor: retry up to 2 times on failure
             var lastException: Exception? = null
@@ -395,6 +442,129 @@ class VegaProviderRunner(private val context: Context) {
         if (isCompatInjected) return
 
         val compatJs = """
+            // Helper parsing and query functions for cheerio polyfill
+            function splitByComma(str) {
+                const parts = [];
+                let current = "";
+                let inQuote = null;
+                let parenDepth = 0;
+                for (let i = 0; i < str.length; i++) {
+                    const char = str[i];
+                    if (inQuote) {
+                        if (char === inQuote && (i === 0 || str[i - 1] !== '\\')) {
+                            inQuote = null;
+                        }
+                        current += char;
+                    } else {
+                        if ((char === '"' || char === "'") && (i === 0 || str[i - 1] !== '\\')) {
+                            inQuote = char;
+                            current += char;
+                        } else if (char === '(') {
+                            parenDepth++;
+                            current += char;
+                        } else if (char === ')') {
+                            parenDepth--;
+                            current += char;
+                        } else if (char === ',' && parenDepth === 0) {
+                            parts.push(current.trim());
+                            current = "";
+                        } else {
+                            current += char;
+                        }
+                    }
+                }
+                if (current) {
+                    parts.push(current.trim());
+                }
+                return parts;
+            }
+
+            function safeQuery(root, selector) {
+                if (!selector) return [];
+                const parts = splitByComma(selector);
+                if (parts.length > 1) {
+                    const results = [];
+                    const seen = new Set();
+                    parts.forEach(part => {
+                        const elms = safeQuery(root, part);
+                        elms.forEach(el => {
+                            if (!seen.has(el)) {
+                                seen.add(el);
+                                results.push(el);
+                            }
+                        });
+                    });
+                    return results;
+                }
+                
+                selector = selector.trim();
+                const containsRegex = /:contains\((['"]?)(.*?)\1\)/;
+                const match = selector.match(containsRegex);
+                if (!match) {
+                    try {
+                        return root.querySelectorAll ? Array.from(root.querySelectorAll(selector)) : [];
+                    } catch (e) {
+                        console.warn("Failed querySelectorAll for selector:", selector, e);
+                        return [];
+                    }
+                }
+                
+                const fullMatch = match[0];
+                const searchText = match[2];
+                const matchIndex = selector.indexOf(fullMatch);
+                
+                let leftPart = selector.substring(0, matchIndex).trim();
+                let rightPart = selector.substring(matchIndex + fullMatch.length).trim();
+                
+                if (!leftPart) {
+                    leftPart = "*";
+                }
+                
+                let leftElements = safeQuery(root, leftPart);
+                let filteredElements = leftElements.filter(el => {
+                    const text = el.textContent || "";
+                    return text.includes(searchText);
+                });
+                
+                if (!rightPart) {
+                    return filteredElements;
+                }
+                
+                const finalResults = [];
+                const seen = new Set();
+                filteredElements.forEach(el => {
+                    const rightElements = safeQuery(el, rightPart);
+                    rightElements.forEach(rel => {
+                        if (!seen.has(rel)) {
+                            seen.add(rel);
+                            finalResults.push(rel);
+                        }
+                    });
+                });
+                
+                return finalResults;
+            }
+
+            function safeMatches(el, selector, doc) {
+                if (!el || !selector) return false;
+                try {
+                    if (!selector.includes(':contains')) {
+                        return el.matches(selector);
+                    }
+                    const simpleContainsRegex = /^([^:\s]+):contains\((['"]?)(.*?)\1\)$/;
+                    const match = selector.trim().match(simpleContainsRegex);
+                    if (match) {
+                        const baseSelector = match[1];
+                        const text = match[3];
+                        return el.matches(baseSelector) && (el.textContent || "").includes(text);
+                    }
+                    const allMatched = safeQuery(doc || el.ownerDocument || document, selector);
+                    return allMatched.includes(el);
+                } catch (e) {
+                    return false;
+                }
+            }
+
             // Polyfill process environment to prevent crashes in scrapers
             window.process = window.process || { env: {} };
 
@@ -567,15 +737,17 @@ class VegaProviderRunner(private val context: Context) {
                                     } else {
                                         rawContext = context;
                                     }
-                                    if (rawContext && rawContext.querySelectorAll) {
-                                        elements = Array.from(rawContext.querySelectorAll(selector));
-                                    } else if (rawContext && rawContext.length && rawContext[0] && rawContext[0].querySelectorAll) {
-                                        elements = Array.from(rawContext[0].querySelectorAll(selector));
-                                    } else if (rawContext && rawContext._el && rawContext._el.querySelectorAll) {
-                                        elements = Array.from(rawContext._el.querySelectorAll(selector));
+                                    if (rawContext) {
+                                        elements = safeQuery(rawContext, selector);
+                                    } else if (rawContext && rawContext.length && rawContext[0]) {
+                                        elements = safeQuery(rawContext[0], selector);
+                                    } else if (rawContext && rawContext._el) {
+                                        elements = safeQuery(rawContext._el, selector);
+                                    } else {
+                                        elements = [];
                                     }
                                 } else {
-                                    elements = Array.from(doc.querySelectorAll(selector));
+                                    elements = safeQuery(doc, selector);
                                 }
                                 return wrapElements(elements, doc);
                             }
@@ -677,11 +849,9 @@ class VegaProviderRunner(private val context: Context) {
                     find: function(selector) {
                         const found = [];
                         elements.forEach(el => {
-                            if (el.querySelectorAll) {
-                                el.querySelectorAll(selector).forEach(subEl => {
-                                    found.push(subEl);
-                                });
-                            }
+                            safeQuery(el, selector).forEach(subEl => {
+                                found.push(subEl);
+                            });
                         });
                         return wrapElements(found, doc);
                     },
@@ -690,7 +860,7 @@ class VegaProviderRunner(private val context: Context) {
                         elements.forEach(el => {
                             let next = el.nextElementSibling;
                             while (next) {
-                                if (!selector || next.matches(selector)) {
+                                if (!selector || safeMatches(next, selector, doc)) {
                                     nextEls.push(next);
                                     break;
                                 }
@@ -704,7 +874,7 @@ class VegaProviderRunner(private val context: Context) {
                         elements.forEach(el => {
                             let prev = el.previousElementSibling;
                             while (prev) {
-                                if (!selector || prev.matches(selector)) {
+                                if (!selector || safeMatches(prev, selector, doc)) {
                                     prevEls.push(prev);
                                     break;
                                 }
@@ -718,7 +888,7 @@ class VegaProviderRunner(private val context: Context) {
                         elements.forEach(el => {
                             let next = el.nextElementSibling;
                             while (next) {
-                                if (selector && next.matches(selector)) break;
+                                if (selector && safeMatches(next, selector, doc)) break;
                                 els.push(next);
                                 next = next.nextElementSibling;
                             }
@@ -747,7 +917,7 @@ class VegaProviderRunner(private val context: Context) {
                         elements.forEach(el => {
                             if (el.children) {
                                 Array.from(el.children).forEach(child => {
-                                    if (!selector || child.matches(selector)) {
+                                    if (!selector || safeMatches(child, selector, doc)) {
                                         childEls.push(child);
                                     }
                                 });
@@ -782,7 +952,7 @@ class VegaProviderRunner(private val context: Context) {
                     },
                     filter: function(selector) {
                         if (typeof selector === 'string') {
-                            return wrapElements(elements.filter(el => el.matches(selector)), doc);
+                            return wrapElements(elements.filter(el => safeMatches(el, selector, doc)), doc);
                         } else if (typeof selector === 'function') {
                             return wrapElements(elements.filter((el, idx) => {
                                 const mockNode = createMockNode(el);
@@ -803,7 +973,7 @@ class VegaProviderRunner(private val context: Context) {
                         return elements.some(el => el.classList && el.classList.contains(className));
                     },
                     is: function(selector) {
-                        return elements.some(el => el.matches && el.matches(selector));
+                        return elements.some(el => safeMatches(el, selector, doc));
                     },
                     toArray: function() {
                         return Array.from(elements).map(el => wrapElements([el], doc));
@@ -851,7 +1021,7 @@ class VegaProviderRunner(private val context: Context) {
                         elements.forEach(el => {
                             if (el.parentElement) {
                                 Array.from(el.parentElement.children).forEach(sibling => {
-                                    if (sibling !== el && (!selector || sibling.matches(selector))) {
+                                    if (sibling !== el && (!selector || safeMatches(sibling, selector, doc))) {
                                         siblingEls.push(sibling);
                                     }
                                 });
@@ -886,7 +1056,7 @@ class VegaProviderRunner(private val context: Context) {
                     },
                     not: function(selector) {
                         if (typeof selector === 'string') {
-                            return wrapElements(elements.filter(el => !el.matches(selector)), doc);
+                            return wrapElements(elements.filter(el => !safeMatches(el, selector, doc)), doc);
                         }
                         return this;
                     },
@@ -945,6 +1115,12 @@ class VegaProviderRunner(private val context: Context) {
                 var js = fetchFile(fileUrl)
                 if (providerValue.equals("vega", ignoreCase = true) && module == "stream") {
                     js = patchVegaStreamJs(js)
+                }
+                if (providerValue.equals("vega", ignoreCase = true) && module == "meta") {
+                    js = patchVegaMetaJs(js)
+                }
+                if ((providerValue.equals("hdhub", ignoreCase = true) || providerValue.equals("hdhub4u", ignoreCase = true)) && module == "meta") {
+                    js = patchHdhubMetaJs(js)
                 }
                 val base64Js = android.util.Base64.encodeToString(js.toByteArray(), android.util.Base64.NO_WRAP)
                 val wrapper = """
@@ -1463,6 +1639,58 @@ class VegaProviderRunner(private val context: Context) {
         val target2 = "\"movie\"===type){"
         val replacement2 = "\"movie\"===type && link && !link.includes(\"cloud\") && !link.includes(\"pixeld\") && !link.includes(\"dev\")){"
         patched = patched.replace(target2, replacement2)
+        
+        return patched
+    }
+
+    private fun patchHdhubMetaJs(js: String): String {
+        var patched = js
+        
+        // 1. Broaden the container to support standard WordPress entry-content classes
+        patched = patched.replace(
+            "container=$(\".page-body\")",
+            "container=$(\".entry-content, .post-inner, .post-content, .page-body, .page-content, article, #content\")"
+        )
+        
+        // 2. Fix the title selector which was hardcoded to Google search result attributes
+        patched = patched.replace(
+            "title=container.find('h2[data-ved=\"2ahUKEwjL0NrBk4vnAhWlH7cAHRCeAlwQ3B0oATAfegQIFBAM\"],h2[data-ved=\"2ahUKEwiP0pGdlermAhUFYVAKHV8tAmgQ3B0oATAZegQIDhAM\"]').text()",
+            "title=($(\"h1.entry-title, h1.post-title, h1.title, .entry-title, h1\").first().text().trim() || container.find(\"h2\").first().text().trim() || \"\")"
+        )
+        
+        // 3. Fallback for image sourcing
+        patched = patched.replace(
+            "image=container.find('img[decoding=\"async\"]').attr(\"src\")||\"\"",
+            "image=(container.find('img[decoding=\"async\"]').attr(\"src\") || container.find('img[data-lazy-src]').attr('data-lazy-src') || container.find('img').first().attr('src') || \"\")"
+        )
+        
+        // 4. Fallback for synopsis
+        patched = patched.replace(
+            "synopsis=container.find('strong:contains(\"DESCRIPTION\")').parent().text().replace(\"DESCRIPTION:\",\"\")",
+            "synopsis=(container.find('strong:contains(\"DESCRIPTION\"), strong:contains(\"PLOT\"), strong:contains(\"Synopsis\"), strong:contains(\"Story\")').parent().text().replace(/DESCRIPTION:|PLOT:|Synopsis:|Story:/gi, \"\").trim() || container.find('.synopsis').text().trim() || \"\")"
+        )
+        
+        return patched
+    }
+
+    private fun patchVegaMetaJs(js: String): String {
+        var patched = js
+        
+        // 1. Broaden the title selector to support standard entry-title and h1 classes
+        patched = patched.replace(
+            "let title=$(\"h1.post-title\").text().trim();",
+            "let title=$(\"h1.entry-title, h1.post-title, h1.title, .entry-title, h1\").first().text().trim();"
+        )
+        
+        // 2. Prevent crash if 'list' is undefined when no hr is found
+        patched = patched.replace(
+            "return list.each((index,element)=>{",
+            "if(list){list.each((index,element)=>{"
+        )
+        patched = patched.replace(
+            "}),{title:title,synopsis:synopsis,image:image,imdbId:imdbId,type:type,linkList:links}",
+            "});}return {title:title,synopsis:synopsis,image:image,imdbId:imdbId,type:type,linkList:links}"
+        )
         
         return patched
     }

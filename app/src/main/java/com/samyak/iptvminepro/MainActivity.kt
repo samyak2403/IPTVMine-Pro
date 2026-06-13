@@ -46,6 +46,7 @@ import com.samyak.iptvminepro.ui.screens.PlayerScreen
 import com.samyak.iptvminepro.ui.screens.CategoryScreen
 import com.samyak.iptvminepro.ui.screens.CategoryDetailScreen
 import com.samyak.iptvminepro.ui.screens.AboutScreen
+import com.samyak.iptvminepro.ui.screens.BugReportScreen
 import com.samyak.iptvminepro.ui.screens.ExtensionsScreen
 import com.samyak.iptvminepro.ui.screens.MovieDetailScreen
 import com.samyak.iptvminepro.ui.screens.CategoryMoviesScreen
@@ -87,6 +88,7 @@ sealed class Screen(val route: String, val label: String, val icon: @Composable 
     object CategoryMovies : Screen("category_movies?categoryName={categoryName}&categoryFilter={categoryFilter}&providerUrl={providerUrl}&scraperValue={scraperValue}", "Category Movies", { })
     object MovieSearch : Screen("movie_search", "Movie Search", { })
     object Downloads : Screen("downloads", "Downloads", { })
+    object BugReport : Screen("bug_report", "Report Bug", { })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -136,7 +138,8 @@ fun MainApp() {
                 currentRoute != Screen.CategoryMovies.route &&
                 currentRoute != Screen.Extensions.route &&
                 currentRoute != Screen.MovieSearch.route &&
-                currentRoute != Screen.Downloads.route
+                currentRoute != Screen.Downloads.route &&
+                currentRoute != Screen.BugReport.route
             ) {
                 NavigationBar(
                     containerColor = Color.White // White background
@@ -187,6 +190,7 @@ fun MainApp() {
                             Screen.About.route -> "About App"
                             Screen.CategoryDetail.route -> categoryName ?: "Category"
                             Screen.Downloads.route -> "Downloads"
+                            Screen.BugReport.route -> "Report Bug"
                             else -> "IPTV Mine Pro"
                         }
                         Text(title)
@@ -196,7 +200,8 @@ fun MainApp() {
                             currentRoute == Screen.AddProvider.route ||
                             currentRoute == Screen.CategoryDetail.route ||
                             currentRoute == Screen.About.route ||
-                            currentRoute == Screen.Downloads.route
+                            currentRoute == Screen.Downloads.route ||
+                            currentRoute == Screen.BugReport.route
                         ) {
                             FilledIconButton(
                                 onClick = { navController.popBackStack() },
@@ -222,7 +227,8 @@ fun MainApp() {
                             currentRoute != Screen.AddProvider.route &&
                             currentRoute != Screen.CategoryDetail.route &&
                             currentRoute != Screen.About.route &&
-                            currentRoute != Screen.Downloads.route
+                            currentRoute != Screen.Downloads.route &&
+                            currentRoute != Screen.BugReport.route
                         ) {
                             IconButton(onClick = { 
                                 navController.navigate(Screen.MovieSearch.route)
@@ -303,7 +309,8 @@ fun MainApp() {
                     onNavigateToProviders = { navController.navigate(Screen.ProviderList.route) },
                     onNavigateToExtensions = { navController.navigate(Screen.Extensions.route) },
                     onNavigateToAbout = { navController.navigate(Screen.About.route) },
-                    onNavigateToDownloads = { navController.navigate(Screen.Downloads.route) }
+                    onNavigateToDownloads = { navController.navigate(Screen.Downloads.route) },
+                    onNavigateToBugReport = { navController.navigate(Screen.BugReport.route) }
                 ) 
             }
             composable(Screen.Downloads.route) {
@@ -356,6 +363,7 @@ fun MainApp() {
                 )
             }
             composable(Screen.About.route) { AboutScreen() }
+            composable(Screen.BugReport.route) { BugReportScreen() }
             composable(Screen.MovieSearch.route) {
                 MovieSearchScreen(
                     navController = navController,

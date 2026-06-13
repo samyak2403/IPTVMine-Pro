@@ -69,12 +69,10 @@ Several files contain placeholders and unimplemented functions that are currentl
 
 This table is reserved for logging active runtime errors, UI bugs, or customer-reported issues. 
 
-> [!NOTE]
-> No active bugs have been reported or added to this registry yet. All identified issues above are static analysis warnings and functional TODOs.
-
 | Bug ID | Description | Component | Severity | Status | Target Fix Version |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| *None* | *No active bugs registered yet* | *N/A* | *N/A* | *N/A* | *N/A* |
+| BUG-001 | Clicking movie cards from HDHub4u extension opens empty details screen. | Scraper / VegaProviderRunner | High | Resolved | v1.0.1 |
+
 
 ---
 

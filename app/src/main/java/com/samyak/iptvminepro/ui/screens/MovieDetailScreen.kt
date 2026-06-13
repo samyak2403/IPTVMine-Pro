@@ -121,7 +121,12 @@ fun MovieDetailScreen(
         isLoading = true
         error = null
         try {
-            meta = runner.getMeta(providerUrl, scraperValue, link)
+            val resolvedMeta = runner.getMeta(providerUrl, scraperValue, link)
+            if (resolvedMeta.title.isBlank() && resolvedMeta.linkList.isEmpty()) {
+                error = "Failed to load details. The provider might be blocked by your ISP or experiencing downtime. Please try enabling a VPN or Cloudflare WARP, or configure Private DNS (Settings > Network > Private DNS: one.one.one.one) and try again."
+            } else {
+                meta = resolvedMeta
+            }
         } catch (e: Exception) {
             error = e.message ?: "Failed to load details"
             android.util.Log.e("MovieDetailScreen", "Error getting meta", e)
@@ -238,7 +243,12 @@ fun MovieDetailScreen(
                         error = null
                         scope.launch {
                             try {
-                                meta = runner.getMeta(providerUrl, scraperValue, link)
+                                val resolvedMeta = runner.getMeta(providerUrl, scraperValue, link)
+                                if (resolvedMeta.title.isBlank() && resolvedMeta.linkList.isEmpty()) {
+                                    error = "Failed to load details. The provider might be blocked by your ISP or experiencing downtime. Please try enabling a VPN or Cloudflare WARP, or configure Private DNS (Settings > Network > Private DNS: one.one.one.one) and try again."
+                                } else {
+                                    meta = resolvedMeta
+                                }
                             } catch (e: Exception) {
                                 error = e.message ?: "Failed to load details"
                             } finally {

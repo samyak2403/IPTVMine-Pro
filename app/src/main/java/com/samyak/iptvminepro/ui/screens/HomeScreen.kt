@@ -47,7 +47,7 @@ fun HomeScreen(
 
     val runner = remember { VegaProviderRunner(context) }
     val providerRepo = remember { ProviderRepository(context) }
-    
+
     // Load Vega providers synchronously to avoid race condition with LaunchedEffect keys
     val activeVegaProviders = remember { providerRepo.getProviders().filter { it.isActive && it.safeType == ProviderType.VEGA } }
     var selectedProvider by remember { mutableStateOf<Provider?>(null) }
@@ -71,16 +71,16 @@ fun HomeScreen(
                 val provider = activeVegaProviders.first()
                 selectedProvider = provider
                 val manifest = runner.fetchManifest(provider.url)
-                
+
                 // Match MoviesScreen logic: only use installed extensions
                 val installed = manifest.filter { it.value in installedExtensionsState }
                 val firstScraper = if (installed.isNotEmpty()) installed.first() else null
-                
+
                 if (firstScraper != null) {
                     selectedScraper = firstScraper
                     val (catalogs, _) = runner.getCatalog(provider.url, firstScraper.value)
                     val postsMap = mutableMapOf<VegaCatalog, List<VegaPost>>()
-                    
+
                     val catalogsToFetch = catalogs.take(6) // Fetch up to 6 categories for home screen
                     if (catalogsToFetch.isEmpty()) {
                         val posts = runner.getPosts(provider.url, firstScraper.value, filter = "", page = 1)
@@ -141,7 +141,7 @@ fun HomeScreen(
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clickable { 
+                                            .clickable {
                                                 val provider = selectedProvider
                                                 val scraper = selectedScraper
                                                 if (provider != null && scraper != null) {
@@ -245,7 +245,7 @@ fun HomeScreen(
                     }
                 }
             }
-            
+
             // Overlay loading indicator for background fetches
             if ((isLoading && channels.isNotEmpty()) || (isMoviesLoading && moviesByCategory.isNotEmpty())) {
                 LinearProgressIndicator(
