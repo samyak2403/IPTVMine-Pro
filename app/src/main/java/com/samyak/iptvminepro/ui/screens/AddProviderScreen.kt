@@ -55,7 +55,8 @@ fun AddProviderScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(MaterialTheme.colorScheme.background)
+            .imePadding(),
         contentAlignment = Alignment.Center
     ) {
         Column(
