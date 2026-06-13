@@ -895,6 +895,52 @@ class VegaProviderRunner(private val context: Context) {
                         });
                         return wrapElements(els, doc);
                     },
+                    nextAll: function(selector) {
+                        const nextEls = [];
+                        elements.forEach(el => {
+                            let next = el.nextElementSibling;
+                            while (next) {
+                                if (!selector || safeMatches(next, selector, doc)) {
+                                    nextEls.push(next);
+                                }
+                                next = next.nextElementSibling;
+                            }
+                        });
+                        const uniqueEls = Array.from(new Set(nextEls));
+                        return wrapElements(uniqueEls, doc);
+                    },
+                    prevAll: function(selector) {
+                        const prevEls = [];
+                        elements.forEach(el => {
+                            let prev = el.previousElementSibling;
+                            while (prev) {
+                                if (!selector || safeMatches(prev, selector, doc)) {
+                                    prevEls.push(prev);
+                                }
+                                prev = prev.previousElementSibling;
+                            }
+                        });
+                        const uniqueEls = Array.from(new Set(prevEls));
+                        return wrapElements(uniqueEls, doc);
+                    },
+                    parents: function(selector) {
+                        const parentsEls = [];
+                        elements.forEach(el => {
+                            let par = el.parentElement;
+                            while (par) {
+                                if (!selector || safeMatches(par, selector, doc)) {
+                                    parentsEls.push(par);
+                                }
+                                par = par.parentElement;
+                            }
+                        });
+                        const uniqueEls = Array.from(new Set(parentsEls));
+                        return wrapElements(uniqueEls, doc);
+                    },
+                    clone: function() {
+                        const cloned = elements.map(el => el.cloneNode(true));
+                        return wrapElements(cloned, doc);
+                    },
                     closest: function(selector) {
                         const closestEls = [];
                         elements.forEach(el => {
