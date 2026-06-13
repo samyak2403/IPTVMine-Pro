@@ -23,28 +23,39 @@ class VegaProviderRunner(private val context: Context) {
     private var webViewReady = CompletableDeferred<Unit>()
     private val bridge = AndroidBridge()
 
-    // In-memory cookie jar for session persistence across requests
+    @Volatile
+    private var currentUserAgent: String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
+    // Sync cookie jar with WebView's CookieManager to share Cloudflare clearance sessions
     private val cookieJar = object : CookieJar {
-        private val cookieStore = mutableMapOf<String, MutableList<Cookie>>()
+        private val cookieManager = android.webkit.CookieManager.getInstance()
 
         override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-            val host = url.host
-            cookieStore.getOrPut(host) { mutableListOf() }.apply {
-                // Remove existing cookies with same name before adding new ones
-                cookies.forEach { newCookie ->
-                    removeAll { it.name == newCookie.name }
-                }
-                addAll(cookies)
+            val urlString = url.toString()
+            cookies.forEach { cookie ->
+                cookieManager.setCookie(urlString, cookie.toString())
             }
+            cookieManager.flush()
         }
 
         override fun loadForRequest(url: HttpUrl): List<Cookie> {
-            val host = url.host
+            val urlString = url.toString()
+            val cookieString = cookieManager.getCookie(urlString) ?: ""
+            if (cookieString.isEmpty()) return emptyList()
+            
             val cookies = mutableListOf<Cookie>()
-            // Match exact host and parent domains
-            cookieStore.forEach { (storedHost, storedCookies) ->
-                if (host == storedHost || host.endsWith(".$storedHost")) {
-                    cookies.addAll(storedCookies.filter { !it.expiresAt.let { exp -> exp < System.currentTimeMillis() } })
+            val cookiePairs = cookieString.split(";")
+            cookiePairs.forEach { pair ->
+                val trimmed = pair.trim()
+                if (trimmed.isNotEmpty()) {
+                    try {
+                        val cookie = Cookie.parse(url, trimmed)
+                        if (cookie != null) {
+                            cookies.add(cookie)
+                        }
+                    } catch (e: Exception) {
+                        // Ignore parse exceptions
+                    }
                 }
             }
             return cookies
@@ -498,6 +509,56 @@ class VegaProviderRunner(private val context: Context) {
                 }
                 
                 selector = selector.trim();
+                
+                // 1. Check for :not(:contains(...)) first
+                const notContainsRegex = /:not\(:contains\((['"]?)(.*?)\1\)\)/;
+                const notMatch = selector.match(notContainsRegex);
+                if (notMatch) {
+                    const fullMatch = notMatch[0];
+                    const excludeText = notMatch[2];
+                    const matchIndex = selector.indexOf(fullMatch);
+                    
+                    let leftPart = selector.substring(0, matchIndex).trim();
+                    let rightPart = selector.substring(matchIndex + fullMatch.length).trim();
+                    
+                    if (!leftPart) {
+                        leftPart = "*";
+                    }
+                    
+                    let leftElements = safeQuery(root, leftPart);
+                    // Filter elements that DO NOT contain excludeText
+                    let filteredElements = leftElements.filter(el => {
+                        const text = el.textContent || "";
+                        return !text.includes(excludeText);
+                    });
+                    
+                    if (!rightPart) {
+                        return filteredElements;
+                    }
+                    
+                    // Check if rightPart starts with a combinator (space, >, +, ~)
+                    const firstChar = rightPart[0];
+                    const isCombinator = firstChar === ' ' || firstChar === '>' || firstChar === '+' || firstChar === '~';
+                    if (isCombinator) {
+                        const finalResults = [];
+                        const seen = new Set();
+                        filteredElements.forEach(el => {
+                            const rightElements = safeQuery(el, rightPart);
+                            rightElements.forEach(rel => {
+                                if (!seen.has(rel)) {
+                                    seen.add(rel);
+                                    finalResults.push(rel);
+                                }
+                            });
+                        });
+                        return finalResults;
+                    } else {
+                        // It is a compound filter on the same element
+                        return filteredElements.filter(el => safeMatches(el, rightPart, root.ownerDocument || root));
+                    }
+                }
+                
+                // 2. Check for standard :contains(...)
                 const containsRegex = /:contains\((['"]?)(.*?)\1\)/;
                 const match = selector.match(containsRegex);
                 if (!match) {
@@ -530,19 +591,26 @@ class VegaProviderRunner(private val context: Context) {
                     return filteredElements;
                 }
                 
-                const finalResults = [];
-                const seen = new Set();
-                filteredElements.forEach(el => {
-                    const rightElements = safeQuery(el, rightPart);
-                    rightElements.forEach(rel => {
-                        if (!seen.has(rel)) {
-                            seen.add(rel);
-                            finalResults.push(rel);
-                        }
+                // Check if rightPart starts with a combinator (space, >, +, ~)
+                const firstChar = rightPart[0];
+                const isCombinator = firstChar === ' ' || firstChar === '>' || firstChar === '+' || firstChar === '~';
+                if (isCombinator) {
+                    const finalResults = [];
+                    const seen = new Set();
+                    filteredElements.forEach(el => {
+                        const rightElements = safeQuery(el, rightPart);
+                        rightElements.forEach(rel => {
+                            if (!seen.has(rel)) {
+                                seen.add(rel);
+                                finalResults.push(rel);
+                            }
+                        });
                     });
-                });
-                
-                return finalResults;
+                    return finalResults;
+                } else {
+                    // It is a compound filter on the same element
+                    return filteredElements.filter(el => safeMatches(el, rightPart, root.ownerDocument || root));
+                }
             }
 
             function safeMatches(el, selector, doc) {
@@ -825,9 +893,13 @@ class VegaProviderRunner(private val context: Context) {
                 return mockNode;
             }
 
-            function wrapElements(elements, doc) {
+             function wrapElements(elements, doc, prevObject) {
                 const wrapped = {
                     length: elements.length,
+                    prevObject: prevObject || null,
+                    end: function() {
+                        return this.prevObject || wrapElements([], doc);
+                    },
                     [Symbol.iterator]: function*() {
                         for (let i = 0; i < this.length; i++) {
                             yield this[i];
@@ -853,7 +925,7 @@ class VegaProviderRunner(private val context: Context) {
                                 found.push(subEl);
                             });
                         });
-                        return wrapElements(found, doc);
+                        return wrapElements(found, doc, this);
                     },
                     next: function(selector) {
                         const nextEls = [];
@@ -867,7 +939,7 @@ class VegaProviderRunner(private val context: Context) {
                                 next = next.nextElementSibling;
                             }
                         });
-                        return wrapElements(nextEls, doc);
+                        return wrapElements(nextEls, doc, this);
                     },
                     prev: function(selector) {
                         const prevEls = [];
@@ -881,7 +953,7 @@ class VegaProviderRunner(private val context: Context) {
                                 prev = prev.previousElementSibling;
                             }
                         });
-                        return wrapElements(prevEls, doc);
+                        return wrapElements(prevEls, doc, this);
                     },
                     nextUntil: function(selector) {
                         const els = [];
@@ -893,7 +965,7 @@ class VegaProviderRunner(private val context: Context) {
                                 next = next.nextElementSibling;
                             }
                         });
-                        return wrapElements(els, doc);
+                        return wrapElements(els, doc, this);
                     },
                     nextAll: function(selector) {
                         const nextEls = [];
@@ -907,7 +979,7 @@ class VegaProviderRunner(private val context: Context) {
                             }
                         });
                         const uniqueEls = Array.from(new Set(nextEls));
-                        return wrapElements(uniqueEls, doc);
+                        return wrapElements(uniqueEls, doc, this);
                     },
                     prevAll: function(selector) {
                         const prevEls = [];
@@ -921,7 +993,7 @@ class VegaProviderRunner(private val context: Context) {
                             }
                         });
                         const uniqueEls = Array.from(new Set(prevEls));
-                        return wrapElements(uniqueEls, doc);
+                        return wrapElements(uniqueEls, doc, this);
                     },
                     parents: function(selector) {
                         const parentsEls = [];
@@ -935,11 +1007,11 @@ class VegaProviderRunner(private val context: Context) {
                             }
                         });
                         const uniqueEls = Array.from(new Set(parentsEls));
-                        return wrapElements(uniqueEls, doc);
+                        return wrapElements(uniqueEls, doc, this);
                     },
                     clone: function() {
                         const cloned = elements.map(el => el.cloneNode(true));
-                        return wrapElements(cloned, doc);
+                        return wrapElements(cloned, doc, this);
                     },
                     closest: function(selector) {
                         const closestEls = [];
@@ -949,14 +1021,14 @@ class VegaProviderRunner(private val context: Context) {
                                 if (closest) closestEls.push(closest);
                             }
                         });
-                        return wrapElements(closestEls, doc);
+                        return wrapElements(closestEls, doc, this);
                     },
                     parent: function() {
                         const parents = [];
                         elements.forEach(el => {
                             if (el.parentElement) parents.push(el.parentElement);
                         });
-                        return wrapElements(parents, doc);
+                        return wrapElements(parents, doc, this);
                     },
                     children: function(selector) {
                         const childEls = [];
@@ -969,16 +1041,16 @@ class VegaProviderRunner(private val context: Context) {
                                 });
                             }
                         });
-                        return wrapElements(childEls, doc);
+                        return wrapElements(childEls, doc, this);
                     },
                     first: function() {
-                        return wrapElements(elements.length > 0 ? [elements[0]] : [], doc);
+                        return wrapElements(elements.length > 0 ? [elements[0]] : [], doc, this);
                     },
                     last: function() {
-                        return wrapElements(elements.length > 0 ? [elements[elements.length - 1]] : [], doc);
+                        return wrapElements(elements.length > 0 ? [elements[elements.length - 1]] : [], doc, this);
                     },
                     eq: function(index) {
-                        return wrapElements(index >= 0 && index < elements.length ? [elements[index]] : [], doc);
+                        return wrapElements(index >= 0 && index < elements.length ? [elements[index]] : [], doc, this);
                     },
                     each: function(callback) {
                         elements.forEach((el, idx) => {
@@ -992,18 +1064,30 @@ class VegaProviderRunner(private val context: Context) {
                             const mockNode = createMockNode(el);
                             return callback.call(mockNode, idx, mockNode);
                         });
-                        res.get = function() { return res; };
-                        res.toArray = function() { return res; };
-                        return res;
+                        
+                        function wrapMapResult(arr) {
+                            const nativeSlice = arr.slice;
+                            arr.get = function(index) {
+                                if (index === undefined) return arr;
+                                return arr[index];
+                            };
+                            arr.toArray = function() { return arr; };
+                            arr.slice = function(start, end) {
+                                return wrapMapResult(nativeSlice.call(arr, start, end));
+                            };
+                            return arr;
+                        }
+                        
+                        return wrapMapResult(res);
                     },
                     filter: function(selector) {
                         if (typeof selector === 'string') {
-                            return wrapElements(elements.filter(el => safeMatches(el, selector, doc)), doc);
+                            return wrapElements(elements.filter(el => safeMatches(el, selector, doc)), doc, this);
                         } else if (typeof selector === 'function') {
                             return wrapElements(elements.filter((el, idx) => {
                                 const mockNode = createMockNode(el);
                                 return selector.call(mockNode, idx, mockNode);
-                            }), doc);
+                            }), doc, this);
                         }
                         return this;
                     },
@@ -1022,7 +1106,7 @@ class VegaProviderRunner(private val context: Context) {
                         return elements.some(el => safeMatches(el, selector, doc));
                     },
                     toArray: function() {
-                        return Array.from(elements).map(el => wrapElements([el], doc));
+                        return Array.from(elements).map(el => wrapElements([el], doc, this));
                     },
                     get: function(index) {
                         if (index === undefined) {
@@ -1060,7 +1144,7 @@ class VegaProviderRunner(private val context: Context) {
                         elements.forEach(el => {
                             Array.from(el.childNodes).forEach(child => allNodes.push(child));
                         });
-                        return wrapElements(allNodes, doc);
+                        return wrapElements(allNodes, doc, this);
                     },
                     siblings: function(selector) {
                         const siblingEls = [];
@@ -1073,7 +1157,7 @@ class VegaProviderRunner(private val context: Context) {
                                 });
                             }
                         });
-                        return wrapElements(siblingEls, doc);
+                        return wrapElements(siblingEls, doc, this);
                     },
                     addClass: function(className) {
                         elements.forEach(el => el.classList && el.classList.add(className));
@@ -1102,7 +1186,7 @@ class VegaProviderRunner(private val context: Context) {
                     },
                     not: function(selector) {
                         if (typeof selector === 'string') {
-                            return wrapElements(elements.filter(el => !safeMatches(el, selector, doc)), doc);
+                            return wrapElements(elements.filter(el => !safeMatches(el, selector, doc)), doc, this);
                         }
                         return this;
                     },
@@ -1113,7 +1197,7 @@ class VegaProviderRunner(private val context: Context) {
                         return Array.from(el.parentElement.children).indexOf(el);
                     },
                     slice: function(start, end) {
-                        return wrapElements(Array.from(elements).slice(start, end), doc);
+                        return wrapElements(Array.from(elements).slice(start, end), doc, this);
                     }
                 };
                 
