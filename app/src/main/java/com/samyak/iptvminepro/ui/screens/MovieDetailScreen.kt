@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowDropUp
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -48,6 +49,56 @@ fun MovieDetailScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val runner = remember { VegaProviderRunner(context) }
+    
+    val storagePermissions = remember {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            arrayOf(android.Manifest.permission.READ_MEDIA_VIDEO)
+        } else {
+            arrayOf(
+                android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+            )
+        }
+    }
+
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions.entries.all { it.value }
+        if (!granted) {
+            Toast.makeText(context, "Storage permission is required to download videos.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    val downloadWithPermissionCheck: (String, String, Map<String, String>?) -> Unit = { dlUrl, dlTitle, dlHeaders ->
+        val hasPermission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.READ_MEDIA_VIDEO
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        } else {
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+
+        if (hasPermission) {
+            com.samyak.iptvminepro.download.DownloadManager.download(
+                title = dlTitle,
+                downloadUrl = dlUrl,
+                headers = dlHeaders
+            )
+            Toast.makeText(context, "Added to downloads queue", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "Storage permissions required to download", Toast.LENGTH_SHORT).show()
+            permissionLauncher.launch(storagePermissions)
+        }
+    }
 
     var meta by remember { mutableStateOf<VegaMeta?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -59,6 +110,7 @@ fun MovieDetailScreen(
 
     // Stream resolution state
     var streamsToSelect by remember { mutableStateOf<List<VegaStream>?>(null) }
+    var streamsToDownload by remember { mutableStateOf<List<VegaStream>?>(null) }
     var resolvingStream by remember { mutableStateOf(false) }
     var selectedItemTitle by remember { mutableStateOf("") }
 
@@ -69,7 +121,12 @@ fun MovieDetailScreen(
         isLoading = true
         error = null
         try {
-            meta = runner.getMeta(providerUrl, scraperValue, link)
+            val resolvedMeta = runner.getMeta(providerUrl, scraperValue, link)
+            if (resolvedMeta.title.isBlank() && resolvedMeta.linkList.isEmpty()) {
+                error = "Failed to load details. The provider might be blocked by your ISP or experiencing downtime. Please try enabling a VPN or Cloudflare WARP, or configure Private DNS (Settings > Network > Private DNS: one.one.one.one) and try again."
+            } else {
+                meta = resolvedMeta
+            }
         } catch (e: Exception) {
             error = e.message ?: "Failed to load details"
             android.util.Log.e("MovieDetailScreen", "Error getting meta", e)
@@ -122,6 +179,32 @@ fun MovieDetailScreen(
         }
     }
 
+    val onDownloadLinkClick: (VegaDirectLink, String) -> Unit = { directLink, title ->
+        scope.launch {
+            resolvingStream = true
+            try {
+                val resolveType = getResolveType(directLink.type)
+                val streams = runner.getStream(providerUrl, scraperValue, directLink.link, resolveType).filter { it.link.isNotBlank() }
+                if (streams.isEmpty()) {
+                    Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
+                } else if (streams.size == 1) {
+                    downloadWithPermissionCheck(
+                        streams[0].link,
+                        "$title - ${streams[0].quality}",
+                        streams[0].headers
+                    )
+                } else {
+                    selectedItemTitle = title
+                    streamsToDownload = streams
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
+            } finally {
+                resolvingStream = false
+            }
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -160,7 +243,12 @@ fun MovieDetailScreen(
                         error = null
                         scope.launch {
                             try {
-                                meta = runner.getMeta(providerUrl, scraperValue, link)
+                                val resolvedMeta = runner.getMeta(providerUrl, scraperValue, link)
+                                if (resolvedMeta.title.isBlank() && resolvedMeta.linkList.isEmpty()) {
+                                    error = "Failed to load details. The provider might be blocked by your ISP or experiencing downtime. Please try enabling a VPN or Cloudflare WARP, or configure Private DNS (Settings > Network > Private DNS: one.one.one.one) and try again."
+                                } else {
+                                    meta = resolvedMeta
+                                }
                             } catch (e: Exception) {
                                 error = e.message ?: "Failed to load details"
                             } finally {
@@ -543,42 +631,93 @@ fun MovieDetailScreen(
                                                                     )
                                                                     
                                                                     if (hasEpLink || hasDirectLinks) {
-                                                                        IconButton(
-                                                                            onClick = {
-                                                                                if (hasDirectLinks) {
-                                                                                    val dLinks = episodeLink.directLinks!!
-                                                                                    onDirectLinkClick(dLinks[0], "${vegaLink.title} - ${episodeLink.title} (${dLinks[0].title})")
-                                                                                } else if (hasEpLink) {
-                                                                                    scope.launch {
-                                                                                        resolvingStream = true
-                                                                                        try {
-                                                                                            val streams = runner.getStream(providerUrl, scraperValue, episodeLink.episodesLink!!, getResolveType("series")).filter { it.link.isNotBlank() }
-                                                                                            if (streams.isEmpty()) {
-                                                                                                Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
-                                                                                            } else if (streams.size == 1) {
-                                                                                                PlayerActivity.start(context, "${vegaLink.title} - ${episodeLink.title} - ${streams[0].quality}", streams[0].link, streams[0].headers)
-                                                                                            } else {
-                                                                                                selectedItemTitle = "${vegaLink.title} - ${episodeLink.title}"
-                                                                                                streamsToSelect = streams
+                                                                        Row(
+                                                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                                            verticalAlignment = Alignment.CenterVertically
+                                                                        ) {
+                                                                            Box(
+                                                                                contentAlignment = Alignment.Center,
+                                                                                modifier = Modifier
+                                                                                    .size(32.dp)
+                                                                                    .background(Color(0xFF26A69A).copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                                                                                    .clip(RoundedCornerShape(16.dp))
+                                                                                    .clickable {
+                                                                                        if (hasDirectLinks) {
+                                                                                            val dLinks = episodeLink.directLinks!!
+                                                                                            onDirectLinkClick(dLinks[0], "${vegaLink.title} - ${episodeLink.title} (${dLinks[0].title})")
+                                                                                        } else if (hasEpLink) {
+                                                                                            scope.launch {
+                                                                                                resolvingStream = true
+                                                                                                try {
+                                                                                                    val streams = runner.getStream(providerUrl, scraperValue, episodeLink.episodesLink!!, getResolveType("series")).filter { it.link.isNotBlank() }
+                                                                                                    if (streams.isEmpty()) {
+                                                                                                        Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
+                                                                                                    } else if (streams.size == 1) {
+                                                                                                        PlayerActivity.start(context, "${vegaLink.title} - ${episodeLink.title} - ${streams[0].quality}", streams[0].link, streams[0].headers)
+                                                                                                    } else {
+                                                                                                        selectedItemTitle = "${vegaLink.title} - ${episodeLink.title}"
+                                                                                                        streamsToSelect = streams
+                                                                                                    }
+                                                                                                } catch (e: Exception) {
+                                                                                                    Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                                                                } finally {
+                                                                                                    resolvingStream = false
+                                                                                                }
                                                                                             }
-                                                                                        } catch (e: Exception) {
-                                                                                            Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
-                                                                                        } finally {
-                                                                                            resolvingStream = false
                                                                                         }
                                                                                     }
-                                                                                }
-                                                                            },
-                                                                            modifier = Modifier
-                                                                                .size(32.dp)
-                                                                                .background(Color(0xFF26A69A).copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                                                                        ) {
-                                                                            Icon(
-                                                                                imageVector = Icons.Filled.PlayArrow,
-                                                                                contentDescription = "Play Episode",
-                                                                                tint = Color(0xFF26A69A),
-                                                                                modifier = Modifier.size(18.dp)
-                                                                            )
+                                                                            ) {
+                                                                                Icon(
+                                                                                    imageVector = Icons.Filled.PlayArrow,
+                                                                                    contentDescription = "Play Episode",
+                                                                                    tint = Color(0xFF26A69A),
+                                                                                    modifier = Modifier.size(18.dp)
+                                                                                )
+                                                                            }
+
+                                                                            Box(
+                                                                                contentAlignment = Alignment.Center,
+                                                                                modifier = Modifier
+                                                                                    .size(32.dp)
+                                                                                    .background(Color(0xFF26A69A).copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                                                                                    .clip(RoundedCornerShape(16.dp))
+                                                                                    .clickable {
+                                                                                        if (hasDirectLinks) {
+                                                                                            val dLinks = episodeLink.directLinks!!
+                                                                                            onDownloadLinkClick(dLinks[0], "${vegaLink.title} - ${episodeLink.title} (${dLinks[0].title})")
+                                                                                        } else if (hasEpLink) {
+                                                                                            scope.launch {
+                                                                                                resolvingStream = true
+                                                                                                try {
+                                                                                                    val streams = runner.getStream(providerUrl, scraperValue, episodeLink.episodesLink!!, getResolveType("series")).filter { it.link.isNotBlank() }
+                                                                                                    if (streams.isEmpty()) {
+                                                                                                        Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
+                                                                                                    } else if (streams.size == 1) {
+                                                                                                         downloadWithPermissionCheck(
+                                                                                                             streams[0].link,
+                                                                                                             "${vegaLink.title} - ${episodeLink.title} - ${streams[0].quality}",
+                                                                                                             streams[0].headers
+                                                                                                         )
+                                                                                                    } else {
+                                                                                                        selectedItemTitle = "${vegaLink.title} - ${episodeLink.title}"
+                                                                                                        streamsToDownload = streams
+                                                                                                    }
+                                                                                                } catch (e: Exception) {
+                                                                                                    Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                                                                } finally {
+                                                                                                    resolvingStream = false
+                                                                                                }
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                            ) {
+                                                                                Icon(
+                                                                                    imageVector = Icons.Filled.Download,
+                                                                                    contentDescription = "Download Episode",
+                                                                                    tint = Color(0xFF26A69A),
+                                                                                    modifier = Modifier.size(18.dp)
+                                                                                )
+                                                                            }
                                                                         }
                                                                     }
                                                                 }
@@ -591,19 +730,39 @@ fun MovieDetailScreen(
                                                                         verticalArrangement = Arrangement.spacedBy(8.dp)
                                                                     ) {
                                                                         episodeLink.directLinks.forEach { directLink ->
-                                                                            Button(
-                                                                                onClick = { onDirectLinkClick(directLink, "${vegaLink.title} - ${episodeLink.title} (${directLink.title})") },
-                                                                                colors = ButtonDefaults.buttonColors(
-                                                                                    containerColor = Color(0xFF2C2A36),
-                                                                                    contentColor = Color.White
-                                                                                ),
-                                                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                                                                shape = RoundedCornerShape(6.dp),
-                                                                                modifier = Modifier.height(32.dp)
+                                                                            Row(
+                                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                                                                             ) {
-                                                                                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
-                                                                                Spacer(modifier = Modifier.width(4.dp))
-                                                                                Text(directLink.title, fontSize = 11.sp)
+                                                                                Button(
+                                                                                    onClick = { onDirectLinkClick(directLink, "${vegaLink.title} - ${episodeLink.title} (${directLink.title})") },
+                                                                                    colors = ButtonDefaults.buttonColors(
+                                                                                        containerColor = Color(0xFF2C2A36),
+                                                                                        contentColor = Color.White
+                                                                                    ),
+                                                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                                                                    shape = RoundedCornerShape(6.dp),
+                                                                                    modifier = Modifier.height(32.dp)
+                                                                                ) {
+                                                                                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                                                    Text(directLink.title, fontSize = 11.sp)
+                                                                                }
+                                                                                Box(
+                                                                                    contentAlignment = Alignment.Center,
+                                                                                    modifier = Modifier
+                                                                                        .size(32.dp)
+                                                                                        .background(Color(0xFF2C2A36).copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                                                                                        .clip(RoundedCornerShape(6.dp))
+                                                                                        .clickable { onDownloadLinkClick(directLink, "${vegaLink.title} - ${episodeLink.title} (${directLink.title})") }
+                                                                                ) {
+                                                                                    Icon(
+                                                                                        imageVector = Icons.Filled.Download,
+                                                                                        contentDescription = "Download",
+                                                                                        tint = Color(0xFF26A69A),
+                                                                                        modifier = Modifier.size(16.dp)
+                                                                                    )
+                                                                                }
                                                                             }
                                                                         }
                                                                     }
@@ -629,18 +788,39 @@ fun MovieDetailScreen(
                                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                                 ) {
                                                     vegaLink.directLinks.forEach { directLink ->
-                                                        Button(
-                                                            onClick = { onDirectLinkClick(directLink, "${movieMeta.title} - ${vegaLink.title} (${directLink.title})") },
-                                                            colors = ButtonDefaults.buttonColors(
-                                                                containerColor = Color(0xFF26A69A),
-                                                                contentColor = Color.White
-                                                            ),
-                                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                                            shape = RoundedCornerShape(8.dp)
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                                                         ) {
-                                                            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                            Spacer(modifier = Modifier.width(4.dp))
-                                                            Text(directLink.title, fontSize = 12.sp)
+                                                            Button(
+                                                                onClick = { onDirectLinkClick(directLink, "${movieMeta.title} - ${vegaLink.title} (${directLink.title})") },
+                                                                colors = ButtonDefaults.buttonColors(
+                                                                    containerColor = Color(0xFF26A69A),
+                                                                    contentColor = Color.White
+                                                                ),
+                                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                                                shape = RoundedCornerShape(8.dp),
+                                                                modifier = Modifier.height(36.dp)
+                                                            ) {
+                                                                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                                Spacer(modifier = Modifier.width(4.dp))
+                                                                Text(directLink.title, fontSize = 12.sp)
+                                                            }
+                                                            Box(
+                                                                contentAlignment = Alignment.Center,
+                                                                modifier = Modifier
+                                                                    .size(36.dp)
+                                                                    .background(Color(0xFF26A69A).copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                                                    .clip(RoundedCornerShape(8.dp))
+                                                                    .clickable { onDownloadLinkClick(directLink, "${movieMeta.title} - ${vegaLink.title} (${directLink.title})") }
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.Filled.Download,
+                                                                    contentDescription = "Download",
+                                                                    tint = Color(0xFF26A69A),
+                                                                    modifier = Modifier.size(18.dp)
+                                                                )
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -721,6 +901,81 @@ fun MovieDetailScreen(
                 },
                 confirmButton = {
                     TextButton(onClick = { streamsToSelect = null }) {
+                        Text("Cancel", color = Color(0xFF26A69A))
+                    }
+                },
+                containerColor = Color(0xFF16151D),
+                shape = RoundedCornerShape(16.dp)
+            )
+        }
+
+        // Dialog for Download Selection
+        streamsToDownload?.let { streams ->
+            AlertDialog(
+                onDismissRequest = { streamsToDownload = null },
+                title = { Text("Select Download Quality / Server", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        streams.forEach { stream ->
+                            val displayName = buildString {
+                                append(stream.server)
+                                if (stream.quality.isNotEmpty()) {
+                                    append(" - ")
+                                    append(stream.quality)
+                                }
+                                if (stream.type.isNotEmpty()) {
+                                    append(" (")
+                                    append(stream.type)
+                                    append(")")
+                                }
+                            }
+                            
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        streamsToDownload = null
+                                        downloadWithPermissionCheck(
+                                            stream.link,
+                                            "$selectedItemTitle - ${stream.quality}",
+                                            stream.headers
+                                        )
+                                    },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color(0xFF2C2A36)
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = displayName,
+                                        color = Color.White,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Filled.Download,
+                                        contentDescription = "Download",
+                                        tint = Color(0xFF26A69A)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { streamsToDownload = null }) {
                         Text("Cancel", color = Color(0xFF26A69A))
                     }
                 },

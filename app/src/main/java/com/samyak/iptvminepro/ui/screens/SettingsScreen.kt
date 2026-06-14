@@ -29,7 +29,9 @@ import com.samyak.iptvminepro.R
 fun SettingsScreen(
     onNavigateToProviders: () -> Unit,
     onNavigateToExtensions: () -> Unit,
-    onNavigateToAbout: () -> Unit
+    onNavigateToAbout: () -> Unit,
+    onNavigateToDownloads: () -> Unit,
+    onNavigateToBugReport: () -> Unit
 ) {
     val scrollState = rememberScrollState()
     val context = LocalContext.current
@@ -50,6 +52,11 @@ fun SettingsScreen(
             icon = Icons.AutoMirrored.Filled.List,
             onClick = onNavigateToProviders
         )
+        SettingsItem(
+            title = stringResource(id = R.string.setting_downloads),
+            icon = Icons.Filled.Download,
+            onClick = onNavigateToDownloads
+        )
         if (hasActiveVegaProvider) {
             SettingsItem(
                 title = stringResource(id = R.string.setting_extensions),
@@ -67,7 +74,7 @@ fun SettingsScreen(
         SettingsItem(
             title = stringResource(id = R.string.setting_report_bug),
             icon = Icons.Filled.BugReport,
-            onClick = { /* TODO */ }
+            onClick = onNavigateToBugReport
         )
 
         SettingsSectionTitle(title = stringResource(id = R.string.section_legal))

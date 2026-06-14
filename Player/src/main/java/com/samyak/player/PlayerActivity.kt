@@ -156,6 +156,9 @@ class PlayerActivity : AppCompatActivity() {
         val trimmed = url.trim()
         return when {
             trimmed.startsWith("//") -> "https:$trimmed"
+            trimmed.startsWith("file:/", ignoreCase = true) ||
+            trimmed.startsWith("content:/", ignoreCase = true) ||
+            trimmed.startsWith("/") -> trimmed
             !trimmed.startsWith("http://", ignoreCase = true) && 
             !trimmed.startsWith("https://", ignoreCase = true) && 
             !trimmed.startsWith("rtmp://", ignoreCase = true) && 
@@ -444,6 +447,8 @@ class PlayerActivity : AppCompatActivity() {
                 )
             }
 
+            val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(this, httpDataSourceFactory)
+
             player = ExoPlayer.Builder(this)
                 .setTrackSelector(trackSelector!!)
                 .setSeekBackIncrementMs(10000)
@@ -451,7 +456,7 @@ class PlayerActivity : AppCompatActivity() {
                 .setHandleAudioBecomingNoisy(true)
                 .setMediaSourceFactory(
                     DefaultMediaSourceFactory(this)
-                        .setDataSourceFactory(httpDataSourceFactory)
+                        .setDataSourceFactory(dataSourceFactory)
                 )
                 .build()
 

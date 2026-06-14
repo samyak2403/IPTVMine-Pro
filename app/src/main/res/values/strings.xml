@@ -75,4 +75,25 @@
     <string name="setting_terms_conditions">Terms &amp; Conditions</string>
     <string name="setting_disclaimer">Disclaimer</string>
     <string name="desc_navigate">Navigate</string>
+    <string name="setting_downloads">Downloads</string>
+    <string name="tab_downloading">Downloading</string>
+    <string name="tab_downloaded">Downloaded</string>
+    <string name="no_downloads_active">No active downloads</string>
+    <string name="no_downloads_completed">No completed downloads</string>
+    <string name="msg_added_to_downloads">Added to downloads queue</string>
+
+    <!-- Bug Report Screen -->
+    <string name="title_bug_report">Report a Bug</string>
+    <string name="bug_title_label">Title</string>
+    <string name="bug_title_placeholder">Describe the issue in a few words</string>
+    <string name="bug_desc_label">Description</string>
+    <string name="bug_desc_placeholder">Explain the bug in detail, including steps to reproduce...</string>
+    <string name="bug_category_label">Category</string>
+    <string name="bug_image_label">Screenshot / Image (Optional)</string>
+    <string name="bug_select_image">Choose Image</string>
+    <string name="bug_change_image">Change Image</string>
+    <string name="bug_remove_image">Remove Image</string>
+    <string name="btn_submit_bug">Submit Bug Report</string>
+    <string name="msg_bug_title_desc_required">Title and description are required</string>
+    <string name="msg_bug_category_required">Please select a category</string>
 </resources>
