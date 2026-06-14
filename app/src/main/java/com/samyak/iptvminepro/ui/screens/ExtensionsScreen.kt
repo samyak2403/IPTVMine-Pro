@@ -43,6 +43,9 @@ fun ExtensionsScreen(
     var vegaProviders by remember { mutableStateOf<List<Provider>>(emptyList()) }
     var selectedSource by remember { mutableStateOf<Provider?>(null) }
     var isDropdownExpanded by remember { mutableStateOf(false) }
+    
+    var showSuccessDialog by remember { mutableStateOf(false) }
+    var successExtensionName by remember { mutableStateOf("") }
 
     // Collect reactive flow of installed extensions
     val installedExtensionsState by extensionRepository.installedExtensionsFlow.collectAsState()
@@ -188,11 +191,8 @@ fun ExtensionsScreen(
                                 onAction = { installed ->
                                     extensionRepository.setExtensionInstalled(extension.value, installed)
                                     if (installed) {
-                                        android.widget.Toast.makeText(
-                                            context,
-                                            "${extension.display_name} has been installed successfully!",
-                                            android.widget.Toast.LENGTH_SHORT
-                                        ).show()
+                                        successExtensionName = extension.display_name
+                                        showSuccessDialog = true
                                     }
                                 }
                             )
@@ -201,6 +201,19 @@ fun ExtensionsScreen(
                 }
             }
         }
+    }
+
+    if (showSuccessDialog) {
+        AlertDialog(
+            onDismissRequest = { showSuccessDialog = false },
+            title = { Text(text = "Extension Installed") },
+            text = { Text(text = "$successExtensionName has been installed successfully!") },
+            confirmButton = {
+                TextButton(onClick = { showSuccessDialog = false }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 }
 
