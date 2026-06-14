@@ -8,6 +8,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.util.Log
 import com.samyak.iptvminepro.model.*
+import com.samyak.iptvminepro.utils.TitleUtils.cleanTitle
 import kotlinx.coroutines.*
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -1382,7 +1383,7 @@ class VegaProviderRunner(private val context: Context) {
         for (i in 0 until arr.length()) {
             val item = arr.getJSONObject(i)
             posts.add(VegaPost(
-                title = item.optString("title", ""),
+                title = cleanTitle(item.optString("title", "")),
                 link = item.optString("link", ""),
                 image = item.optString("image", "")
             ))
@@ -1424,7 +1425,7 @@ class VegaProviderRunner(private val context: Context) {
         for (i in 0 until arr.length()) {
             val item = arr.getJSONObject(i)
             posts.add(VegaPost(
-                title = item.optString("title", ""),
+                title = cleanTitle(item.optString("title", "")),
                 link = item.optString("link", ""),
                 image = item.optString("image", "")
             ))
@@ -1470,7 +1471,7 @@ class VegaProviderRunner(private val context: Context) {
             val linkListArr = obj.getJSONArray("linkList")
             for (i in 0 until linkListArr.length()) {
                 val item = linkListArr.getJSONObject(i)
-                val title = item.optString("title", "")
+                val title = cleanTitle(item.optString("title", ""))
                 val episodesLink = (item.optString("episodesLink", "").takeIf { it.isNotEmpty() }
                     ?: item.optString("link", "").takeIf { it.isNotEmpty() }
                     ?: item.optString("url", "").takeIf { it.isNotEmpty() })
@@ -1482,7 +1483,7 @@ class VegaProviderRunner(private val context: Context) {
                     for (j in 0 until dArr.length()) {
                         val dObj = dArr.getJSONObject(j)
                         directLinks.add(VegaDirectLink(
-                            title = dObj.optString("title", ""),
+                            title = cleanTitle(dObj.optString("title", "")),
                             link = dObj.optString("link", ""),
                             type = dObj.optString("type", "")
                         ))
@@ -1493,7 +1494,7 @@ class VegaProviderRunner(private val context: Context) {
         }
         
         return VegaMeta(
-            title = obj.optString("title", ""),
+            title = cleanTitle(obj.optString("title", "")),
             synopsis = obj.optString("synopsis", ""),
             image = obj.optString("image", ""),
             imdbId = obj.optString("imdbId", ""),
@@ -1593,7 +1594,7 @@ class VegaProviderRunner(private val context: Context) {
         val links = mutableListOf<VegaLink>()
         for (i in 0 until arr.length()) {
             val item = arr.getJSONObject(i)
-            val title = item.optString("title", "")
+            val title = cleanTitle(item.optString("title", ""))
             val episodesLink = (item.optString("episodesLink", "").takeIf { it.isNotEmpty() }
                 ?: item.optString("link", "").takeIf { it.isNotEmpty() }
                 ?: item.optString("url", "").takeIf { it.isNotEmpty() })
@@ -1605,7 +1606,7 @@ class VegaProviderRunner(private val context: Context) {
                 for (j in 0 until dArr.length()) {
                     val dObj = dArr.getJSONObject(j)
                     directLinks.add(VegaDirectLink(
-                        title = dObj.optString("title", ""),
+                        title = cleanTitle(dObj.optString("title", "")),
                         link = dObj.optString("link", ""),
                         type = dObj.optString("type", "")
                     ))

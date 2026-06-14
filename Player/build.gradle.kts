@@ -25,6 +25,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)
     implementation("androidx.mediarouter:mediarouter:1.7.0")
+    implementation(libs.gson)
     
     // Media3 for Video Playback
     implementation(libs.androidx.media3.exoplayer)

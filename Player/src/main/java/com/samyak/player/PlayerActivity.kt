@@ -137,10 +137,25 @@ class PlayerActivity : AppCompatActivity() {
         private const val ACTION_PIP_PAUSE = "com.samyak2403.iptvmine.PIP_PAUSE"
         private const val PIP_REQUEST_CODE = 101
 
-        fun start(context: Context, name: String, streamUrl: String, headers: Map<String, String>? = null) {
+        fun start(
+            context: Context,
+            name: String,
+            streamUrl: String,
+            headers: Map<String, String>? = null,
+            watchHistoryEnabled: Boolean = false,
+            movieLink: String? = null,
+            movieImage: String? = null,
+            providerUrl: String? = null,
+            scraperValue: String? = null
+        ) {
             val intent = Intent(context, PlayerActivity::class.java).apply {
                 putExtra("channel_name", name)
                 putExtra("channel_stream_url", streamUrl)
+                putExtra("watch_history_enabled", watchHistoryEnabled)
+                putExtra("movie_link", movieLink)
+                putExtra("movie_image", movieImage)
+                putExtra("provider_url", providerUrl)
+                putExtra("scraper_value", scraperValue)
                 if (headers != null) {
                     val bundle = Bundle()
                     for ((k, v) in headers) {
@@ -636,9 +651,20 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
             
+            val watchHistoryEnabled = intent?.getBooleanExtra("watch_history_enabled", false) ?: false
+            val movieLink = intent?.getStringExtra("movie_link")
+            var startPosition = 0L
+            if (watchHistoryEnabled && !movieLink.isNullOrBlank()) {
+                startPosition = WatchHistoryRepository.getProgress(this, movieLink)
+            }
+            
             player?.apply {
                 addListener(playerListener!!)
-                setMediaItem(mediaItem)
+                if (startPosition > 0L) {
+                    setMediaItem(mediaItem, startPosition)
+                } else {
+                    setMediaItem(mediaItem)
+                }
                 setPlayWhenReady(true)
                 prepare()
             }
@@ -1526,6 +1552,28 @@ class PlayerActivity : AppCompatActivity() {
                 playbackPosition = it.currentPosition
                 currentItem = it.currentMediaItemIndex
                 playWhenReady = it.playWhenReady
+
+                if (intent?.getBooleanExtra("watch_history_enabled", false) == true) {
+                    val title = intent?.getStringExtra("channel_name") ?: ""
+                    val mLink = intent?.getStringExtra("movie_link") ?: ""
+                    val mImage = intent?.getStringExtra("movie_image") ?: ""
+                    val pUrl = intent?.getStringExtra("provider_url") ?: ""
+                    val sVal = intent?.getStringExtra("scraper_value") ?: ""
+
+                    if (mLink.isNotEmpty() && it.duration > 0) {
+                        WatchHistoryRepository.saveProgress(
+                            context = this,
+                            title = title,
+                            link = mLink,
+                            streamUrl = channelStreamUrl ?: "",
+                            imageUrl = mImage,
+                            providerUrl = pUrl,
+                            scraperValue = sVal,
+                            position = playbackPosition,
+                            duration = it.duration
+                        )
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error updating start position", e)

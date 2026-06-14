@@ -31,7 +31,8 @@ fun SettingsScreen(
     onNavigateToExtensions: () -> Unit,
     onNavigateToAbout: () -> Unit,
     onNavigateToDownloads: () -> Unit,
-    onNavigateToBugReport: () -> Unit
+    onNavigateToBugReport: () -> Unit,
+    onNavigateToWatchHistory: () -> Unit
 ) {
     val scrollState = rememberScrollState()
     val context = LocalContext.current
@@ -56,6 +57,11 @@ fun SettingsScreen(
             title = stringResource(id = R.string.setting_downloads),
             icon = Icons.Filled.Download,
             onClick = onNavigateToDownloads
+        )
+        SettingsItem(
+            title = stringResource(id = R.string.setting_watch_history),
+            icon = Icons.Filled.History,
+            onClick = onNavigateToWatchHistory
         )
         if (hasActiveVegaProvider) {
             SettingsItem(

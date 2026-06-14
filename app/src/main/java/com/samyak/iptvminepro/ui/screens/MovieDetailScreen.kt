@@ -49,6 +49,7 @@ fun MovieDetailScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val runner = remember { VegaProviderRunner(context) }
+    val cleanLink = remember(link) { link.split('#')[0] }
     
     val storagePermissions = remember {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
@@ -121,7 +122,7 @@ fun MovieDetailScreen(
         isLoading = true
         error = null
         try {
-            val resolvedMeta = runner.getMeta(providerUrl, scraperValue, link)
+            val resolvedMeta = runner.getMeta(providerUrl, scraperValue, cleanLink)
             if (resolvedMeta.title.isBlank() && resolvedMeta.linkList.isEmpty()) {
                 error = "Failed to load details. The provider might be blocked by your ISP or experiencing downtime. Please try enabling a VPN or Cloudflare WARP, or configure Private DNS (Settings > Network > Private DNS: one.one.one.one) and try again."
             } else {
@@ -166,7 +167,22 @@ fun MovieDetailScreen(
                 if (streams.isEmpty()) {
                     Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
                 } else if (streams.size == 1) {
-                    PlayerActivity.start(context, "$title - ${streams[0].quality}", streams[0].link, streams[0].headers)
+                    val mLink = if (meta?.type?.lowercase() == "series") {
+                        "$link#${android.net.Uri.encode(title)}"
+                    } else {
+                        link
+                    }
+                    PlayerActivity.start(
+                        context = context,
+                        name = "$title - ${streams[0].quality}",
+                        streamUrl = streams[0].link,
+                        headers = streams[0].headers,
+                        watchHistoryEnabled = true,
+                        movieLink = mLink,
+                        movieImage = meta?.image ?: "",
+                        providerUrl = providerUrl,
+                        scraperValue = scraperValue
+                    )
                 } else {
                     selectedItemTitle = title
                     streamsToSelect = streams
@@ -243,7 +259,7 @@ fun MovieDetailScreen(
                         error = null
                         scope.launch {
                             try {
-                                val resolvedMeta = runner.getMeta(providerUrl, scraperValue, link)
+                                val resolvedMeta = runner.getMeta(providerUrl, scraperValue, cleanLink)
                                 if (resolvedMeta.title.isBlank() && resolvedMeta.linkList.isEmpty()) {
                                     error = "Failed to load details. The provider might be blocked by your ISP or experiencing downtime. Please try enabling a VPN or Cloudflare WARP, or configure Private DNS (Settings > Network > Private DNS: one.one.one.one) and try again."
                                 } else {
@@ -264,13 +280,13 @@ fun MovieDetailScreen(
         } else meta?.let { movieMeta ->
             val scrollState = rememberScrollState()
 
-            val resolvedImageUrl = remember(movieMeta.image, link) {
+            val resolvedImageUrl = remember(movieMeta.image, cleanLink) {
                 val img = movieMeta.image
                 if (img.startsWith("//")) {
                     "https:$img"
                 } else if (img.startsWith("/")) {
                     try {
-                        val uri = android.net.Uri.parse(link)
+                        val uri = android.net.Uri.parse(cleanLink)
                         val host = uri.host
                         if (host != null) {
                             "https://$host$img"
@@ -605,7 +621,18 @@ fun MovieDetailScreen(
                                                                                         if (streams.isEmpty()) {
                                                                                             Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
                                                                                         } else if (streams.size == 1) {
-                                                                                            PlayerActivity.start(context, "${vegaLink.title} - ${episodeLink.title} - ${streams[0].quality}", streams[0].link, streams[0].headers)
+                                                                                            val epTitle = "${vegaLink.title} - ${episodeLink.title}"
+                                                                                            PlayerActivity.start(
+                                                                                                context = context,
+                                                                                                name = "$epTitle - ${streams[0].quality}",
+                                                                                                streamUrl = streams[0].link,
+                                                                                                headers = streams[0].headers,
+                                                                                                watchHistoryEnabled = true,
+                                                                                                movieLink = "$link#${android.net.Uri.encode(epTitle)}",
+                                                                                                movieImage = meta?.image ?: "",
+                                                                                                providerUrl = providerUrl,
+                                                                                                scraperValue = scraperValue
+                                                                                            )
                                                                                         } else {
                                                                                             selectedItemTitle = "${vegaLink.title} - ${episodeLink.title}"
                                                                                             streamsToSelect = streams
@@ -653,7 +680,18 @@ fun MovieDetailScreen(
                                                                                                     if (streams.isEmpty()) {
                                                                                                         Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
                                                                                                     } else if (streams.size == 1) {
-                                                                                                        PlayerActivity.start(context, "${vegaLink.title} - ${episodeLink.title} - ${streams[0].quality}", streams[0].link, streams[0].headers)
+                                                                                                        val epTitle = "${vegaLink.title} - ${episodeLink.title}"
+                                                                                                        PlayerActivity.start(
+                                                                                                            context = context,
+                                                                                                            name = "$epTitle - ${streams[0].quality}",
+                                                                                                            streamUrl = streams[0].link,
+                                                                                                            headers = streams[0].headers,
+                                                                                                            watchHistoryEnabled = true,
+                                                                                                            movieLink = "$link#${android.net.Uri.encode(epTitle)}",
+                                                                                                            movieImage = meta?.image ?: "",
+                                                                                                            providerUrl = providerUrl,
+                                                                                                            scraperValue = scraperValue
+                                                                                                        )
                                                                                                     } else {
                                                                                                         selectedItemTitle = "${vegaLink.title} - ${episodeLink.title}"
                                                                                                         streamsToSelect = streams
@@ -869,7 +907,22 @@ fun MovieDetailScreen(
                                     .fillMaxWidth()
                                     .clickable {
                                         streamsToSelect = null
-                                        PlayerActivity.start(context, "$selectedItemTitle - ${stream.quality}", stream.link, stream.headers)
+                                        val mLink = if (meta?.type?.lowercase() == "series") {
+                                            "$link#${android.net.Uri.encode(selectedItemTitle)}"
+                                        } else {
+                                            link
+                                        }
+                                        PlayerActivity.start(
+                                            context = context,
+                                            name = "$selectedItemTitle - ${stream.quality}",
+                                            streamUrl = stream.link,
+                                            headers = stream.headers,
+                                            watchHistoryEnabled = true,
+                                            movieLink = mLink,
+                                            movieImage = meta?.image ?: "",
+                                            providerUrl = providerUrl,
+                                            scraperValue = scraperValue
+                                        )
                                     },
                                 colors = CardDefaults.cardColors(
                                     containerColor = Color(0xFF2C2A36)

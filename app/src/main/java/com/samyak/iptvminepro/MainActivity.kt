@@ -19,7 +19,9 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.material.icons.Icons
@@ -28,9 +30,12 @@ import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.background
 import android.content.Intent
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -89,12 +94,14 @@ sealed class Screen(val route: String, val label: String, val icon: @Composable 
     object MovieSearch : Screen("movie_search", "Movie Search", { })
     object Downloads : Screen("downloads", "Downloads", { })
     object BugReport : Screen("bug_report", "Report Bug", { })
+    object WatchHistory : Screen("watch_history", "Watch History", { })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainApp() {
     val navController = rememberNavController()
+    var onWatchHistoryClearClick by remember { mutableStateOf<(() -> Unit)?>(null) }
     val items = listOf(
         Screen.Home,
         Screen.Movies,
@@ -139,7 +146,8 @@ fun MainApp() {
                 currentRoute != Screen.Extensions.route &&
                 currentRoute != Screen.MovieSearch.route &&
                 currentRoute != Screen.Downloads.route &&
-                currentRoute != Screen.BugReport.route
+                currentRoute != Screen.BugReport.route &&
+                currentRoute != Screen.WatchHistory.route
             ) {
                 NavigationBar(
                     containerColor = Color.White // White background
@@ -191,9 +199,10 @@ fun MainApp() {
                             Screen.CategoryDetail.route -> categoryName ?: "Category"
                             Screen.Downloads.route -> "Downloads"
                             Screen.BugReport.route -> "Report Bug"
+                            Screen.WatchHistory.route -> "Watch History"
                             else -> "IPTV Mine Pro"
                         }
-                        Text(title)
+                        Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                     },
                     navigationIcon = {
                         if (currentRoute == Screen.ProviderList.route ||
@@ -201,7 +210,8 @@ fun MainApp() {
                             currentRoute == Screen.CategoryDetail.route ||
                             currentRoute == Screen.About.route ||
                             currentRoute == Screen.Downloads.route ||
-                            currentRoute == Screen.BugReport.route
+                            currentRoute == Screen.BugReport.route ||
+                            currentRoute == Screen.WatchHistory.route
                         ) {
                             FilledIconButton(
                                 onClick = { navController.popBackStack() },
@@ -223,12 +233,17 @@ fun MainApp() {
                         }
                     },
                     actions = {
-                        if (currentRoute != Screen.ProviderList.route &&
+                        if (currentRoute == Screen.WatchHistory.route) {
+                            IconButton(onClick = { onWatchHistoryClearClick?.invoke() }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Clear All", tint = Color.White)
+                            }
+                        } else if (currentRoute != Screen.ProviderList.route &&
                             currentRoute != Screen.AddProvider.route &&
                             currentRoute != Screen.CategoryDetail.route &&
                             currentRoute != Screen.About.route &&
                             currentRoute != Screen.Downloads.route &&
-                            currentRoute != Screen.BugReport.route
+                            currentRoute != Screen.BugReport.route &&
+                            currentRoute != Screen.WatchHistory.route
                         ) {
                             IconButton(onClick = { 
                                 navController.navigate(Screen.MovieSearch.route)
@@ -238,10 +253,10 @@ fun MainApp() {
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
-                        titleContentColor = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
-                        actionIconContentColor = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
-                        navigationIconContentColor = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary
+                        containerColor = Color(0xFF26A69A),
+                        titleContentColor = Color.White,
+                        actionIconContentColor = Color.White,
+                        navigationIconContentColor = Color.White
                     )
                 )
             }
@@ -310,7 +325,8 @@ fun MainApp() {
                     onNavigateToExtensions = { navController.navigate(Screen.Extensions.route) },
                     onNavigateToAbout = { navController.navigate(Screen.About.route) },
                     onNavigateToDownloads = { navController.navigate(Screen.Downloads.route) },
-                    onNavigateToBugReport = { navController.navigate(Screen.BugReport.route) }
+                    onNavigateToBugReport = { navController.navigate(Screen.BugReport.route) },
+                    onNavigateToWatchHistory = { navController.navigate(Screen.WatchHistory.route) }
                 ) 
             }
             composable(Screen.Downloads.route) {
@@ -364,6 +380,12 @@ fun MainApp() {
             }
             composable(Screen.About.route) { AboutScreen() }
             composable(Screen.BugReport.route) { BugReportScreen() }
+            composable(Screen.WatchHistory.route) {
+                com.samyak.iptvminepro.ui.screens.WatchHistoryScreen(
+                    navController = navController,
+                    onClearClickRegistered = { onWatchHistoryClearClick = it }
+                )
+            }
             composable(Screen.MovieSearch.route) {
                 MovieSearchScreen(
                     navController = navController,

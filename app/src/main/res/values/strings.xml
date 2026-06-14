@@ -76,6 +76,7 @@
     <string name="setting_disclaimer">Disclaimer</string>
     <string name="desc_navigate">Navigate</string>
     <string name="setting_downloads">Downloads</string>
+    <string name="setting_watch_history">Watch History</string>
     <string name="tab_downloading">Downloading</string>
     <string name="tab_downloaded">Downloaded</string>
     <string name="no_downloads_active">No active downloads</string>

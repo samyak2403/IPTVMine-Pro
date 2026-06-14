@@ -18,6 +18,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import com.samyak.iptvminepro.utils.TitleUtils.cleanTitle
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -75,7 +76,7 @@ object DownloadManager {
                 val json = file.readText()
                 val type = object : TypeToken<List<DownloadTask>>() {}.type
                 val loadedList: List<DownloadTask> = gson.fromJson(json, type) ?: emptyList()
-                _downloadTasks.value = loadedList
+                _downloadTasks.value = loadedList.map { it.copy(title = cleanTitle(it.title)) }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -94,17 +95,18 @@ object DownloadManager {
     }
 
     fun download(title: String, downloadUrl: String, headers: Map<String, String>? = null) {
+        val cleanedTitle = cleanTitle(title)
         val extension = downloadUrl.substringAfterLast('.', "").substringBefore('?').lowercase().let {
             if (it.isEmpty() || it.length > 5) "mp4" else it
         }
-        val safeTitle = title.replace("[\\\\/:*?\"<>|]".toRegex(), "_")
+        val safeTitle = cleanedTitle.replace("[\\\\/:*?\"<>|]".toRegex(), "_")
         val fileName = "${safeTitle}_${System.currentTimeMillis()}.$extension"
         val downloadDir = appContext.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: appContext.filesDir
         val savePath = File(downloadDir, fileName).absolutePath
 
         val newTask = DownloadTask(
             id = UUID.randomUUID().toString(),
-            title = title,
+            title = cleanedTitle,
             downloadUrl = downloadUrl,
             headers = headers,
             savePath = savePath,
