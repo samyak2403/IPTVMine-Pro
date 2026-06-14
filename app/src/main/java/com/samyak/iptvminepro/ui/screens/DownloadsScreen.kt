@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -121,7 +122,8 @@ fun DownloadsScreen(navController: NavController) {
                         items(downloadingTasks, key = { it.id }) { task ->
                             DownloadingItem(
                                 task = task,
-                                onCancel = { DownloadManager.cancelTask(task.id) }
+                                onCancel = { DownloadManager.cancelTask(task.id) },
+                                onRetry = { DownloadManager.retryTask(task.id) }
                             )
                         }
                     }
@@ -181,7 +183,8 @@ fun DownloadsScreen(navController: NavController) {
 @Composable
 fun DownloadingItem(
     task: DownloadTask,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    onRetry: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -227,12 +230,23 @@ fun DownloadingItem(
                     )
                 }
                 
-                IconButton(onClick = onCancel) {
-                    Icon(
-                        imageVector = Icons.Filled.Cancel,
-                        contentDescription = "Cancel Download",
-                        tint = Color.Gray
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (task.status == DownloadStatus.FAILED) {
+                        IconButton(onClick = onRetry) {
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = "Retry Download",
+                                tint = Color(0xFF26A69A)
+                            )
+                        }
+                    }
+                    IconButton(onClick = onCancel) {
+                        Icon(
+                            imageVector = Icons.Filled.Cancel,
+                            contentDescription = "Cancel Download",
+                            tint = Color.Gray
+                        )
+                    }
                 }
             }
 

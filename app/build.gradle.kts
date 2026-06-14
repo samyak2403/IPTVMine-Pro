@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -72,6 +73,10 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.security.crypto)
+
+    // Firebase
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.firestore)
 
     implementation(project(":Player"))
     testImplementation(libs.junit)

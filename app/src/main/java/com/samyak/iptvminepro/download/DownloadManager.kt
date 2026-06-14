@@ -29,6 +29,9 @@ object DownloadManager {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val semaphore = Semaphore(5) // Max 5 downloads at a time
     private val client = OkHttpClient.Builder()
+        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
@@ -291,10 +294,33 @@ object DownloadManager {
         saveTasks()
     }
 
+    fun retryTask(id: String) {
+        val task = _downloadTasks.value.find { it.id == id } ?: return
+        if (task.status != DownloadStatus.FAILED) return
+
+        _downloadTasks.value = _downloadTasks.value.map {
+            if (it.id == id) {
+                it.copy(status = DownloadStatus.PENDING, speed = "")
+            } else it
+        }
+        saveTasks()
+        startServiceIfRunning()
+
+        scope.launch {
+            runTask(task)
+        }
+    }
+
     private suspend fun performDownload(task: DownloadTask): Boolean {
+        val file = File(task.savePath)
+        val existingLength = if (file.exists()) file.length() else 0L
+
         val requestBuilder = Request.Builder().url(task.downloadUrl)
         task.headers?.forEach { (key, value) ->
             requestBuilder.addHeader(key, value)
+        }
+        if (existingLength > 0) {
+            requestBuilder.addHeader("Range", "bytes=$existingLength-")
         }
         val request = requestBuilder.build()
 
@@ -303,23 +329,36 @@ object DownloadManager {
         var outputStream: FileOutputStream? = null
         try {
             val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return false
+            if (!response.isSuccessful) {
+                if (response.code == 416) {
+                    if (file.exists()) {
+                        file.delete()
+                    }
+                    return performDownload(task)
+                }
+                return false
+            }
             val body = response.body ?: return false
+            val isPartial = response.code == 206
             val contentLength = body.contentLength()
             
+            val totalLength = if (isPartial) existingLength + contentLength else contentLength
+            
             inputStream = body.byteStream()
-            val file = File(task.savePath)
-            outputStream = FileOutputStream(file)
+            val append = isPartial && existingLength > 0
+            if (!append && file.exists()) {
+                file.delete()
+            }
+            outputStream = FileOutputStream(file, append)
 
             val buffer = ByteArray(8192)
             var bytesRead: Int
-            var downloaded = 0L
+            var downloaded = if (append) existingLength else 0L
             var lastUpdate = System.currentTimeMillis()
-            var lastDownloadedBytes = 0L
+            var lastDownloadedBytes = downloaded
             var speedStr = ""
 
             while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                // Check if task was cancelled/removed
                 val current = _downloadTasks.value.find { it.id == task.id }
                 if (current == null || current.status != DownloadStatus.DOWNLOADING) {
                     return false
@@ -330,21 +369,19 @@ object DownloadManager {
 
                 val now = System.currentTimeMillis()
                 if (now - lastUpdate >= 1000) {
-                    val progress = if (contentLength > 0) downloaded.toFloat() / contentLength else 0f
+                    val progress = if (totalLength > 0) downloaded.toFloat() / totalLength else 0f
                     val speedBytes = downloaded - lastDownloadedBytes
                     speedStr = formatSpeed(speedBytes)
-                    updateTaskProgress(task.id, progress, downloaded, contentLength, speedStr)
+                    updateTaskProgress(task.id, progress, downloaded, totalLength, speedStr)
                     
                     lastUpdate = now
                     lastDownloadedBytes = downloaded
                     
-                    // Trigger notification update via service if running
                     DownloadService.updateNotification(appContext)
                 }
             }
             outputStream.flush()
             
-            // Final progress update
             val progress = 1f
             updateTaskProgress(task.id, progress, downloaded, downloaded, "")
             success = true
