@@ -144,7 +144,7 @@ class VegaProviderRunner(private val context: Context) {
                 chain.proceed(original)
             } else {
                 val modified = original.newBuilder()
-                    .header("User-Agent", currentUserAgent)
+                    .header("User-Agent", CHROME_USER_AGENT)
                     .build()
                 chain.proceed(modified)
             }
@@ -236,10 +236,6 @@ class VegaProviderRunner(private val context: Context) {
         webViewInstance.settings.domStorageEnabled = true
         webViewInstance.settings.allowContentAccess = true
         webViewInstance.settings.mediaPlaybackRequiresUserGesture = false
-        
-        currentUserAgent = webViewInstance.settings.userAgentString
-        android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(webViewInstance, true)
-        
         webViewInstance.addJavascriptInterface(bridge, "AndroidBridge")
         webViewInstance.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -850,7 +846,7 @@ class VegaProviderRunner(private val context: Context) {
                     }
                 },
                 commonHeaders: {
-                    "User-Agent": window.AndroidBridge.getUserAgent()
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
                 }
             };
 
@@ -1227,24 +1223,6 @@ class VegaProviderRunner(private val context: Context) {
     private val loadedScrapers = mutableSetOf<String>()
 
     suspend fun loadScraper(repoUrl: String, providerValue: String) {
-        val baseUrl = bridge.getBaseUrl(providerValue)
-        val currentUrl = withContext(Dispatchers.Main) { webView?.url } ?: ""
-        
-        // Only load if not already on the correct provider's domain
-        val needsLoad = !currentUrl.startsWith(baseUrl.removeSuffix("/"))
-        if (needsLoad) {
-            Log.d(TAG, "Navigating WebView to scraper base URL: $baseUrl (current URL: $currentUrl)")
-            withContext(Dispatchers.Main) {
-                if (webViewReady.isCompleted) {
-                    webViewReady = CompletableDeferred()
-                }
-                webView?.loadUrl(baseUrl)
-            }
-            awaitWebViewReady()
-            isCompatInjected = false
-            loadedScrapers.clear()
-        }
-
         // Skip if already loaded
         if (loadedScrapers.contains("${repoUrl}::${providerValue}")) {
             // Still update providerValue on context
@@ -1655,11 +1633,6 @@ class VegaProviderRunner(private val context: Context) {
             val id = "cb_${++callbackIdCounter}"
             callbacks[id] = deferred
             return id
-        }
-
-        @JavascriptInterface
-        fun getUserAgent(): String {
-            return currentUserAgent
         }
 
         @JavascriptInterface
