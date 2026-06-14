@@ -90,6 +90,7 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var topController: LinearLayout
     private lateinit var bottomController: LinearLayout
     private lateinit var audioTrackBtn: ImageButton
+    private lateinit var subtitleBtn: ImageButton
 
     private var channelName: String? = null
     private var channelStreamUrl: String? = null
@@ -248,12 +249,16 @@ class PlayerActivity : AppCompatActivity() {
         topController = playerView.findViewById(R.id.topController)
         bottomController = playerView.findViewById(R.id.bottomController)
         audioTrackBtn = playerView.findViewById(R.id.audioTrackBtn)
+        subtitleBtn = playerView.findViewById(R.id.subtitleBtn)
         
         // Setup PiP button
         setupPipButton()
         
         // Setup audio track button
         setupAudioTrackButton()
+        
+        // Setup subtitle button
+        setupSubtitleButton()
         
         // Hide unnecessary buttons on TV
         if (isTvMode) {
@@ -399,6 +404,116 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
     }
+    
+    private fun setupSubtitleButton() {
+        subtitleBtn.setOnClickListener {
+            showSubtitleTrackSelector()
+        }
+    }
+    
+    private fun updateSubtitleButtonVisibility() {
+        player?.let { exoPlayer ->
+            val subtitleTrackCount = getAvailableSubtitleTracks().size
+            subtitleBtn.visibility = if (subtitleTrackCount > 0) View.VISIBLE else View.GONE
+        } ?: run {
+            subtitleBtn.visibility = View.GONE
+        }
+    }
+    
+    private fun getAvailableSubtitleTracks(): List<Pair<Int, String>> {
+        val subtitleTracks = mutableListOf<Pair<Int, String>>()
+        player?.currentTracks?.groups?.forEachIndexed { groupIndex, group ->
+            if (group.type == C.TRACK_TYPE_TEXT) {
+                for (trackIndex in 0 until group.length) {
+                    val format = group.getTrackFormat(trackIndex)
+                    val language = format.language ?: "Unknown"
+                    val label = format.label ?: ""
+                    val trackName = buildString {
+                        if (label.isNotEmpty()) {
+                            append(label)
+                        } else {
+                            append(getLanguageName(language))
+                        }
+                    }
+                    subtitleTracks.add(Pair(groupIndex, trackName))
+                }
+            }
+        }
+        return subtitleTracks
+    }
+    
+    private fun getCurrentSubtitleTrackIndex(): Int {
+        val parameters = trackSelector?.parameters ?: return 0
+        if (parameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)) {
+            return 0 // "Off"
+        }
+        var currentIndex = 1 // 0 is "Off"
+        player?.currentTracks?.groups?.forEachIndexed { groupIndex, group ->
+            if (group.type == C.TRACK_TYPE_TEXT) {
+                for (trackIndex in 0 until group.length) {
+                    if (group.isTrackSelected(trackIndex)) {
+                        return currentIndex
+                    }
+                    currentIndex++
+                }
+            }
+        }
+        return 0 // Default to "Off" if none is selected
+    }
+    
+    private fun showSubtitleTrackSelector() {
+        val subtitleTracks = getAvailableSubtitleTracks()
+        if (subtitleTracks.isEmpty()) {
+            Toast.makeText(this, "No subtitles available", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        val options = mutableListOf<String>()
+        options.add("Off")
+        options.addAll(subtitleTracks.map { it.second })
+        
+        val currentTrackIndex = getCurrentSubtitleTrackIndex()
+        
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Select Subtitles")
+            .setSingleChoiceItems(options.toTypedArray(), currentTrackIndex) { dialog, which ->
+                selectSubtitleTrack(which - 1)
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun selectSubtitleTrack(trackIndex: Int) {
+        player?.let { exoPlayer ->
+            val builder = trackSelector?.buildUponParameters() ?: return
+            if (trackIndex < 0) {
+                // "Off" selected
+                builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                trackSelector?.setParameters(builder)
+                Toast.makeText(this, "Subtitles: Off", Toast.LENGTH_SHORT).show()
+            } else {
+                var currentIndex = 0
+                exoPlayer.currentTracks.groups.forEachIndexed { groupIndex, group ->
+                    if (group.type == C.TRACK_TYPE_TEXT) {
+                        for (i in 0 until group.length) {
+                            if (currentIndex == trackIndex) {
+                                builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                    .setOverrideForType(
+                                        TrackSelectionOverride(group.mediaTrackGroup, i)
+                                    )
+                                trackSelector?.setParameters(builder)
+                                val trackName = getAvailableSubtitleTracks().getOrNull(trackIndex)?.second ?: "Track ${trackIndex + 1}"
+                                Toast.makeText(this, "Subtitles: $trackName", Toast.LENGTH_SHORT).show()
+                                return
+                            }
+                            currentIndex++
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     private fun setupPlayer() {
         try {
@@ -493,6 +608,7 @@ class PlayerActivity : AppCompatActivity() {
                             startProgressBarUpdates()
                             updatePlayPauseButton(player?.isPlaying == true)
                             updateAudioTrackButtonVisibility()
+                            updateSubtitleButtonVisibility()
                         }
                         Player.STATE_BUFFERING -> {
                             progressBar.visibility = View.VISIBLE
@@ -516,6 +632,7 @@ class PlayerActivity : AppCompatActivity() {
                 
                 override fun onTracksChanged(tracks: Tracks) {
                     updateAudioTrackButtonVisibility()
+                    updateSubtitleButtonVisibility()
                 }
             }
             

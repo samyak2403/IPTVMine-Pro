@@ -51,6 +51,18 @@
             android:visibility="gone"
             app:tint="@color/white" />
 
+        <!-- Subtitle Button - Shows when subtitle tracks are available -->
+        <ImageButton
+            android:id="@+id/subtitleBtn"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:background="?android:selectableItemBackground"
+            android:contentDescription="@string/subtitles"
+            android:focusable="true"
+            android:src="@drawable/subtitles_icon"
+            android:visibility="gone"
+            app:tint="@color/white" />
+
         <!-- Chromecast Button - Using MediaRouteButton for proper Cast integration -->
         <androidx.mediarouter.app.MediaRouteButton
             android:id="@+id/castBtn"
