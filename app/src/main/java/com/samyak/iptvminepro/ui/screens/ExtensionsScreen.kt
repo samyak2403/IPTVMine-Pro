@@ -187,6 +187,13 @@ fun ExtensionsScreen(
                                 isInstalled = selectedTabIndex == 0,
                                 onAction = { installed ->
                                     extensionRepository.setExtensionInstalled(extension.value, installed)
+                                    if (installed) {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "${extension.display_name} has been installed successfully!",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
                                 }
                             )
                         }
