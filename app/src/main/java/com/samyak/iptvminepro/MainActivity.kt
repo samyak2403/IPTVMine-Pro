@@ -95,6 +95,7 @@ sealed class Screen(val route: String, val label: String, val icon: @Composable 
     object Downloads : Screen("downloads", "Downloads", { })
     object BugReport : Screen("bug_report", "Report Bug", { })
     object WatchHistory : Screen("watch_history", "Watch History", { })
+    object Legal : Screen("legal?docType={docType}", "Legal Information", { })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -147,7 +148,8 @@ fun MainApp() {
                 currentRoute != Screen.MovieSearch.route &&
                 currentRoute != Screen.Downloads.route &&
                 currentRoute != Screen.BugReport.route &&
-                currentRoute != Screen.WatchHistory.route
+                currentRoute != Screen.WatchHistory.route &&
+                currentRoute != Screen.Legal.route
             ) {
                 NavigationBar(
                     containerColor = Color.White // White background
@@ -200,6 +202,15 @@ fun MainApp() {
                             Screen.Downloads.route -> "Downloads"
                             Screen.BugReport.route -> "Report Bug"
                             Screen.WatchHistory.route -> "Watch History"
+                            Screen.Legal.route -> {
+                                val docType = navBackStackEntry?.arguments?.getString("docType") ?: "privacy"
+                                when (docType) {
+                                    "privacy" -> "Privacy Policy"
+                                    "terms" -> "Terms & Conditions"
+                                    "disclaimer" -> "Disclaimer"
+                                    else -> "Legal Information"
+                                }
+                            }
                             else -> "IPTV Mine Pro"
                         }
                         Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
@@ -211,7 +222,8 @@ fun MainApp() {
                             currentRoute == Screen.About.route ||
                             currentRoute == Screen.Downloads.route ||
                             currentRoute == Screen.BugReport.route ||
-                            currentRoute == Screen.WatchHistory.route
+                            currentRoute == Screen.WatchHistory.route ||
+                            currentRoute == Screen.Legal.route
                         ) {
                             FilledIconButton(
                                 onClick = { navController.popBackStack() },
@@ -243,7 +255,8 @@ fun MainApp() {
                             currentRoute != Screen.About.route &&
                             currentRoute != Screen.Downloads.route &&
                             currentRoute != Screen.BugReport.route &&
-                            currentRoute != Screen.WatchHistory.route
+                            currentRoute != Screen.WatchHistory.route &&
+                            currentRoute != Screen.Legal.route
                         ) {
                             IconButton(onClick = { 
                                 navController.navigate(Screen.MovieSearch.route)
@@ -326,7 +339,8 @@ fun MainApp() {
                     onNavigateToAbout = { navController.navigate(Screen.About.route) },
                     onNavigateToDownloads = { navController.navigate(Screen.Downloads.route) },
                     onNavigateToBugReport = { navController.navigate(Screen.BugReport.route) },
-                    onNavigateToWatchHistory = { navController.navigate(Screen.WatchHistory.route) }
+                    onNavigateToWatchHistory = { navController.navigate(Screen.WatchHistory.route) },
+                    onNavigateToLegal = { docType -> navController.navigate("legal?docType=$docType") }
                 ) 
             }
             composable(Screen.Downloads.route) {
@@ -385,6 +399,19 @@ fun MainApp() {
                     navController = navController,
                     onClearClickRegistered = { onWatchHistoryClearClick = it }
                 )
+            }
+            composable(
+                route = Screen.Legal.route,
+                arguments = listOf(
+                    navArgument("docType") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = "privacy"
+                    }
+                )
+            ) { backStackEntry ->
+                val docType = backStackEntry.arguments?.getString("docType") ?: "privacy"
+                com.samyak.iptvminepro.ui.screens.LegalDocumentScreen(docType = docType)
             }
             composable(Screen.MovieSearch.route) {
                 MovieSearchScreen(

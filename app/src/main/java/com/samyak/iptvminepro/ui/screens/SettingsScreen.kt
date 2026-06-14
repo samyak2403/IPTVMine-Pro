@@ -32,7 +32,8 @@ fun SettingsScreen(
     onNavigateToAbout: () -> Unit,
     onNavigateToDownloads: () -> Unit,
     onNavigateToBugReport: () -> Unit,
-    onNavigateToWatchHistory: () -> Unit
+    onNavigateToWatchHistory: () -> Unit,
+    onNavigateToLegal: (String) -> Unit
 ) {
     val scrollState = rememberScrollState()
     val context = LocalContext.current
@@ -87,17 +88,17 @@ fun SettingsScreen(
         SettingsItem(
             title = stringResource(id = R.string.setting_privacy_policy),
             icon = Icons.Filled.Security,
-            onClick = { /* TODO */ }
+            onClick = { onNavigateToLegal("privacy") }
         )
         SettingsItem(
             title = stringResource(id = R.string.setting_terms_conditions),
             icon = Icons.Filled.Description,
-            onClick = { /* TODO */ }
+            onClick = { onNavigateToLegal("terms") }
         )
         SettingsItem(
             title = stringResource(id = R.string.setting_disclaimer),
             icon = Icons.Filled.Warning,
-            onClick = { /* TODO */ }
+            onClick = { onNavigateToLegal("disclaimer") }
         )
         
         Spacer(modifier = Modifier.height(32.dp))
