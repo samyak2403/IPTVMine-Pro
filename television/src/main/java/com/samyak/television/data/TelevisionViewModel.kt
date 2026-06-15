@@ -48,7 +48,7 @@ class TelevisionViewModel(application: Application) : AndroidViewModel(applicati
             val allChannels = mutableListOf<Channel>()
 
             for (provider in providers) {
-                if (provider.isActive) {
+                if (provider.isActive && provider.safeType == com.samyak.television.model.ProviderType.IPTV) {
                     Log.d(TAG, "Loading channels from provider: ${provider.title}")
                     val list = ChannelsLoader.fetchChannels(provider.url)
                     allChannels.addAll(list)

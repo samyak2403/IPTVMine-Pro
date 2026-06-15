@@ -13,23 +13,10 @@ class ProviderRepository(context: Context) {
 
     companion object {
         private const val KEY_PROVIDERS = "saved_providers"
-        private const val DEFAULT_PROVIDER_URL = "https://iptv-org.github.io/iptv/categories/news.m3u"
     }
 
     fun getProviders(): List<Provider> {
-        val json = prefs.getString(KEY_PROVIDERS, null)
-        if (json.isNullOrEmpty()) {
-            // Return default provider if empty
-            val defaultProvider = Provider(
-                title = "Free News Channels",
-                url = DEFAULT_PROVIDER_URL,
-                isActive = true,
-                type = ProviderType.IPTV
-            )
-            val defaultList = listOf(defaultProvider)
-            saveProviders(defaultList)
-            return defaultList
-        }
+        val json = prefs.getString(KEY_PROVIDERS, null) ?: return emptyList()
         val type = object : TypeToken<List<Provider>>() {}.type
         return try {
             gson.fromJson(json, type)

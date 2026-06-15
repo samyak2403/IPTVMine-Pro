@@ -111,27 +111,27 @@ class PlayerActivity : AppCompatActivity() {
     private var controllerHideRunnable: Runnable? = null
     private val TV_CONTROLLER_TIMEOUT = 5000L
     private val TV_SEEK_INCREMENT = 10000L
-    
+
     // Picture-in-Picture
     private var isInPipMode = false
     private var pipReceiver: BroadcastReceiver? = null
-    
+
     // Player listener reference for proper cleanup
     private var playerListener: Player.Listener? = null
-    
+
     // Track selector for quality control
     private var trackSelector: DefaultTrackSelector? = null
     private var isDataSavingEnabled = false
-    
+
     companion object {
         private const val TAG = "PlayerActivity"
         private const val INCREMENT_MILLIS = 5000L
         private const val PROGRESS_BAR_UPDATE_INTERVAL_MS = 16
-        
+
         private const val SCALE_MODE_FIT = 0
         private const val SCALE_MODE_FILL = 1
         private const val SCALE_MODE_ZOOM = 2
-        
+
         // PiP Actions
         private const val ACTION_PIP_PLAY = "com.samyak2403.iptvmine.PIP_PLAY"
         private const val ACTION_PIP_PAUSE = "com.samyak2403.iptvmine.PIP_PAUSE"
@@ -175,9 +175,9 @@ class PlayerActivity : AppCompatActivity() {
             trimmed.startsWith("file:/", ignoreCase = true) ||
             trimmed.startsWith("content:/", ignoreCase = true) ||
             trimmed.startsWith("/") -> trimmed
-            !trimmed.startsWith("http://", ignoreCase = true) && 
-            !trimmed.startsWith("https://", ignoreCase = true) && 
-            !trimmed.startsWith("rtmp://", ignoreCase = true) && 
+            !trimmed.startsWith("http://", ignoreCase = true) &&
+            !trimmed.startsWith("https://", ignoreCase = true) &&
+            !trimmed.startsWith("rtmp://", ignoreCase = true) &&
             trimmed.isNotEmpty() -> "https://$trimmed"
             else -> trimmed
         }
@@ -230,7 +230,7 @@ class PlayerActivity : AppCompatActivity() {
             setupTvNavigation()
             setupTvControllerAutoHide()
         }
-        
+
         // Setup PiP receiver
         setupPipReceiver()
 
@@ -265,25 +265,24 @@ class PlayerActivity : AppCompatActivity() {
         bottomController = playerView.findViewById(R.id.bottomController)
         audioTrackBtn = playerView.findViewById(R.id.audioTrackBtn)
         subtitleBtn = playerView.findViewById(R.id.subtitleBtn)
-        
+
         // Setup PiP button
         setupPipButton()
-        
+
         // Setup audio track button
         setupAudioTrackButton()
-        
+
         // Setup subtitle button
         setupSubtitleButton()
-        
+
         // Hide unnecessary buttons on TV
         if (isTvMode) {
             fullScreenBtn.visibility = View.GONE
-            backBtn.visibility = View.GONE // Use remote back button instead
         }
 
         updateScaleMode()
     }
-    
+
     private fun setupPipButton() {
         val pipBtn: ImageButton? = playerView.findViewById(R.id.pipBtn)
         pipBtn?.let { btn ->
@@ -292,7 +291,7 @@ class PlayerActivity : AppCompatActivity() {
                 btn.visibility = View.GONE
                 return
             }
-            
+
             // Check if PiP is supported
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
                 packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
@@ -305,13 +304,13 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
     }
-    
+
     private fun setupAudioTrackButton() {
         audioTrackBtn.setOnClickListener {
             showAudioTrackSelector()
         }
     }
-    
+
     private fun updateAudioTrackButtonVisibility() {
         player?.let { exoPlayer ->
             val audioTrackCount = getAvailableAudioTracks().size
@@ -320,7 +319,7 @@ class PlayerActivity : AppCompatActivity() {
             audioTrackBtn.visibility = View.GONE
         }
     }
-    
+
     private fun getAvailableAudioTracks(): List<Pair<Int, String>> {
         val audioTracks = mutableListOf<Pair<Int, String>>()
         player?.currentTracks?.groups?.forEachIndexed { groupIndex, group ->
@@ -352,7 +351,7 @@ class PlayerActivity : AppCompatActivity() {
         }
         return audioTracks
     }
-    
+
     private fun getLanguageName(languageCode: String): String {
         return try {
             java.util.Locale(languageCode).displayLanguage
@@ -360,17 +359,17 @@ class PlayerActivity : AppCompatActivity() {
             languageCode
         }
     }
-    
+
     private fun showAudioTrackSelector() {
         val audioTracks = getAvailableAudioTracks()
         if (audioTracks.isEmpty()) {
             Toast.makeText(this, "No audio tracks available", Toast.LENGTH_SHORT).show()
             return
         }
-        
+
         val trackNames = audioTracks.map { it.second }.toTypedArray()
         val currentTrackIndex = getCurrentAudioTrackIndex()
-        
+
         android.app.AlertDialog.Builder(this)
             .setTitle("Select Audio Track")
             .setSingleChoiceItems(trackNames, currentTrackIndex) { dialog, which ->
@@ -380,7 +379,7 @@ class PlayerActivity : AppCompatActivity() {
             .setNegativeButton("Cancel", null)
             .show()
     }
-    
+
     private fun getCurrentAudioTrackIndex(): Int {
         var currentIndex = 0
         player?.currentTracks?.groups?.forEachIndexed { groupIndex, group ->
@@ -395,7 +394,7 @@ class PlayerActivity : AppCompatActivity() {
         }
         return 0
     }
-    
+
     private fun selectAudioTrack(trackIndex: Int) {
         player?.let { exoPlayer ->
             var currentIndex = 0
@@ -419,13 +418,13 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
     }
-    
+
     private fun setupSubtitleButton() {
         subtitleBtn.setOnClickListener {
             showSubtitleTrackSelector()
         }
     }
-    
+
     private fun updateSubtitleButtonVisibility() {
         player?.let { exoPlayer ->
             val subtitleTrackCount = getAvailableSubtitleTracks().size
@@ -434,7 +433,7 @@ class PlayerActivity : AppCompatActivity() {
             subtitleBtn.visibility = View.GONE
         }
     }
-    
+
     private fun getAvailableSubtitleTracks(): List<Pair<Int, String>> {
         val subtitleTracks = mutableListOf<Pair<Int, String>>()
         player?.currentTracks?.groups?.forEachIndexed { groupIndex, group ->
@@ -456,7 +455,7 @@ class PlayerActivity : AppCompatActivity() {
         }
         return subtitleTracks
     }
-    
+
     private fun getCurrentSubtitleTrackIndex(): Int {
         val parameters = trackSelector?.parameters ?: return 0
         if (parameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)) {
@@ -475,20 +474,20 @@ class PlayerActivity : AppCompatActivity() {
         }
         return 0 // Default to "Off" if none is selected
     }
-    
+
     private fun showSubtitleTrackSelector() {
         val subtitleTracks = getAvailableSubtitleTracks()
         if (subtitleTracks.isEmpty()) {
             Toast.makeText(this, "No subtitles available", Toast.LENGTH_SHORT).show()
             return
         }
-        
+
         val options = mutableListOf<String>()
         options.add("Off")
         options.addAll(subtitleTracks.map { it.second })
-        
+
         val currentTrackIndex = getCurrentSubtitleTrackIndex()
-        
+
         android.app.AlertDialog.Builder(this)
             .setTitle("Select Subtitles")
             .setSingleChoiceItems(options.toTypedArray(), currentTrackIndex) { dialog, which ->
@@ -498,7 +497,7 @@ class PlayerActivity : AppCompatActivity() {
             .setNegativeButton("Cancel", null)
             .show()
     }
-    
+
     private fun selectSubtitleTrack(trackIndex: Int) {
         player?.let { exoPlayer ->
             val builder = trackSelector?.buildUponParameters() ?: return
@@ -535,7 +534,7 @@ class PlayerActivity : AppCompatActivity() {
             // Check data saving mode preference
             val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
             isDataSavingEnabled = prefs.getBoolean("data_saving_enabled", false)
-            
+
             val headersBundle = intent?.getBundleExtra("channel_headers")
             val headersMap = mutableMapOf<String, String>()
             var userAgent: String? = null
@@ -644,20 +643,20 @@ class PlayerActivity : AppCompatActivity() {
                 override fun onPlayerError(error: PlaybackException) {
                     handlePlayerError(error)
                 }
-                
+
                 override fun onTracksChanged(tracks: Tracks) {
                     updateAudioTrackButtonVisibility()
                     updateSubtitleButtonVisibility()
                 }
             }
-            
+
             val watchHistoryEnabled = intent?.getBooleanExtra("watch_history_enabled", false) ?: false
             val movieLink = intent?.getStringExtra("movie_link")
             var startPosition = 0L
             if (watchHistoryEnabled && !movieLink.isNullOrBlank()) {
                 startPosition = WatchHistoryRepository.getProgress(this, movieLink)
             }
-            
+
             player?.apply {
                 addListener(playerListener!!)
                 if (startPosition > 0L) {
@@ -769,7 +768,7 @@ class PlayerActivity : AppCompatActivity() {
                     if (player.isCurrentMediaItemLive) {
                         val currentPosition = player.currentPosition
                         val duration = player.duration
-                        
+
                         if (duration > 0 && duration - currentPosition < 10000) {
                             exoLiveText.text = "LIVE"
                             exoLiveText.setBackgroundResource(R.drawable.live_indicator_background)
@@ -914,7 +913,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun updateFullscreenButtonIcon() {
         fullScreenBtn.setImageResource(
-            if (isFullScreen) R.drawable.fullscreen_exit_icon 
+            if (isFullScreen) R.drawable.fullscreen_exit_icon
             else R.drawable.fullscreen_icon
         )
     }
@@ -1247,13 +1246,13 @@ class PlayerActivity : AppCompatActivity() {
     private fun setupTvNavigation() {
         // Setup focus animations for all buttons
         // Animation setup removed as TvUtils is not present
-        
+
         // Set initial focus to play/pause button
         playPauseBtn.requestFocus()
-        
+
         Log.d(TAG, "TV navigation setup complete")
     }
-    
+
     /**
      * Setup auto-hide for TV controller
      */
@@ -1265,7 +1264,7 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
     }
-    
+
     /**
      * Reset the controller auto-hide timer
      */
@@ -1273,7 +1272,7 @@ class PlayerActivity : AppCompatActivity() {
         controllerHideHandler?.removeCallbacks(controllerHideRunnable!!)
         controllerHideHandler?.postDelayed(controllerHideRunnable!!, TV_CONTROLLER_TIMEOUT)
     }
-    
+
     /**
      * Handle D-pad and media key events for TV
      */
@@ -1281,7 +1280,12 @@ class PlayerActivity : AppCompatActivity() {
         if (!isTvMode) {
             return super.onKeyDown(keyCode, event)
         }
-        
+
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            finish()
+            return true
+        }
+
         // Show controller on any key press
         if (!playerView.isControllerFullyVisible) {
             playerView.showController()
@@ -1289,7 +1293,7 @@ class PlayerActivity : AppCompatActivity() {
         } else {
             resetControllerHideTimer()
         }
-        
+
         when (keyCode) {
             // Media control keys
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
@@ -1318,7 +1322,7 @@ class PlayerActivity : AppCompatActivity() {
                 player?.stop()
                 return true
             }
-            
+
             // D-pad navigation when controller is hidden
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                 if (!playerView.isControllerFullyVisible) {
@@ -1341,10 +1345,10 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
         }
-        
+
         return super.onKeyDown(keyCode, event)
     }
-    
+
     /**
      * Toggle play/pause state
      */
@@ -1359,7 +1363,7 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
     }
-    
+
     /**
      * Seek forward by TV_SEEK_INCREMENT
      */
@@ -1369,7 +1373,7 @@ class PlayerActivity : AppCompatActivity() {
             it.seekTo(newPosition)
         }
     }
-    
+
     /**
      * Seek backward by TV_SEEK_INCREMENT
      */
@@ -1379,7 +1383,7 @@ class PlayerActivity : AppCompatActivity() {
             it.seekTo(newPosition)
         }
     }
-    
+
     /**
      * Show visual feedback for seek operations on TV
      */
@@ -1388,7 +1392,7 @@ class PlayerActivity : AppCompatActivity() {
         val seconds = seekAmount / 1000
         Toast.makeText(this, "${direction}${seconds}s", Toast.LENGTH_SHORT).show()
     }
-    
+
     /**
      * Enter Picture-in-Picture mode
      */
@@ -1404,17 +1408,17 @@ class PlayerActivity : AppCompatActivity() {
             Toast.makeText(this, "PiP requires Android 8.0+", Toast.LENGTH_SHORT).show()
         }
     }
-    
+
     @RequiresApi(Build.VERSION_CODES.O)
     private fun buildPipParams(): PictureInPictureParams {
         val aspectRatio = Rational(16, 9)
         val builder = PictureInPictureParams.Builder()
             .setAspectRatio(aspectRatio)
-        
+
         // Add play/pause action
         val actions = ArrayList<RemoteAction>()
         val isPlaying = player?.isPlaying == true
-        
+
         val actionIntent = Intent(if (isPlaying) ACTION_PIP_PAUSE else ACTION_PIP_PLAY)
         val pendingIntent = PendingIntent.getBroadcast(
             this,
@@ -1422,19 +1426,19 @@ class PlayerActivity : AppCompatActivity() {
             actionIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        
+
         val icon = Icon.createWithResource(
             this,
             if (isPlaying) R.drawable.pause_icon else R.drawable.play_icon
         )
         val title = if (isPlaying) "Pause" else "Play"
-        
+
         actions.add(RemoteAction(icon, title, title, pendingIntent))
         builder.setActions(actions)
-        
+
         return builder.build()
     }
-    
+
     private fun setupPipReceiver() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             pipReceiver = object : BroadcastReceiver() {
@@ -1451,7 +1455,7 @@ class PlayerActivity : AppCompatActivity() {
                     }
                 }
             }
-            
+
             val filter = IntentFilter().apply {
                 addAction(ACTION_PIP_PLAY)
                 addAction(ACTION_PIP_PAUSE)
@@ -1459,18 +1463,18 @@ class PlayerActivity : AppCompatActivity() {
             registerReceiver(pipReceiver, filter, RECEIVER_NOT_EXPORTED)
         }
     }
-    
+
     @RequiresApi(Build.VERSION_CODES.O)
     private fun updatePipActions() {
         if (isInPipMode) {
             setPictureInPictureParams(buildPipParams())
         }
     }
-    
+
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isInPipMode = isInPictureInPictureMode
-        
+
         if (isInPictureInPictureMode) {
             // Hide controls in PiP
             playerView.useController = false
@@ -1483,7 +1487,7 @@ class PlayerActivity : AppCompatActivity() {
             bottomController.visibility = View.VISIBLE
         }
     }
-    
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         // Auto-enter PiP when user presses home (if playing)
@@ -1634,7 +1638,7 @@ class PlayerActivity : AppCompatActivity() {
                 Log.d(TAG, "Skipping player release - in PiP mode")
                 return
             }
-            
+
             stopProgressBarUpdates()
             player?.let { exoPlayer ->
                 try {
@@ -1645,7 +1649,7 @@ class PlayerActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     Log.e(TAG, "Error removing listener", e)
                 }
-                
+
                 try {
                     updateStartPosition()
                 } catch (e: Exception) {
@@ -1686,12 +1690,12 @@ class PlayerActivity : AppCompatActivity() {
             progressBarHandler?.removeCallbacksAndMessages(null)
             progressBarHandler = null
             progressBarRunnable = null
-            
+
             // Clean up TV controller handler
             controllerHideHandler?.removeCallbacksAndMessages(null)
             controllerHideHandler = null
             controllerHideRunnable = null
-            
+
             // Unregister PiP receiver
             pipReceiver?.let {
                 try {
@@ -1701,7 +1705,7 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
             pipReceiver = null
-            
+
             super.onDestroy()
         } catch (e: Exception) {
             Log.e(TAG, "Error in onDestroy", e)

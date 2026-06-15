@@ -1,4 +1,4 @@
-package com.samyak.iptvminepro.provider
+package com.samyak.television.data
 
 import android.content.Context
 import android.os.Handler
@@ -7,8 +7,8 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.util.Log
-import com.samyak.iptvminepro.model.*
-import com.samyak.iptvminepro.utils.TitleUtils.cleanTitle
+import com.samyak.television.model.*
+import com.samyak.television.utils.TitleUtils.cleanTitle
 import kotlinx.coroutines.*
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -27,7 +27,6 @@ class VegaProviderRunner(private val context: Context) {
     @Volatile
     private var currentUserAgent: String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
-    // Sync cookie jar with WebView's CookieManager to share Cloudflare clearance sessions
     private val cookieJar = object : CookieJar {
         private val cookieManager = android.webkit.CookieManager.getInstance()
 
@@ -55,7 +54,7 @@ class VegaProviderRunner(private val context: Context) {
                             cookies.add(cookie)
                         }
                     } catch (e: Exception) {
-                        // Ignore parse exceptions
+                        // Ignore
                     }
                 }
             }
@@ -119,7 +118,6 @@ class VegaProviderRunner(private val context: Context) {
         .cookieJar(cookieJar)
         .dns(dohDns)
         .addInterceptor { chain ->
-            // Retry interceptor: retry up to 2 times on failure
             var lastException: Exception? = null
             for (attempt in 0..2) {
                 try {
@@ -138,7 +136,6 @@ class VegaProviderRunner(private val context: Context) {
             throw lastException ?: Exception("Request failed after 3 attempts")
         }
         .addInterceptor { chain ->
-            // User-Agent interceptor: ensure all requests have a modern User-Agent
             val original = chain.request()
             val hasUserAgent = original.header("User-Agent") != null
             if (hasUserAgent) {
@@ -158,7 +155,6 @@ class VegaProviderRunner(private val context: Context) {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }
 
-    // Dynamic base URLs mapping - fetched from modflix.json
     private var baseUrls = mutableMapOf<String, String>()
     private var baseUrlsFetched = false
     private val baseUrlsLock = Any()
@@ -188,7 +184,6 @@ class VegaProviderRunner(private val context: Context) {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to fetch modflix.json: ${e.message}")
-                // Fallback hardcoded URLs
                 baseUrls.putAll(mapOf(
                     "Vega" to "https://vegamovies.mq",
                     "Moviesmod" to "https://moviesmod.farm",
@@ -228,7 +223,6 @@ class VegaProviderRunner(private val context: Context) {
     }
 
     private fun setupWebView() {
-        // Reset readiness gate for this new WebView instance
         if (webViewReady.isCompleted) {
             webViewReady = CompletableDeferred()
         }
@@ -241,21 +235,18 @@ class VegaProviderRunner(private val context: Context) {
         webViewInstance.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 Log.d(TAG, "Headless WebView loaded: $url")
-                // Signal that the WebView is ready for JS evaluation
                 webViewReady.complete(Unit)
             }
 
             @Suppress("DeprecatedCallableMember")
             override fun onReceivedError(view: WebView?, errorCode: Int, description: String?, failingUrl: String?) {
                 Log.w(TAG, "WebView load error: $description")
-                // Signal completion to avoid blocking the coroutine chain
                 webViewReady.complete(Unit)
             }
 
             override fun onReceivedSslError(view: WebView?, handler: android.webkit.SslErrorHandler?, error: android.net.http.SslError?) {
                 Log.w(TAG, "WebView SSL error: $error")
                 handler?.cancel()
-                // Signal completion to avoid blocking the coroutine chain
                 webViewReady.complete(Unit)
             }
         }
@@ -275,7 +266,6 @@ class VegaProviderRunner(private val context: Context) {
             }
         }
         
-        // Load a minimal page to initialize JS environment
         val initHtml = """
             <html>
             <head>
@@ -295,12 +285,10 @@ class VegaProviderRunner(private val context: Context) {
             withTimeout(15_000) { webViewReady.await() }
         } catch (e: TimeoutCancellationException) {
             Log.w(TAG, "WebView readiness gate timed out after 15s, proceeding with evaluation")
-            // Mark as complete so future evaluation requests in the chain don't block
             webViewReady.complete(Unit)
         }
     }
 
-    // Helper to evaluate JS and await the result
     private suspend fun evalJsAsync(jsCode: String): String {
         val deferred = CompletableDeferred<String>()
         val callbackId = bridge.registerCallback(deferred)
@@ -317,13 +305,11 @@ class VegaProviderRunner(private val context: Context) {
             })();
         """.trimIndent()
         
-        // Wait for WebView to be ready (page loaded) before evaluating JS
         awaitWebViewReady()
         
         withContext(Dispatchers.Main) {
             if (webView == null) {
                 setupWebView()
-                // Wait again for the new WebView to be ready
                 withContext(Dispatchers.Default) {
                     awaitWebViewReady()
                 }
@@ -341,9 +327,7 @@ class VegaProviderRunner(private val context: Context) {
     }
 
     private suspend fun evalJsDirect(jsCode: String) {
-        // Wait for WebView to be ready before evaluating JS
         awaitWebViewReady()
-        
         withContext(Dispatchers.Main) {
             if (webView == null) {
                 setupWebView()
@@ -375,67 +359,8 @@ class VegaProviderRunner(private val context: Context) {
             return trimmed
         }
 
-        // Treat as author (e.g. "@vega-org" or "vega-org")
         val author = trimmed.removePrefix("@")
         return "https://raw.githubusercontent.com/$author/vega-providers/refs/heads/main"
-    }
-
-    private fun cleanTypeScript(tsCode: String): String {
-        var js = tsCode
-
-        // Remove single-line ts-ignore / ts-expect-error comments
-        js = js.replace(Regex("//\\s*@ts-(?:ignore|expect-error).*"), "")
-
-        // Remove import statements (single and multi-line)
-        js = js.replace(Regex("import\\s+\\{[^}]*\\}\\s+from\\s+['\"][^'\"]*['\"];?"), "")
-        js = js.replace(Regex("import\\s+\\*\\s+as\\s+\\w+\\s+from\\s+['\"][^'\"]*['\"];?"), "")
-        js = js.replace(Regex("import\\s+\\w+\\s+from\\s+['\"][^'\"]*['\"];?"), "")
-        js = js.replace(Regex("import\\s+['\"][^'\"]*['\"];?"), "")
-
-        // Remove export keywords (keep the declarations)
-        js = js.replace(Regex("\\bexport\\s+default\\s+"), "")
-        js = js.replace(Regex("\\bexport\\s+async\\s+function\\b"), "async function")
-        js = js.replace(Regex("\\bexport\\s+function\\b"), "function")
-        js = js.replace(Regex("\\bexport\\s+const\\b"), "const")
-        js = js.replace(Regex("\\bexport\\s+let\\b"), "let")
-        js = js.replace(Regex("\\bexport\\s+var\\b"), "var")
-        js = js.replace(Regex("\\bexport\\s+"), "")
-
-        // Remove full interface blocks (multi-line)
-        js = js.replace(Regex("\\binterface\\s+\\w+[^{]*\\{[^}]*\\}"), "")
-
-        // Remove type alias declarations
-        js = js.replace(Regex("\\btype\\s+\\w+\\s*=[^;]+;"), "")
-
-        // Remove inline type annotation blocks after destructured params
-        js = js.replace(Regex("\\}\\s*:\\s*\\{[^}]*\\}\\s*\\)\\s*:\\s*[^=>{)]+\\s*=>"), "}) =>")
-        js = js.replace(Regex("\\}\\s*:\\s*\\{[^}]*\\}\\s*\\)\\s*:\\s*[^{)]+\\s*\\{"), "}) {")
-        js = js.replace(Regex("\\}\\s*:\\s*\\{[^}]*\\}\\s*\\)"), "})")
-
-        // Remove return type annotations on functions/arrows
-        js = js.replace(Regex("\\)\\s*:\\s*Promise\\s*<[^>]*>\\s*=>"), ") =>")
-        js = js.replace(Regex("\\)\\s*:\\s*Promise\\s*<[^>]*>\\s*\\{"), ") {")
-        js = js.replace(Regex("\\)\\s*:\\s*[A-Za-z_][A-Za-z0-9_]*(?:\\[\\])?\\s*=>"), ") =>")
-        js = js.replace(Regex("\\)\\s*:\\s*[A-Za-z_][A-Za-z0-9_]*(?:\\[\\])?\\s*\\{"), ") {")
-
-        // Remove generic type annotations from variable declarations
-        js = js.replace(Regex(":\\s*(?:Record|Map|Set|Array|Promise)\\s*<[^>]*>\\s*(?=\\s*[=,);])"), "")
-        js = js.replace(Regex(":\\s*[A-Za-z_][A-Za-z0-9_]*\\s*<[^>]*>\\s*(?=\\s*[=,);])"), "")
-        js = js.replace(Regex(":\\s*[A-Za-z_][A-Za-z0-9_|\\s]*\\[\\]\\s*(?=\\s*[=,);])"), "")
-        js = js.replace(Regex(":\\s*\\b(?:string|number|boolean|any|void|never|undefined|null|object)\\b(?:\\s*\\|\\s*\\b(?:string|number|boolean|any|void|never|undefined|null|object)\\b)*\\s*(?=\\s*[=,);])"), "")
-        
-        // Remove type annotations from function parameters
-        js = js.replace(Regex("(\\.\\.\\.)[a-zA-Z_][a-zA-Z0-9_]*)\\s*:\\s*(?:Array|Record|Map|Set)\\s*<[^>]*>"), "$1")
-        js = js.replace(Regex("(\\.\\.\\.)[a-zA-Z_][a-zA-Z0-9_]*)\\s*:\\s*[A-Za-z_][A-Za-z0-9_|\\s]*(?:\\[\\])?"), "$1")
-        
-        // Remove remaining simple param/variable type annotations
-        js = js.replace(Regex("([a-zA-Z_][a-zA-Z0-9_]*)\\s*:\\s*(?:string|number|boolean|any|void|AbortSignal|ProviderContext|Post|Info|Stream|Link|Content|TextTracks)(?:\\[\\])?\\s*(?=[,)\\n])"), "$1")
-        
-        // Remove non-null assertion operator
-        js = js.replace(Regex("!(?=\\.)"), "")
-        js = js.replace(Regex("!(?=\\[)"), "")
-
-        return js
     }
 
     private suspend fun fetchFile(fileUrl: String): String {
@@ -454,7 +379,6 @@ class VegaProviderRunner(private val context: Context) {
         if (isCompatInjected) return
 
         val compatJs = """
-            // Helper parsing and query functions for cheerio polyfill
             function splitByComma(str) {
                 const parts = [];
                 let current = "";
@@ -511,7 +435,6 @@ class VegaProviderRunner(private val context: Context) {
                 
                 selector = selector.trim();
                 
-                // 1. Check for :not(:contains(...)) first
                 const notContainsRegex = /:not\(:contains\((['"]?)(.*?)\1\)\)/;
                 const notMatch = selector.match(notContainsRegex);
                 if (notMatch) {
@@ -527,7 +450,6 @@ class VegaProviderRunner(private val context: Context) {
                     }
                     
                     let leftElements = safeQuery(root, leftPart);
-                    // Filter elements that DO NOT contain excludeText
                     let filteredElements = leftElements.filter(el => {
                         const text = el.textContent || "";
                         return !text.includes(excludeText);
@@ -537,7 +459,6 @@ class VegaProviderRunner(private val context: Context) {
                         return filteredElements;
                     }
                     
-                    // Check if rightPart starts with a combinator (space, >, +, ~)
                     const firstChar = rightPart[0];
                     const isCombinator = firstChar === ' ' || firstChar === '>' || firstChar === '+' || firstChar === '~';
                     if (isCombinator) {
@@ -554,12 +475,10 @@ class VegaProviderRunner(private val context: Context) {
                         });
                         return finalResults;
                     } else {
-                        // It is a compound filter on the same element
                         return filteredElements.filter(el => safeMatches(el, rightPart, root.ownerDocument || root));
                     }
                 }
                 
-                // 2. Check for standard :contains(...)
                 const containsRegex = /:contains\((['"]?)(.*?)\1\)/;
                 const match = selector.match(containsRegex);
                 if (!match) {
@@ -592,7 +511,6 @@ class VegaProviderRunner(private val context: Context) {
                     return filteredElements;
                 }
                 
-                // Check if rightPart starts with a combinator (space, >, +, ~)
                 const firstChar = rightPart[0];
                 const isCombinator = firstChar === ' ' || firstChar === '>' || firstChar === '+' || firstChar === '~';
                 if (isCombinator) {
@@ -609,7 +527,6 @@ class VegaProviderRunner(private val context: Context) {
                     });
                     return finalResults;
                 } else {
-                    // It is a compound filter on the same element
                     return filteredElements.filter(el => safeMatches(el, rightPart, root.ownerDocument || root));
                 }
             }
@@ -634,10 +551,8 @@ class VegaProviderRunner(private val context: Context) {
                 }
             }
 
-            // Polyfill process environment to prevent crashes in scrapers
             window.process = window.process || { env: {} };
 
-            // Base64 encode/decode
             window.atob = window.atob || function(str) { 
                 return window.AndroidBridge.atob(str);
             };
@@ -647,7 +562,6 @@ class VegaProviderRunner(private val context: Context) {
 
             window.vegaModules = {};
 
-            // Crypto polyfill for expo-crypto compatibility
             window.Crypto = window.Crypto || {
                 digestStringAsync: async function(algorithm, data) {
                     return window.AndroidBridge.digestString(algorithm, data);
@@ -661,10 +575,8 @@ class VegaProviderRunner(private val context: Context) {
                 }
             };
 
-            // Polyfill fetch to use AndroidBridge for HTTP requests
             window.fetch = async function(url, options) {
                 try {
-                    // Convert relative URLs to absolute
                     if (typeof url === 'string' && !url.startsWith('http')) {
                         if (url.startsWith('//')) {
                             url = 'https:' + url;
@@ -700,7 +612,6 @@ class VegaProviderRunner(private val context: Context) {
                     
                     const responseObj = JSON.parse(responseStr);
                     const bodyText = responseObj.body || '';
-                    
                     const responseHeaders = new Headers(responseObj.headers || {});
                     
                     return {
@@ -754,12 +665,10 @@ class VegaProviderRunner(private val context: Context) {
                         const responseStr = await window.AndroidBridge.httpFetch(url, method, JSON.stringify(headers), data ? (typeof data === 'string' ? data : JSON.stringify(data)) : null);
                         const parsedRes = JSON.parse(responseStr);
                         
-                        // Try to parse body as JSON if possible, otherwise return as string
                         let responseData = parsedRes.body;
                         try {
                             responseData = JSON.parse(parsedRes.body);
                         } catch(e) {
-                            // body is not JSON, keep as string
                         }
                         
                         if (parsedRes.status < 200 || parsedRes.status >= 300) {
@@ -830,7 +739,6 @@ class VegaProviderRunner(private val context: Context) {
                                 return wrapElements(selector.map(s => s._el || s).filter(Boolean), doc);
                             }
                             if (selector && selector.length !== undefined && selector.toArray) {
-                                // already a wrapped object
                                 return selector;
                             }
                             return wrapElements([], doc);
@@ -894,7 +802,7 @@ class VegaProviderRunner(private val context: Context) {
                 return mockNode;
             }
 
-             function wrapElements(elements, doc, prevObject) {
+            function wrapElements(elements, doc, prevObject) {
                 const wrapped = {
                     length: elements.length,
                     prevObject: prevObject || null,
@@ -1224,9 +1132,7 @@ class VegaProviderRunner(private val context: Context) {
     private val loadedScrapers = mutableSetOf<String>()
 
     suspend fun loadScraper(repoUrl: String, providerValue: String) {
-        // Skip if already loaded
         if (loadedScrapers.contains("${repoUrl}::${providerValue}")) {
-            // Still update providerValue on context
             evalJsDirect("window.providerContext.providerValue = '$providerValue';")
             return
         }
@@ -1234,11 +1140,8 @@ class VegaProviderRunner(private val context: Context) {
         val resolvedRepo = resolveRepoUrl(repoUrl)
         
         injectCompatibilityLayer()
-        
-        // Set the providerValue on the context so scrapers can access it
         evalJsDirect("window.providerContext.providerValue = '$providerValue';")
         
-        // Load provider scraper files from dist
         val modules = listOf("catalog", "posts", "meta", "stream", "episodes")
         for (module in modules) {
             try {
@@ -1351,7 +1254,6 @@ class VegaProviderRunner(private val context: Context) {
 
     suspend fun getPosts(repoUrl: String, providerValue: String, filter: String, page: Int): List<VegaPost> {
         loadScraper(repoUrl, providerValue)
-        // Escape single quotes in filter to prevent JS injection
         val safeFilter = filter.replace("'", "\\'")
         val jsCode = """
             try {
@@ -1763,13 +1665,10 @@ class VegaProviderRunner(private val context: Context) {
 
     private fun patchVegaStreamJs(js: String): String {
         var patched = js
-        
-        // 1. Add undefined/null protection to hubcloudExtractor
         val target1 = "function hubcloudExtractor(link,signal,axios,cheerio,headers2){return __async(this,null,function*(){var _a,_b,_c,_d,_e,_f,_g;try{"
         val replacement1 = "function hubcloudExtractor(link,signal,axios,cheerio,headers2){return __async(this,null,function*(){if(!link||link===\"undefined\")return[];var _a,_b,_c,_d,_e,_f,_g;try{"
         patched = patched.replace(target1, replacement1)
 
-        // 2. Add bypass for direct cloud/drive links in getStream
         val target2 = "\"movie\"===type){"
         val replacement2 = "\"movie\"===type && link && !link.includes(\"cloud\") && !link.includes(\"pixeld\") && !link.includes(\"dev\")){"
         patched = patched.replace(target2, replacement2)
@@ -1779,44 +1678,31 @@ class VegaProviderRunner(private val context: Context) {
 
     private fun patchHdhubMetaJs(js: String): String {
         var patched = js
-        
-        // 1. Broaden the container to support standard WordPress entry-content classes
         patched = patched.replace(
             "container=$(\".page-body\")",
             "container=$(\".entry-content, .post-inner, .post-content, .page-body, .page-content, article, #content\")"
         )
-        
-        // 2. Fix the title selector which was hardcoded to Google search result attributes
         patched = patched.replace(
             "title=container.find('h2[data-ved=\"2ahUKEwjL0NrBk4vnAhWlH7cAHRCeAlwQ3B0oATAfegQIFBAM\"],h2[data-ved=\"2ahUKEwiP0pGdlermAhUFYVAKHV8tAmgQ3B0oATAZegQIDhAM\"]').text()",
             "title=($(\"h1.entry-title, h1.post-title, h1.title, .entry-title, h1\").first().text().trim() || container.find(\"h2\").first().text().trim() || \"\")"
         )
-        
-        // 3. Fallback for image sourcing
         patched = patched.replace(
             "image=container.find('img[decoding=\"async\"]').attr(\"src\")||\"\"",
             "image=(container.find('img[decoding=\"async\"]').attr(\"src\") || container.find('img[data-lazy-src]').attr('data-lazy-src') || container.find('img').first().attr('src') || \"\")"
         )
-        
-        // 4. Fallback for synopsis
         patched = patched.replace(
             "synopsis=container.find('strong:contains(\"DESCRIPTION\")').parent().text().replace(\"DESCRIPTION:\",\"\")",
             "synopsis=(container.find('strong:contains(\"DESCRIPTION\"), strong:contains(\"PLOT\"), strong:contains(\"Synopsis\"), strong:contains(\"Story\")').parent().text().replace(/DESCRIPTION:|PLOT:|Synopsis:|Story:/gi, \"\").trim() || container.find('.synopsis').text().trim() || \"\")"
         )
-        
         return patched
     }
 
     private fun patchVegaMetaJs(js: String): String {
         var patched = js
-        
-        // 1. Broaden the title selector to support standard entry-title and h1 classes
         patched = patched.replace(
             "let title=$(\"h1.post-title\").text().trim();",
             "let title=$(\"h1.entry-title, h1.post-title, h1.title, .entry-title, h1\").first().text().trim();"
         )
-        
-        // 2. Prevent crash if 'list' is undefined when no hr is found
         patched = patched.replace(
             "return list.each((index,element)=>{",
             "if(list){list.each((index,element)=>{"
@@ -1825,7 +1711,6 @@ class VegaProviderRunner(private val context: Context) {
             "}),{title:title,synopsis:synopsis,image:image,imdbId:imdbId,type:type,linkList:links}",
             "});}return {title:title,synopsis:synopsis,image:image,imdbId:imdbId,type:type,linkList:links}"
         )
-        
         return patched
     }
 
