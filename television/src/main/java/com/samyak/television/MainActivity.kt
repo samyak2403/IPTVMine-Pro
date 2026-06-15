@@ -48,6 +48,9 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.painter.Painter
 
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalTvMaterial3Api::class)
@@ -198,35 +201,35 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
                     modifier = Modifier.weight(1f)
                 ) {
                     SidebarItem(
-                        icon = Icons.Default.Search,
+                        painter = rememberVectorPainter(Icons.Default.Search),
                         label = "Search",
                         isSelected = activeScreenIndex == 2,
                         isExpanded = isSidebarExpanded,
                         onClick = { activeScreenIndex = 2 }
                     )
                     SidebarItem(
-                        icon = Icons.Default.Home,
+                        painter = painterResource(id = R.drawable.ic_tv),
                         label = "Live TV",
                         isSelected = activeScreenIndex == 0,
                         isExpanded = isSidebarExpanded,
                         onClick = { activeScreenIndex = 0 }
                     )
                     SidebarItem(
-                        icon = Icons.Default.PlayArrow,
+                        painter = rememberVectorPainter(Icons.Default.PlayArrow),
                         label = "Movies & Shows",
                         isSelected = activeScreenIndex == 1,
                         isExpanded = isSidebarExpanded,
                         onClick = { activeScreenIndex = 1 }
                     )
                     SidebarItem(
-                        icon = Icons.Default.Build,
+                        painter = rememberVectorPainter(Icons.Default.Build),
                         label = "Extensions",
                         isSelected = activeScreenIndex == 3,
                         isExpanded = isSidebarExpanded,
                         onClick = { activeScreenIndex = 3 }
                     )
                     SidebarItem(
-                        icon = Icons.Default.List,
+                        painter = rememberVectorPainter(Icons.Default.List),
                         label = "Playlists",
                         isSelected = activeScreenIndex == 4,
                         isExpanded = isSidebarExpanded,
@@ -455,7 +458,7 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun SidebarItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    painter: Painter,
     label: String,
     isSelected: Boolean,
     isExpanded: Boolean,
@@ -488,7 +491,7 @@ fun SidebarItem(
             )
             Spacer(modifier = Modifier.width(10.dp))
             Icon(
-                imageVector = icon,
+                painter = painter,
                 contentDescription = label,
                 tint = if (isSelected) Color(0xFF26A69A) else Color.White.copy(alpha = 0.6f),
                 modifier = Modifier.size(22.dp)
