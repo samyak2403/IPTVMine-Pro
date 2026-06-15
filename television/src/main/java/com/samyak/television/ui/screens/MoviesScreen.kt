@@ -466,6 +466,7 @@ fun TvMovieCard(
     movie: VegaPost,
     onClick: () -> Unit,
     onFocused: () -> Unit = {},
+    showTitle: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var isFocused by remember { mutableStateOf(false) }
@@ -508,19 +509,21 @@ fun TvMovieCard(
             )
         }
         
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        Text(
-            text = movie.title,
-            color = if (isFocused) Color.White else Color.White.copy(alpha = 0.6f),
-            fontSize = 11.sp,
-            fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Normal,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp)
-        )
+        if (showTitle) {
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = movie.title,
+                color = if (isFocused) Color.White else Color.White.copy(alpha = 0.6f),
+                fontSize = 11.sp,
+                fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Normal,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp)
+            )
+        }
     }
 }
 
