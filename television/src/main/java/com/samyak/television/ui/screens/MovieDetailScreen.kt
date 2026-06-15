@@ -35,6 +35,9 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.ui.res.painterResource
 import com.samyak.television.R
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -53,6 +56,20 @@ fun MovieDetailScreen(
     var meta by remember { mutableStateOf<VegaMeta?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+
+    val backButtonFocusRequester = remember { FocusRequester() }
+
+    BackHandler(onBack = onBack)
+
+    LaunchedEffect(meta, isLoading) {
+        if (meta != null && !isLoading) {
+            try {
+                backButtonFocusRequester.requestFocus()
+            } catch (e: Exception) {
+                // Ignore focus request errors
+            }
+        }
+    }
 
     // Episodes state
     var episodesMap by remember { mutableStateOf<Map<String, List<VegaLink>>>(emptyMap()) }
@@ -251,7 +268,9 @@ fun MovieDetailScreen(
                             contentColor = Color.White
                         ),
                         shape = ButtonDefaults.shape(RoundedCornerShape(8.dp)),
-                        modifier = Modifier.padding(bottom = 16.dp)
+                        modifier = Modifier
+                            .focusRequester(backButtonFocusRequester)
+                            .padding(bottom = 16.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

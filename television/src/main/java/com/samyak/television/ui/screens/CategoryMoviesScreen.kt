@@ -26,6 +26,9 @@ import com.samyak.television.model.VegaCatalog
 import com.samyak.television.model.VegaPost
 import com.samyak.television.model.VegaProvider
 import kotlinx.coroutines.launch
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -44,6 +47,20 @@ fun CategoryMoviesScreen(
     var page by remember { mutableStateOf(1) }
     var isLoading by remember { mutableStateOf(false) }
     var hasMore by remember { mutableStateOf(true) }
+
+    val backButtonFocusRequester = remember { FocusRequester() }
+
+    BackHandler(onBack = onBack)
+
+    LaunchedEffect(movies, isLoading) {
+        if (movies.isNotEmpty() && !isLoading) {
+            try {
+                backButtonFocusRequester.requestFocus()
+            } catch (e: Exception) {
+                // Ignore focus request errors
+            }
+        }
+    }
 
     val loadMovies: (Boolean) -> Unit = { isNextPage ->
         if (!isLoading) {
@@ -97,7 +114,9 @@ fun CategoryMoviesScreen(
                         contentColor = Color.White
                     ),
                     shape = ButtonDefaults.shape(RoundedCornerShape(8.dp)),
-                    modifier = Modifier.padding(end = 16.dp)
+                    modifier = Modifier
+                        .focusRequester(backButtonFocusRequester)
+                        .padding(end = 16.dp)
                 ) {
                     Text("← Back", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 }
