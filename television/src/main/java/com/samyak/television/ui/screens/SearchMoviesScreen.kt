@@ -280,8 +280,7 @@ fun SearchMoviesScreen(
                                 if (provider != null && scraper != null) {
                                     onMovieClick(movie, scraper, provider)
                                 }
-                            },
-                            showTitle = true
+                            }
                         )
                     }
 
