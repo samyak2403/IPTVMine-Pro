@@ -322,14 +322,10 @@ fun ManageProvidersScreen(
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(providerList) { provider ->
-                    Surface(
-                        onClick = { },
-                        colors = ClickableSurfaceDefaults.colors(
-                            containerColor = Color(0xFF1E1E1E),
-                            focusedContainerColor = Color(0xFF2E2E2E)
-                        ),
-                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
-                        modifier = Modifier.fillMaxWidth()
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF1E1E1E), RoundedCornerShape(8.dp))
                     ) {
                         Row(
                             modifier = Modifier
