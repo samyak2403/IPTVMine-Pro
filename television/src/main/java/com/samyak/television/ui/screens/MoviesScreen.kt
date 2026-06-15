@@ -151,10 +151,19 @@ fun MoviesScreen(
         }
     } else {
         var activeHeroMovie by remember { mutableStateOf<VegaPost?>(null) }
+        var focusedMovie by remember { mutableStateOf<VegaPost?>(null) }
 
         LaunchedEffect(moviesByCategory) {
             if (activeHeroMovie == null) {
                 activeHeroMovie = moviesByCategory.values.firstOrNull()?.firstOrNull()
+            }
+        }
+
+        LaunchedEffect(focusedMovie) {
+            val movie = focusedMovie
+            if (movie != null) {
+                kotlinx.coroutines.delay(400) // Debounce focus changes to avoid lag during fast D-pad navigation
+                activeHeroMovie = movie
             }
         }
 
@@ -327,7 +336,7 @@ fun MoviesScreen(
                                                     }
                                                 },
                                                 onFocused = {
-                                                    activeHeroMovie = movie
+                                                    focusedMovie = movie
                                                 }
                                             )
                                         }

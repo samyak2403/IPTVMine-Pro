@@ -29,6 +29,9 @@ import kotlinx.coroutines.launch
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.material3.Icon
+import androidx.compose.ui.res.painterResource
+import com.samyak.television.R
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -118,7 +121,13 @@ fun CategoryMoviesScreen(
                         .focusRequester(backButtonFocusRequester)
                         .padding(end = 16.dp)
                 ) {
-                    Text("← Back", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_back),
+                        contentDescription = "Back",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Back", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 }
 
                 Row(

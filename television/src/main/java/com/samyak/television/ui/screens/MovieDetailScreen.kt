@@ -38,6 +38,8 @@ import com.samyak.television.R
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
 
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -58,6 +60,11 @@ fun MovieDetailScreen(
     var error by remember { mutableStateOf<String?>(null) }
 
     val backButtonFocusRequester = remember { FocusRequester() }
+    val watchNowFocusRequester = remember { FocusRequester() }
+
+    val hasWatchNow = remember(meta) {
+        meta?.linkList?.isNotEmpty() == true && meta?.type?.lowercase() == "movie"
+    }
 
     BackHandler(onBack = onBack)
 
@@ -231,7 +238,7 @@ fun MovieDetailScreen(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
-            
+
             // Dark gradient overlay
             Box(
                 modifier = Modifier
@@ -490,7 +497,7 @@ fun MovieDetailScreen(
                         ) {
                             items(movieMeta.linkList) { vegaLink ->
                                 val isExpanded = expandedLinks.contains(vegaLink.title)
-                                
+
                                 Column(modifier = Modifier.fillMaxWidth()) {
                                     Surface(
                                         onClick = {
@@ -563,7 +570,7 @@ fun MovieDetailScreen(
                                                         episodes.forEach { episode ->
                                                             val hasEpLink = episode.episodesLink != null
                                                             val hasDirectLinks = !episode.directLinks.isNullOrEmpty()
-                                                            
+
                                                             Surface(
                                                                 onClick = {
                                                                     if (hasDirectLinks) {

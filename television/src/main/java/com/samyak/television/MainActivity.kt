@@ -85,6 +85,7 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
     // activeScreenIndex == 2: Search Movies Screen
     // activeScreenIndex == 3: Manage Extensions
     // activeScreenIndex == 4: Manage Playlists/Providers
+    // activeScreenIndex == 5: Speed Test Screen
 
     // Movie Detail Selection States
     var selectedMovieLink by remember { mutableStateOf<String?>(null) }
@@ -206,6 +207,13 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
                         isExpanded = isSidebarExpanded,
                         onClick = { activeScreenIndex = 4 }
                     )
+                    SidebarItem(
+                        painter = painterResource(id = R.drawable.ic_speed),
+                        label = "Speed Test",
+                        isSelected = activeScreenIndex == 5,
+                        isExpanded = isSidebarExpanded,
+                        onClick = { activeScreenIndex = 5 }
+                    )
                 }
 
                 // Bottom profile mock (Disney+ Style)
@@ -246,6 +254,10 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
                     .padding(24.dp)
             ) {
                 when (activeScreenIndex) {
+                    5 -> {
+                        // Speed Test Screen
+                        SpeedTestScreen()
+                    }
                     4 -> {
                         // Manage Providers (M3U & Vega)
                         val providerRepository = remember { ProviderRepository(context) }
@@ -423,20 +435,6 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
                 }
             }
         }
-        // Overlay Movie Detail Screen
-        if (selectedMovieLink != null && selectedMovieScraper != null && selectedMovieProvider != null) {
-            MovieDetailScreen(
-                link = selectedMovieLink!!,
-                providerUrl = selectedMovieProvider!!.url,
-                scraperValue = selectedMovieScraper!!.value,
-                onBack = {
-                    selectedMovieLink = null
-                    selectedMovieScraper = null
-                    selectedMovieProvider = null
-                }
-            )
-        }
-
         // Overlay Category Movies Screen
         if (selectedCategoryForViewAll != null && viewAllScraper != null && viewAllProvider != null) {
             CategoryMoviesScreen(
@@ -452,6 +450,20 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
                     selectedMovieLink = movie.link
                     selectedMovieScraper = scraper
                     selectedMovieProvider = provider
+                }
+            )
+        }
+
+        // Overlay Movie Detail Screen
+        if (selectedMovieLink != null && selectedMovieScraper != null && selectedMovieProvider != null) {
+            MovieDetailScreen(
+                link = selectedMovieLink!!,
+                providerUrl = selectedMovieProvider!!.url,
+                scraperValue = selectedMovieScraper!!.value,
+                onBack = {
+                    selectedMovieLink = null
+                    selectedMovieScraper = null
+                    selectedMovieProvider = null
                 }
             )
         }
