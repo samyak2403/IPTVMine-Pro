@@ -33,6 +33,9 @@ import kotlinx.coroutines.launch
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
+import androidx.compose.ui.res.painterResource
+import com.samyak.television.R
+
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -250,7 +253,18 @@ fun MovieDetailScreen(
                         shape = ButtonDefaults.shape(RoundedCornerShape(8.dp)),
                         modifier = Modifier.padding(bottom = 16.dp)
                     ) {
-                        Text("← Back")
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_back),
+                                contentDescription = "Back",
+                                modifier = Modifier.size(16.dp),
+                                tint = Color.White
+                            )
+                            Text("Back")
+                        }
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
