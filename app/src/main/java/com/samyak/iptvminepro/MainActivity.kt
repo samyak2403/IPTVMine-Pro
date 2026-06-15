@@ -65,6 +65,8 @@ import com.samyak.iptvminepro.ui.screens.ProviderListScreen
 import com.samyak.iptvminepro.ui.theme.IPTVMineProTheme
 
 import androidx.compose.material.icons.outlined.Movie
+import androidx.compose.material.icons.outlined.Tv
+import com.samyak.iptvminepro.ui.screens.TelevisionScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -80,6 +82,7 @@ class MainActivity : ComponentActivity() {
 
 sealed class Screen(val route: String, val label: String, val icon: @Composable () -> Unit) {
     object Home : Screen("home", "Home", { Icon(Icons.Outlined.Home, contentDescription = null) })
+    object Television : Screen("television", "Television", { Icon(Icons.Outlined.Tv, contentDescription = null) })
     object Movies : Screen("movies?category={category}", "Movies", { Icon(Icons.Outlined.Movie, contentDescription = null) })
     object Category : Screen("category", "Category", { Icon(Icons.Outlined.GridView, contentDescription = null) })
     object Settings : Screen("settings", "Settings", { Icon(Icons.Outlined.Settings, contentDescription = null) })
@@ -105,6 +108,7 @@ fun MainApp() {
     var onWatchHistoryClearClick by remember { mutableStateOf<(() -> Unit)?>(null) }
     val items = listOf(
         Screen.Home,
+        Screen.Television,
         Screen.Movies,
         Screen.Category,
         Screen.Settings
@@ -195,6 +199,7 @@ fun MainApp() {
                 TopAppBar(
                     title = {
                         val title = when (currentRoute) {
+                            Screen.Television.route -> "Television"
                             Screen.ProviderList.route -> "Manage Providers"
                             Screen.AddProvider.route -> "Add Provider"
                             Screen.About.route -> "About App"
@@ -256,7 +261,8 @@ fun MainApp() {
                             currentRoute != Screen.Downloads.route &&
                             currentRoute != Screen.BugReport.route &&
                             currentRoute != Screen.WatchHistory.route &&
-                            currentRoute != Screen.Legal.route
+                            currentRoute != Screen.Legal.route &&
+                            currentRoute != Screen.Television.route
                         ) {
                             IconButton(onClick = { 
                                 navController.navigate(Screen.MovieSearch.route)
@@ -293,6 +299,19 @@ fun MainApp() {
                         }
                     }
                 ) 
+            }
+            composable(Screen.Television.route) {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                TelevisionScreen(
+                    viewModel = channelsViewModel,
+                    onChannelClick = { channel ->
+                        if (channel.streamUrl.isEmpty()) {
+                            android.widget.Toast.makeText(context, "This match is not live yet!", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            com.samyak.player.PlayerActivity.start(context, channel.name, channel.streamUrl)
+                        }
+                    }
+                )
             }
             composable(
                 route = Screen.Movies.route,

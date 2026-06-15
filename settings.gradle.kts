@@ -26,3 +26,4 @@ rootProject.name = "IPTVMine Pro"
 include(":app")
 include(":Player")
 include(":doubletapplayerview")
+include(":television")
