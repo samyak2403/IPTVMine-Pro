@@ -116,36 +116,7 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
         activeScreenIndex = 1
     }
 
-    if (selectedMovieLink != null && selectedMovieScraper != null && selectedMovieProvider != null) {
-        // Render Movie Detail full screen, hiding the main sidebar
-        MovieDetailScreen(
-            link = selectedMovieLink!!,
-            providerUrl = selectedMovieProvider!!.url,
-            scraperValue = selectedMovieScraper!!.value,
-            onBack = {
-                selectedMovieLink = null
-                selectedMovieScraper = null
-                selectedMovieProvider = null
-            }
-        )
-    } else if (selectedCategoryForViewAll != null && viewAllScraper != null && viewAllProvider != null) {
-        // Render Category Movies Grid full screen, hiding the main sidebar
-        CategoryMoviesScreen(
-            category = selectedCategoryForViewAll!!,
-            scraper = viewAllScraper!!,
-            provider = viewAllProvider!!,
-            onBack = {
-                selectedCategoryForViewAll = null
-                viewAllScraper = null
-                viewAllProvider = null
-            },
-            onMovieClick = { movie, scraper, provider ->
-                selectedMovieLink = movie.link
-                selectedMovieScraper = scraper
-                selectedMovieProvider = provider
-            }
-        )
-    } else {
+    Box(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
@@ -451,6 +422,38 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
                     }
                 }
             }
+        }
+        // Overlay Movie Detail Screen
+        if (selectedMovieLink != null && selectedMovieScraper != null && selectedMovieProvider != null) {
+            MovieDetailScreen(
+                link = selectedMovieLink!!,
+                providerUrl = selectedMovieProvider!!.url,
+                scraperValue = selectedMovieScraper!!.value,
+                onBack = {
+                    selectedMovieLink = null
+                    selectedMovieScraper = null
+                    selectedMovieProvider = null
+                }
+            )
+        }
+
+        // Overlay Category Movies Screen
+        if (selectedCategoryForViewAll != null && viewAllScraper != null && viewAllProvider != null) {
+            CategoryMoviesScreen(
+                category = selectedCategoryForViewAll!!,
+                scraper = viewAllScraper!!,
+                provider = viewAllProvider!!,
+                onBack = {
+                    selectedCategoryForViewAll = null
+                    viewAllScraper = null
+                    viewAllProvider = null
+                },
+                onMovieClick = { movie, scraper, provider ->
+                    selectedMovieLink = movie.link
+                    selectedMovieScraper = scraper
+                    selectedMovieProvider = provider
+                }
+            )
         }
     }
 }
