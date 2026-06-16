@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Focused state for TV D-pad navigation -->
+    <item android:state_focused="true">
+        <shape android:shape="oval">
+            <solid android:color="@color/tv_focus_blue_light" />
+            <stroke
+                android:width="2dp"
+                android:color="@color/tv_focus_blue" />
+        </shape>
+    </item>
+    
+    <!-- Pressed state -->
+    <item android:state_pressed="true">
+        <shape android:shape="oval">
+            <solid android:color="@color/tv_focus_blue_medium" />
+        </shape>
+    </item>
+    
+    <!-- Default state -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+</selector>

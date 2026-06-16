@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV-optimized button selector with focus states -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Focused state -->
+    <item android:state_focused="true">
+        <shape android:shape="oval">
+            <solid android:color="@color/tv_focus_blue" />
+            <stroke android:width="3dp" android:color="@color/white" />
+        </shape>
+    </item>
+    
+    <!-- Pressed state -->
+    <item android:state_pressed="true">
+        <shape android:shape="oval">
+            <solid android:color="@color/tv_focus_blue_medium" />
+        </shape>
+    </item>
+    
+    <!-- Selected state -->
+    <item android:state_selected="true">
+        <shape android:shape="oval">
+            <solid android:color="@color/tv_focus_blue_light" />
+            <stroke android:width="2dp" android:color="@color/tv_focus_blue" />
+        </shape>
+    </item>
+    
+    <!-- Default state -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#40FFFFFF" />
+        </shape>
+    </item>
+</selector>
