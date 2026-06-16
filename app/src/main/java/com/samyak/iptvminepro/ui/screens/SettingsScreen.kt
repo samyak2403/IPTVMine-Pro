@@ -29,7 +29,12 @@ import com.samyak.iptvminepro.R
 fun SettingsScreen(
     onNavigateToProviders: () -> Unit,
     onNavigateToExtensions: () -> Unit,
-    onNavigateToAbout: () -> Unit
+    onNavigateToAbout: () -> Unit,
+    onNavigateToDownloads: () -> Unit,
+    onNavigateToBugReport: () -> Unit,
+    onNavigateToPrivacyPolicy: () -> Unit,
+    onNavigateToTermsAndConditions: () -> Unit,
+    onNavigateToDiclaimer: () -> Unit
 ) {
     val scrollState = rememberScrollState()
     val context = LocalContext.current
@@ -50,6 +55,11 @@ fun SettingsScreen(
             icon = Icons.AutoMirrored.Filled.List,
             onClick = onNavigateToProviders
         )
+        SettingsItem(
+            title = stringResource(id = R.string.setting_downloads),
+            icon = Icons.Filled.Download,
+            onClick = onNavigateToDownloads
+        )
         if (hasActiveVegaProvider) {
             SettingsItem(
                 title = stringResource(id = R.string.setting_extensions),
@@ -67,24 +77,24 @@ fun SettingsScreen(
         SettingsItem(
             title = stringResource(id = R.string.setting_report_bug),
             icon = Icons.Filled.BugReport,
-            onClick = { /* TODO */ }
+            onClick = onNavigateToBugReport
         )
 
         SettingsSectionTitle(title = stringResource(id = R.string.section_legal))
         SettingsItem(
             title = stringResource(id = R.string.setting_privacy_policy),
             icon = Icons.Filled.Security,
-            onClick = { /* TODO */ }
+            onClick = onNavigateToPrivacyPolicy
         )
         SettingsItem(
             title = stringResource(id = R.string.setting_terms_conditions),
             icon = Icons.Filled.Description,
-            onClick = { /* TODO */ }
+            onClick = onNavigateToTermsAndConditions
         )
         SettingsItem(
             title = stringResource(id = R.string.setting_disclaimer),
             icon = Icons.Filled.Warning,
-            onClick = { /* TODO */ }
+            onClick = onNavigateToDiclaimer
         )
         
         Spacer(modifier = Modifier.height(32.dp))

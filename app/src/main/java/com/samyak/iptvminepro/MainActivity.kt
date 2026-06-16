@@ -46,10 +46,14 @@ import com.samyak.iptvminepro.ui.screens.PlayerScreen
 import com.samyak.iptvminepro.ui.screens.CategoryScreen
 import com.samyak.iptvminepro.ui.screens.CategoryDetailScreen
 import com.samyak.iptvminepro.ui.screens.AboutScreen
+import com.samyak.iptvminepro.ui.screens.BugReportScreen
 import com.samyak.iptvminepro.ui.screens.ExtensionsScreen
 import com.samyak.iptvminepro.ui.screens.MovieDetailScreen
 import com.samyak.iptvminepro.ui.screens.CategoryMoviesScreen
 import com.samyak.iptvminepro.ui.screens.MovieSearchScreen
+import com.samyak.iptvminepro.ui.screens.PrivacyPolicyScreen
+import com.samyak.iptvminepro.ui.screens.TermsAndConditionsScreen
+import com.samyak.iptvminepro.ui.screens.DisclaimerScreen
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -63,6 +67,7 @@ import androidx.compose.material.icons.outlined.Movie
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.samyak.iptvminepro.download.DownloadManager.init(applicationContext)
         setContent {
             IPTVMineProTheme {
                 MainApp()
@@ -85,6 +90,11 @@ sealed class Screen(val route: String, val label: String, val icon: @Composable 
     object MovieDetail : Screen("movie_detail?link={link}&providerUrl={providerUrl}&scraperValue={scraperValue}", "Movie Detail", { })
     object CategoryMovies : Screen("category_movies?categoryName={categoryName}&categoryFilter={categoryFilter}&providerUrl={providerUrl}&scraperValue={scraperValue}", "Category Movies", { })
     object MovieSearch : Screen("movie_search", "Movie Search", { })
+    object Downloads : Screen("downloads", "Downloads", { })
+    object BugReport : Screen("bug_report", "Report Bug", { })
+    object PrivacyPolicy : Screen("privacy_policy", "Privacy Policy", { })
+    object TermsAndConditions : Screen("terms_and_conditions", "Terms & Conditions", { })
+    object Disclaimer : Screen("disclaimer", "Disclaimer", { })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -133,7 +143,9 @@ fun MainApp() {
                 currentRoute != Screen.About.route &&
                 currentRoute != Screen.CategoryMovies.route &&
                 currentRoute != Screen.Extensions.route &&
-                currentRoute != Screen.MovieSearch.route
+                currentRoute != Screen.MovieSearch.route &&
+                currentRoute != Screen.Downloads.route &&
+                currentRoute != Screen.BugReport.route
             ) {
                 NavigationBar(
                     containerColor = Color.White // White background
@@ -183,6 +195,8 @@ fun MainApp() {
                             Screen.AddProvider.route -> "Add Provider"
                             Screen.About.route -> "About App"
                             Screen.CategoryDetail.route -> categoryName ?: "Category"
+                            Screen.Downloads.route -> "Downloads"
+                            Screen.BugReport.route -> "Report Bug"
                             else -> "IPTV Mine Pro"
                         }
                         Text(title)
@@ -191,7 +205,12 @@ fun MainApp() {
                         if (currentRoute == Screen.ProviderList.route ||
                             currentRoute == Screen.AddProvider.route ||
                             currentRoute == Screen.CategoryDetail.route ||
-                            currentRoute == Screen.About.route
+                            currentRoute == Screen.About.route ||
+                            currentRoute == Screen.Downloads.route ||
+                            currentRoute == Screen.BugReport.route ||
+                            currentRoute == Screen.PrivacyPolicy.route ||
+                            currentRoute == Screen.TermsAndConditions.route ||
+                            currentRoute == Screen.Disclaimer.route
                         ) {
                             FilledIconButton(
                                 onClick = { navController.popBackStack() },
@@ -216,7 +235,12 @@ fun MainApp() {
                         if (currentRoute != Screen.ProviderList.route &&
                             currentRoute != Screen.AddProvider.route &&
                             currentRoute != Screen.CategoryDetail.route &&
-                            currentRoute != Screen.About.route
+                            currentRoute != Screen.About.route &&
+                            currentRoute != Screen.Downloads.route &&
+                            currentRoute != Screen.BugReport.route &&
+                            currentRoute != Screen.PrivacyPolicy.route &&
+                            currentRoute != Screen.TermsAndConditions.route &&
+                            currentRoute != Screen.Disclaimer.route
                         ) {
                             IconButton(onClick = { 
                                 navController.navigate(Screen.MovieSearch.route)
@@ -296,8 +320,18 @@ fun MainApp() {
                 SettingsScreen(
                     onNavigateToProviders = { navController.navigate(Screen.ProviderList.route) },
                     onNavigateToExtensions = { navController.navigate(Screen.Extensions.route) },
-                    onNavigateToAbout = { navController.navigate(Screen.About.route) }
+                    onNavigateToAbout = { navController.navigate(Screen.About.route) },
+                    onNavigateToDownloads = { navController.navigate(Screen.Downloads.route) },
+                    onNavigateToBugReport = { navController.navigate(Screen.BugReport.route) },
+                    onNavigateToPrivacyPolicy = { navController.navigate(Screen.PrivacyPolicy.route) },
+                    onNavigateToTermsAndConditions = { navController.navigate(Screen.TermsAndConditions.route) },
+                    onNavigateToDiclaimer = { navController.navigate(Screen.Disclaimer.route) }
                 ) 
+            }
+            composable(Screen.Downloads.route) {
+                com.samyak.iptvminepro.ui.screens.DownloadsScreen(
+                    navController = navController
+                )
             }
             composable(
                 route = Screen.MovieDetail.route,
@@ -344,6 +378,10 @@ fun MainApp() {
                 )
             }
             composable(Screen.About.route) { AboutScreen() }
+            composable(Screen.BugReport.route) { BugReportScreen() }
+            composable(Screen.PrivacyPolicy.route) { PrivacyPolicyScreen(navController) }
+            composable(Screen.TermsAndConditions.route) { TermsAndConditionsScreen(navController) }
+            composable(Screen.Disclaimer.route) { DisclaimerScreen(navController) }
             composable(Screen.MovieSearch.route) {
                 MovieSearchScreen(
                     navController = navController,
