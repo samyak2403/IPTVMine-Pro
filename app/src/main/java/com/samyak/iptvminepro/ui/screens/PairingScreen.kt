@@ -62,18 +62,13 @@ fun PairingScreen(
         }
     }
 
-    val gradient = Brush.verticalGradient(
-        colors = listOf(
-            Color(0xFF0F172A), // Midnight blue/gray
-            Color(0xFF070B13)
-        )
-    )
-
-    Scaffold { paddingValues ->
+    Scaffold(
+        containerColor = Color(0xFFF8FAFC)
+    ) { paddingValues ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(gradient)
+                .background(Color(0xFFF8FAFC))
                 .padding(paddingValues)
                 .padding(24.dp),
             contentAlignment = Alignment.TopCenter
@@ -91,7 +86,7 @@ fun PairingScreen(
                         .size(80.dp)
                         .background(
                             if (pairedTvDevice != null) Color(0xFF00C853).copy(alpha = 0.15f)
-                            else Color(0xFF26A69A).copy(alpha = 0.15f),
+                            else Color(0xFF26A69A).copy(alpha = 0.1f),
                             shape = RoundedCornerShape(20.dp)
                         ),
                     contentAlignment = Alignment.Center
@@ -140,7 +135,7 @@ fun PairingScreen(
                         Text(
                             text = "Active providers have been shared with:\n$pairedTvDevice",
                             fontSize = 15.sp,
-                            color = Color.LightGray,
+                            color = Color(0xFF475569),
                             textAlign = TextAlign.Center,
                             lineHeight = 20.sp
                         )
@@ -162,12 +157,12 @@ fun PairingScreen(
                             text = "Mobile App Provider Mode",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = Color(0xFF0F172A)
                         )
                         Text(
                             text = "Enter the 7-digit code below on your TV app.",
                             fontSize = 14.sp,
-                            color = Color.Gray,
+                            color = Color(0xFF64748B),
                             textAlign = TextAlign.Center
                         )
                     }
@@ -175,9 +170,9 @@ fun PairingScreen(
                     // Large 7-digit code box
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
                         shape = RoundedCornerShape(16.dp),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -214,13 +209,13 @@ fun PairingScreen(
                                     modifier = Modifier.size(18.dp),
                                     color = Color(0xFF26A69A),
                                     strokeWidth = 2.dp,
-                                    trackColor = Color.White.copy(alpha = 0.1f)
+                                    trackColor = Color(0xFFE2E8F0)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = "Code rotates in ${secondsRemaining}s",
                                     fontSize = 13.sp,
-                                    color = Color.LightGray,
+                                    color = Color(0xFF475569),
                                     fontWeight = FontWeight.Medium
                                 )
                             }
@@ -230,8 +225,9 @@ fun PairingScreen(
                     // Wi-Fi and network details
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B).copy(alpha = 0.5f)),
-                        shape = RoundedCornerShape(12.dp)
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(12.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
@@ -242,32 +238,32 @@ fun PairingScreen(
                             ) {
                                 Icon(Icons.Default.Wifi, contentDescription = "Wi-Fi Network", tint = Color(0xFF26A69A), modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Wi-Fi network requirements:", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("Wi-Fi network requirements:", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                             Text(
                                 text = "1. Ensure both your Phone and TV are connected to the same Wi-Fi router.",
-                                color = Color.LightGray,
+                                color = Color(0xFF475569),
                                 fontSize = 12.sp
                             )
                             Text(
                                 text = "2. Open the 'Playlists' screen on the TV app and click 'Import from Phone'.",
-                                color = Color.LightGray,
+                                color = Color(0xFF475569),
                                 fontSize = 12.sp
                             )
-                            HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                            HorizontalDivider(color = Color(0xFFF1F5F9))
                             Row(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Wi-Fi SSID", color = Color.Gray, fontSize = 12.sp)
-                                Text(wifiSsid, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("Wi-Fi SSID", color = Color(0xFF64748B), fontSize = 12.sp)
+                                Text(wifiSsid, color = Color(0xFF0F172A), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                             Row(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Local IP Address", color = Color.Gray, fontSize = 12.sp)
-                                Text(localIp, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("Local IP Address", color = Color(0xFF64748B), fontSize = 12.sp)
+                                Text(localIp, color = Color(0xFF0F172A), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
