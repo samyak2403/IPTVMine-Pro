@@ -257,6 +257,7 @@
         android:textColor="#80FFFFFF"
         android:textSize="12sp"
         android:textStyle="italic"
+        android:visibility="gone"
         android:alpha="0.6"
         android:paddingStart="8dp"
         android:paddingEnd="8dp"
