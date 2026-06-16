@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -61,6 +62,7 @@ fun MovieDetailScreen(
 
     val backButtonFocusRequester = remember { FocusRequester() }
     val watchNowFocusRequester = remember { FocusRequester() }
+    val rightListFocusRequester = remember { FocusRequester() }
 
     val hasWatchNow = remember(meta) {
         meta?.linkList?.isNotEmpty() == true && meta?.type?.lowercase() == "movie"
@@ -265,7 +267,6 @@ fun MovieDetailScreen(
                         .background(Color(0xFF0C111F).copy(alpha = 0.65f), RoundedCornerShape(16.dp))
                         .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
                         .padding(20.dp)
-                        .verticalScroll(rememberScrollState())
                 ) {
                     Button(
                         onClick = onBack,
@@ -277,6 +278,12 @@ fun MovieDetailScreen(
                         shape = ButtonDefaults.shape(RoundedCornerShape(8.dp)),
                         modifier = Modifier
                             .focusRequester(backButtonFocusRequester)
+                            .focusProperties {
+                                right = rightListFocusRequester
+                                left = backButtonFocusRequester // Box focus from escaping to the sidebar
+                                up = backButtonFocusRequester // Box focus from escaping upwards
+                                down = if (hasWatchNow) watchNowFocusRequester else backButtonFocusRequester
+                            }
                             .padding(bottom = 16.dp)
                     ) {
                         Row(
@@ -359,16 +366,22 @@ fun MovieDetailScreen(
                         color = Color.White
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = if (movieMeta.synopsis.isBlank()) "No synopsis description available." else movieMeta.synopsis,
-                        fontSize = 12.sp,
-                        color = Color.LightGray,
-                        lineHeight = 18.sp
-                    )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                            .padding(bottom = 16.dp)
+                    ) {
+                        Text(
+                            text = if (movieMeta.synopsis.isBlank()) "No synopsis description available." else movieMeta.synopsis,
+                            fontSize = 12.sp,
+                            color = Color.LightGray,
+                            lineHeight = 18.sp
+                        )
+                    }
 
                     // Cinematic Hotstar Play Button (Auto-resolves first option)
                     if (movieMeta.linkList.isNotEmpty() && movieMeta.type.lowercase() == "movie") {
-                        Spacer(modifier = Modifier.height(24.dp))
                         Button(
                             onClick = {
                                 val firstLink = movieMeta.linkList.firstOrNull()
@@ -387,7 +400,16 @@ fun MovieDetailScreen(
                                 focusedContentColor = Color.White
                             ),
                             shape = ButtonDefaults.shape(RoundedCornerShape(8.dp)),
-                            modifier = Modifier.fillMaxWidth().height(44.dp)
+                            modifier = Modifier
+                                .focusRequester(watchNowFocusRequester)
+                                .focusProperties {
+                                    right = rightListFocusRequester
+                                    left = watchNowFocusRequester // Box focus from escaping to the sidebar
+                                    up = backButtonFocusRequester
+                                    down = watchNowFocusRequester // Box focus from escaping downwards
+                                }
+                                .fillMaxWidth()
+                                .height(44.dp)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -406,7 +428,6 @@ fun MovieDetailScreen(
 
                 // Spacer panel divider
                 Spacer(modifier = Modifier.width(24.dp))
-
 
                 // Right Column: Playback Options (Seasons / Direct Links)
                 Column(
@@ -434,7 +455,7 @@ fun MovieDetailScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            items(streams) { stream ->
+                            itemsIndexed(streams) { index, stream ->
                                 Surface(
                                     onClick = {
                                         streamsToSelect = null
@@ -457,7 +478,13 @@ fun MovieDetailScreen(
                                     ),
                                     scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
                                     shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier
+                                        .then(if (index == 0) Modifier.focusRequester(rightListFocusRequester) else Modifier)
+                                        .focusProperties {
+                                            left = if (hasWatchNow) watchNowFocusRequester else backButtonFocusRequester
+                                            right = FocusRequester.Cancel
+                                        }
+                                        .fillMaxWidth()
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(14.dp),
@@ -483,7 +510,16 @@ fun MovieDetailScreen(
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Button(
                                     onClick = { streamsToSelect = null },
-                                    colors = ButtonDefaults.colors(containerColor = Color.Red.copy(alpha = 0.1f), focusedContainerColor = Color.Red, contentColor = Color.Red, focusedContentColor = Color.White)
+                                    colors = ButtonDefaults.colors(
+                                        containerColor = Color.Red.copy(alpha = 0.1f),
+                                        focusedContainerColor = Color.Red,
+                                        contentColor = Color.Red,
+                                        focusedContentColor = Color.White
+                                    ),
+                                    modifier = Modifier.focusProperties {
+                                        left = if (hasWatchNow) watchNowFocusRequester else backButtonFocusRequester
+                                        right = FocusRequester.Cancel
+                                    }
                                 ) {
                                     Text("Cancel")
                                 }
@@ -495,7 +531,7 @@ fun MovieDetailScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            items(movieMeta.linkList) { vegaLink ->
+                            itemsIndexed(movieMeta.linkList) { index, vegaLink ->
                                 val isExpanded = expandedLinks.contains(vegaLink.title)
 
                                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -525,7 +561,13 @@ fun MovieDetailScreen(
                                         ),
                                         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
                                         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
-                                        modifier = Modifier.fillMaxWidth()
+                                        modifier = Modifier
+                                            .then(if (index == 0) Modifier.focusRequester(rightListFocusRequester) else Modifier)
+                                            .focusProperties {
+                                                left = if (hasWatchNow) watchNowFocusRequester else backButtonFocusRequester
+                                                right = FocusRequester.Cancel
+                                            }
+                                            .fillMaxWidth()
                                     ) {
                                         Row(
                                             modifier = Modifier.padding(14.dp),
@@ -612,7 +654,13 @@ fun MovieDetailScreen(
                                                                     focusedContainerColor = Color(0xFF26A69A).copy(alpha = 0.2f)
                                                                 ),
                                                                 shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(4.dp)),
-                                                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                                                modifier = Modifier
+                                                                    .focusProperties {
+                                                                        left = if (hasWatchNow) watchNowFocusRequester else backButtonFocusRequester
+                                                                        right = FocusRequester.Cancel
+                                                                    }
+                                                                    .fillMaxWidth()
+                                                                    .padding(vertical = 4.dp)
                                                             ) {
                                                                 Text(
                                                                     text = episode.title,
@@ -637,7 +685,13 @@ fun MovieDetailScreen(
                                                             focusedContainerColor = Color(0xFF26A69A).copy(alpha = 0.2f)
                                                         ),
                                                         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(4.dp)),
-                                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                                        modifier = Modifier
+                                                            .focusProperties {
+                                                                left = if (hasWatchNow) watchNowFocusRequester else backButtonFocusRequester
+                                                                right = FocusRequester.Cancel
+                                                            }
+                                                            .fillMaxWidth()
+                                                            .padding(vertical = 4.dp)
                                                     ) {
                                                         Text(
                                                             text = dl.title,

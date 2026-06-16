@@ -52,13 +52,15 @@ fun CategoryMoviesScreen(
     var hasMore by remember { mutableStateOf(true) }
 
     val backButtonFocusRequester = remember { FocusRequester() }
+    var hasRequestedInitialFocus by remember { mutableStateOf(false) }
 
     BackHandler(onBack = onBack)
 
     LaunchedEffect(movies, isLoading) {
-        if (movies.isNotEmpty() && !isLoading) {
+        if (movies.isNotEmpty() && !isLoading && !hasRequestedInitialFocus) {
             try {
                 backButtonFocusRequester.requestFocus()
+                hasRequestedInitialFocus = true
             } catch (e: Exception) {
                 // Ignore focus request errors
             }
@@ -95,6 +97,7 @@ fun CategoryMoviesScreen(
     }
 
     LaunchedEffect(category, scraper, provider) {
+        hasRequestedInitialFocus = false
         loadMovies(false)
     }
 

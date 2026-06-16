@@ -79,6 +79,9 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
     val errorMessage by viewModel.errorMessage.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
 
+    val providerRepository = remember { ProviderRepository(context) }
+    var providerList by remember { mutableStateOf(providerRepository.getProviders()) }
+
     var activeScreenIndex by remember { mutableStateOf(1) } // Default to Movies & Shows for a rich experience!
     // activeScreenIndex == 0: Live TV Grid (categories)
     // activeScreenIndex == 1: VOD Movies & Shows catalog
@@ -114,7 +117,11 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
     }
 
     BackHandler(enabled = selectedMovieLink == null && selectedCategoryForViewAll == null && activeScreenIndex != 1) {
-        activeScreenIndex = 1
+        if (activeScreenIndex == 6) {
+            activeScreenIndex = 4
+        } else {
+            activeScreenIndex = 1
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -260,9 +267,6 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
                     }
                     4 -> {
                         // Manage Providers (M3U & Vega)
-                        val providerRepository = remember { ProviderRepository(context) }
-                        var providerList by remember { mutableStateOf(providerRepository.getProviders()) }
-                        
                         ManageProvidersScreen(
                             providerList = providerList,
                             onAddProvider = { title, url, type ->
@@ -275,6 +279,19 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
                                 providerRepository.removeProvider(url)
                                 providerList = providerRepository.getProviders()
                                 viewModel.refreshChannels()
+                            },
+                            onPairPhoneClick = {
+                                activeScreenIndex = 6
+                            }
+                        )
+                    }
+                    6 -> {
+                        TvPairingScreen(
+                            onBack = { activeScreenIndex = 4 },
+                            onPairSuccess = {
+                                providerList = providerRepository.getProviders()
+                                viewModel.refreshChannels()
+                                activeScreenIndex = 4
                             }
                         )
                     }
@@ -576,7 +593,8 @@ fun TvChannelCard(channel: Channel, onClick: () -> Unit) {
 fun ManageProvidersScreen(
     providerList: List<Provider>,
     onAddProvider: (String, String, ProviderType) -> Unit,
-    onDeleteProvider: (String) -> Unit
+    onDeleteProvider: (String) -> Unit,
+    onPairPhoneClick: () -> Unit
 ) {
     var title by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
@@ -797,6 +815,46 @@ fun ManageProvidersScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(text = "Add Provider")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Surface(
+                onClick = onPairPhoneClick,
+                colors = ClickableSurfaceDefaults.colors(
+                    containerColor = Color(0xFF26A69A).copy(alpha = 0.15f),
+                    focusedContainerColor = Color(0xFF26A69A),
+                    pressedContainerColor = Color(0xFF208b80)
+                ),
+                scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
+                shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Build,
+                        contentDescription = "Pair Mobile Phone",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Import from Phone",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Sync playlists directly from phone",
+                            fontSize = 10.sp,
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                    }
+                }
             }
         }
     }
