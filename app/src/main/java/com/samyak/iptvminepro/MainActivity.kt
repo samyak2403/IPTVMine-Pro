@@ -64,6 +64,7 @@ import com.samyak.iptvminepro.ui.screens.AddProviderScreen
 import com.samyak.iptvminepro.ui.screens.ProviderListScreen
 import com.samyak.iptvminepro.ui.screens.PairingScreen
 import com.samyak.iptvminepro.ui.theme.IPTVMineProTheme
+import com.samyak.iptvminepro.ui.viewmodel.MoviesViewModel
 
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Tv
@@ -118,6 +119,8 @@ fun MainApp() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val repository = remember { com.samyak.iptvminepro.provider.ProviderRepository(context) }
     val channelsViewModel: com.samyak.iptvminepro.provider.ChannelsProvider = viewModel()
+    // Activity-scoped: survives ALL navigation including back from MovieDetail
+    val moviesViewModel: MoviesViewModel = viewModel()
     val startDestination = if (repository.getProviders().isEmpty()) Screen.AddProvider.route else Screen.Home.route
 
     val isConnected by remember(context) {
@@ -139,7 +142,7 @@ fun MainApp() {
     } else {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
-            containerColor = Color(0xFF26A69A),
+            containerColor = Color.Transparent,
         bottomBar = {
             val navBackStackEntry by navController.currentBackStackEntryAsState()
             val currentRoute = navBackStackEntry?.destination?.route
@@ -289,10 +292,24 @@ fun MainApp() {
             }
         },
     ) { innerPadding ->
+        // Full-screen routes should draw behind the status bar (no top padding)
+        val navBackStackEntry by navController.currentBackStackEntryAsState()
+        val currentRoute = navBackStackEntry?.destination?.route
+        val isFullScreenRoute = currentRoute == Screen.MovieDetail.route ||
+            currentRoute == Screen.CategoryMovies.route ||
+            currentRoute == Screen.Extensions.route ||
+            currentRoute == Screen.MovieSearch.route
+
         NavHost(
             navController = navController,
             startDestination = startDestination,
-            modifier = Modifier.padding(innerPadding)
+            modifier = if (isFullScreenRoute) {
+                // No top padding – content extends behind the transparent status bar
+                // Full-screen routes are always full-width so start/end = 0
+                Modifier.padding(bottom = innerPadding.calculateBottomPadding())
+            } else {
+                Modifier.padding(innerPadding)
+            }
         ) {
             composable(Screen.Home.route) {
                 val context = androidx.compose.ui.platform.LocalContext.current
@@ -331,6 +348,7 @@ fun MainApp() {
             ) { backStackEntry ->
                 val category = backStackEntry.arguments?.getString("category")
                 com.samyak.iptvminepro.ui.screens.MoviesScreen(
+                    viewModel = moviesViewModel,
                     initialCategoryTitle = category,
                     onMovieClick = { post, scraper, provider ->
                         val encodedLink = android.net.Uri.encode(post.link)

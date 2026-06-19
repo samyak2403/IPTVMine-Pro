@@ -152,7 +152,7 @@ fun SearchMoviesScreen(
             shape = RoundedCornerShape(30.dp), // Premium pill search input bar
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 16.dp)
+                .padding(end = 100.dp, bottom = 16.dp)
         )
 
         // 2. Horizontal Scrollable Popular Categories List

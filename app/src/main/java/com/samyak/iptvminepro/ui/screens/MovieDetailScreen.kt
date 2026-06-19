@@ -1,5 +1,6 @@
 package com.samyak.iptvminepro.ui.screens
 
+import android.app.Activity
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -25,11 +26,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -221,10 +224,27 @@ fun MovieDetailScreen(
         }
     }
 
+    // Force white status bar icons so they're visible over the dark movie backdrop
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as Activity).window
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+        }
+    }
+
+    // Restore dark icons when leaving this screen
+    DisposableEffect(Unit) {
+        onDispose {
+            val window = (view.context as Activity).window
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = true
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F0E13)) // HSL Tailored premium deep space dark background
+            .background(Color(0xFF0F0E13))
     ) {
         if (isLoading) {
             CircularProgressIndicator(
@@ -326,11 +346,11 @@ fun MovieDetailScreen(
                     .fillMaxSize()
                     .verticalScroll(scrollState)
             ) {
-                // Top Backdrop section with blurred/gradient overlay
+                // Top Backdrop – full cinematic hero image behind status bar
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(260.dp)
+                        .height(420.dp)   // Tall hero backdrop for cinematic look
                 ) {
                     AsyncImage(
                         model = ImageRequest.Builder(context)
@@ -348,28 +368,30 @@ fun MovieDetailScreen(
                         modifier = Modifier.fillMaxSize()
                     )
                     
-                    // Dark and colored gradient overlays for premium look
+                    // Subtle gradient – mostly transparent at top, dark at bottom to blend into content
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .background(
                                 Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Black.copy(alpha = 0.3f),
-                                        Color(0xFF0F0E13).copy(alpha = 0.8f),
-                                        Color(0xFF0F0E13)
+                                    colorStops = arrayOf(
+                                        0.0f to Color.Black.copy(alpha = 0.05f),   // Nearly invisible at very top
+                                        0.35f to Color.Black.copy(alpha = 0.10f),  // Light scrim in middle
+                                        0.72f to Color(0xFF0F0E13).copy(alpha = 0.55f),
+                                        1.0f to Color(0xFF0F0E13)                  // Fully opaque at bottom
                                     )
                                 )
                             )
                     )
 
-                    // Back navigation button
+                    // Back navigation button – statusBarsPadding keeps it below the clock/icons
                     IconButton(
                         onClick = { navController.popBackStack() },
                         modifier = Modifier
-                            .padding(top = 12.dp, start = 12.dp)
                             .align(Alignment.TopStart)
-                            .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
+                            .statusBarsPadding()
+                            .padding(top = 4.dp, start = 12.dp)
+                            .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(20.dp))
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -379,12 +401,13 @@ fun MovieDetailScreen(
                     }
                 }
 
-                // Info Section
+
+                // Info Section - overlaps upward into the hero backdrop
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
-                        .offset(y = (-60).dp),
+                        .offset(y = (-90).dp),   // Deeper overlap into tall backdrop
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     // Small poster card
@@ -466,7 +489,7 @@ fun MovieDetailScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp)
-                            .offset(y = (-40).dp)
+                            .offset(y = (-64).dp)
                     ) {
                         Text(
                             text = "Synopsis",
@@ -489,7 +512,7 @@ fun MovieDetailScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
-                        .offset(y = (-20).dp)
+                        .offset(y = (-44).dp)
                 ) {
                     Text(
                         text = if (movieMeta.type.lowercase() == "series") "Seasons & Episodes" else "Stream / Download Options",

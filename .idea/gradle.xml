@@ -12,6 +12,7 @@
             <option value="$PROJECT_DIR$/Player" />
             <option value="$PROJECT_DIR$/app" />
             <option value="$PROJECT_DIR$/doubletapplayerview" />
+            <option value="$PROJECT_DIR$/television" />
           </set>
         </option>
       </GradleProjectSettings>

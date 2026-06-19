@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.painter.Painter
+import com.samyak.television.utils.NetworkUtils
 
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalTvMaterial3Api::class)
@@ -73,6 +74,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
     val context = LocalContext.current
+    val isConnected by remember(context) {
+        NetworkUtils.observeConnectivity(context)
+    }.collectAsState(initial = NetworkUtils.isNetworkAvailable(context))
+
     val channels by viewModel.channels.collectAsState()
     val categories by viewModel.categories.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -89,6 +94,7 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
     // activeScreenIndex == 3: Manage Extensions
     // activeScreenIndex == 4: Manage Playlists/Providers
     // activeScreenIndex == 5: Speed Test Screen
+    // activeScreenIndex == 7: Weather cast screen
 
     // Movie Detail Selection States
     var selectedMovieLink by remember { mutableStateOf<String?>(null) }
@@ -221,26 +227,57 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
                         isExpanded = isSidebarExpanded,
                         onClick = { activeScreenIndex = 5 }
                     )
+                    SidebarItem(
+                        painter = painterResource(id = R.drawable.ic_weather),
+                        label = "Weather",
+                        isSelected = activeScreenIndex == 7,
+                        isExpanded = isSidebarExpanded,
+                        onClick = { activeScreenIndex = 7 }
+                    )
                 }
 
-                // Bottom profile mock (Disney+ Style)
+                // Bottom profile mock (Disney+ Style) with Network status badge
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 10.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .background(Color(0xFFFFD600), RoundedCornerShape(12.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("U", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Box(contentAlignment = Alignment.BottomEnd) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .background(Color(0xFFFFD600), RoundedCornerShape(14.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("U", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(12.dp)
+                                .offset(x = 2.dp, y = 2.dp)
+                                .background(Color(0xFF080D1A), RoundedCornerShape(6.dp))
+                                .padding(1.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = if (isConnected) R.drawable.network_connected else R.drawable.network_not_connected),
+                                contentDescription = null,
+                                tint = if (isConnected) Color(0xFF26A69A) else Color.Red,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                     if (isSidebarExpanded) {
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text("Guest", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column {
+                            Text("Guest", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Text(
+                                text = if (isConnected) "Online" else "Offline",
+                                color = if (isConnected) Color(0xFF26A69A) else Color.Red,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Normal
+                            )
+                        }
                     }
                 }
             }
@@ -261,6 +298,10 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
                     .padding(24.dp)
             ) {
                 when (activeScreenIndex) {
+                    7 -> {
+                        // Weather screen
+                        WeatherScreen()
+                    }
                     5 -> {
                         // Speed Test Screen
                         SpeedTestScreen()
@@ -400,7 +441,7 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
                                     fontSize = 20.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White,
-                                    modifier = Modifier.padding(bottom = 16.dp)
+                                    modifier = Modifier.padding(bottom = 16.dp, end = 100.dp)
                                 )
 
                                 if (isLoading) {
@@ -450,6 +491,12 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
                         }
                     }
                 }
+
+                ClockView(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 8.dp)
+                )
             }
         }
         // Overlay Category Movies Screen
@@ -708,7 +755,7 @@ fun ManageProvidersScreen(
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 16.dp, end = 100.dp)
             )
 
             // Selector for Type (IPTV vs Vega)
@@ -858,4 +905,23 @@ fun ManageProvidersScreen(
             }
         }
     }
+}
+
+@Composable
+fun ClockView(modifier: Modifier = Modifier) {
+    var timeText by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        val formatter = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault())
+        while (true) {
+            timeText = formatter.format(java.util.Calendar.getInstance().time)
+            kotlinx.coroutines.delay(1000)
+        }
+    }
+    Text(
+        text = timeText,
+        fontSize = 16.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = Color.White.copy(alpha = 0.8f),
+        modifier = modifier
+    )
 }

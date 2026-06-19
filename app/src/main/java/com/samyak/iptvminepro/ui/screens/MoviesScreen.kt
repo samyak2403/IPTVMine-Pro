@@ -1,10 +1,8 @@
 package com.samyak.iptvminepro.ui.screens
 
-import android.util.Log
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -23,191 +21,60 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.samyak.iptvminepro.model.*
-import com.samyak.iptvminepro.provider.ProviderRepository
-import com.samyak.iptvminepro.provider.VegaProviderRunner
 import com.samyak.iptvminepro.ui.components.MovieCard
-import kotlinx.coroutines.launch
-import androidx.compose.foundation.BorderStroke
+import com.samyak.iptvminepro.ui.viewmodel.MoviesViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoviesScreen(
+    viewModel: MoviesViewModel,          // Passed from Activity scope – never recreated
     initialCategoryTitle: String? = null,
     onMovieClick: (VegaPost, VegaProvider, Provider) -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    
-    // Providers & Runner setup
-    val repository = remember { ProviderRepository(context) }
-    val runner = remember { VegaProviderRunner(context) }
-    
-    // State
-    val vegaProvidersList = remember { repository.getProviders().filter { it.isActive && it.safeType == ProviderType.VEGA } }
-    Log.d("MoviesScreen", "Active Vega Providers: ${vegaProvidersList.size}")
-    
-    var selectedProvider by remember { mutableStateOf<Provider?>(vegaProvidersList.firstOrNull()) }
-    
-    var scrapers by remember { mutableStateOf<List<VegaProvider>>(emptyList()) }
-    var selectedScraper by remember { mutableStateOf<VegaProvider?>(null) }
-    
-    var categories by remember { mutableStateOf<List<VegaCatalog>>(emptyList()) }
-    var selectedCategory by remember { mutableStateOf<VegaCatalog?>(null) }
-    
-    var movies by remember { mutableStateOf<List<VegaPost>>(emptyList()) }
-    var searchQuery by remember { mutableStateOf("") }
-    
-    var page by remember { mutableStateOf(1) }
-    var isLoading by remember { mutableStateOf(false) }
-    var isScrapersLoading by remember { mutableStateOf(false) }
-    var hasMore by remember { mutableStateOf(true) }
-    
-    val extensionRepo = remember { com.samyak.iptvminepro.provider.ExtensionRepository.getInstance(context) }
-    val installedExtensionsState by extensionRepo.installedExtensionsFlow.collectAsState()
-    
-    // Fetch scrapers/extensions for selected provider
-    LaunchedEffect(selectedProvider, installedExtensionsState) {
-        val provider = selectedProvider
-        if (provider != null) {
-            isScrapersLoading = true
-            try {
-                val manifest = runner.fetchManifest(provider.url)
-                val installed = manifest.filter { it.value in installedExtensionsState }
-                
-                // Only show installed extensions
-                scrapers = installed
-                
-                Log.d("MoviesScreen", "Loaded ${manifest.size} scrapers, using ${scrapers.size} (installed: ${installed.size})")
-                
-                // Keep selected scraper if it's still in the list, otherwise choose first
-                if (selectedScraper == null || !scrapers.any { it.value == selectedScraper?.value }) {
-                    selectedScraper = scrapers.firstOrNull()
-                }
-            } catch (e: Exception) {
-                Toast.makeText(context, "Error loading scrapers: ${e.message}", Toast.LENGTH_LONG).show()
-                scrapers = emptyList()
-                selectedScraper = null
-            } finally {
-                isScrapersLoading = false
-            }
-        } else {
-            scrapers = emptyList()
-            selectedScraper = null
+
+    // initIfNeeded is a no-op if data is already loaded (guarded by dataLoaded flag)
+    LaunchedEffect(Unit) {
+        viewModel.initIfNeeded(initialCategoryTitle)
+    }
+
+    // Collect state
+    val vegaProvidersList = viewModel.vegaProvidersList
+    val selectedProvider by viewModel.selectedProvider.collectAsState()
+    val scrapers by viewModel.scrapers.collectAsState()
+    val selectedScraper by viewModel.selectedScraper.collectAsState()
+    val isScrapersLoading by viewModel.isScrapersLoading.collectAsState()
+    val categories by viewModel.categories.collectAsState()
+    val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val movies by viewModel.movies.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val hasMore by viewModel.hasMore.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    val error by viewModel.error.collectAsState()
+
+    // Show error as Toast
+    LaunchedEffect(error) {
+        error?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            viewModel.clearError()
         }
     }
-    
-    // Fetch categories/catalog for selected scraper, then load movies
-    LaunchedEffect(selectedProvider, selectedScraper) {
-        val provider = selectedProvider
-        val scraper = selectedScraper
-        if (provider != null && scraper != null) {
-            isLoading = true
-            movies = emptyList()
-            page = 1
-            hasMore = true
-            try {
-                val (catList, _) = runner.getCatalog(provider.url, scraper.value)
-                categories = catList
-                Log.d("MoviesScreen", "Loaded ${catList.size} categories for ${scraper.display_name}")
-                
-                // Select category based on initial title if provided
-                val targetCat = if (initialCategoryTitle != null) {
-                    catList.find { it.title == initialCategoryTitle } ?: catList.firstOrNull()
-                } else {
-                    catList.firstOrNull()
-                }
-                
-                selectedCategory = targetCat
-                
-                // Now immediately load movies with the new category
-                val filter = targetCat?.filter ?: ""
-                val newMovies = runner.getPosts(provider.url, scraper.value, filter, 1)
-                Log.d("MoviesScreen", "Loaded ${newMovies.size} movies for category ${targetCat?.title}")
-                if (newMovies.isEmpty()) {
-                    hasMore = false
-                } else {
-                    movies = newMovies
-                    page = 2
-                }
-            } catch (e: Exception) {
-                Log.e("MoviesScreen", "Error loading catalog/movies: ${e.message}", e)
-                categories = emptyList()
-                selectedCategory = null
-            } finally {
-                isLoading = false
-            }
-        } else {
-            categories = emptyList()
-            selectedCategory = null
-            movies = emptyList()
-        }
-    }
-    
-    // Fetch movies list (when category or search changes)
-    val loadMovies: (Boolean) -> Unit = { isNextPage ->
-        val provider = selectedProvider
-        val scraper = selectedScraper
-        if (provider != null && scraper != null && !isLoading) {
-            scope.launch {
-                isLoading = true
-                if (!isNextPage) {
-                    page = 1
-                    movies = emptyList()
-                    hasMore = true
-                }
-                try {
-                    val newMovies = if (searchQuery.isNotBlank()) {
-                        runner.getSearchPosts(provider.url, scraper.value, searchQuery.trim(), page)
-                    } else {
-                        val filter = selectedCategory?.filter ?: ""
-                        runner.getPosts(provider.url, scraper.value, filter, page)
-                    }
-                    if (newMovies.isEmpty()) {
-                        hasMore = false
-                    } else {
-                        movies = if (isNextPage) movies + newMovies else newMovies
-                        page++
-                    }
-                } catch (e: Exception) {
-                    if (!isNextPage) {
-                        Toast.makeText(context, "Error fetching content: ${e.message}", Toast.LENGTH_SHORT).show()
-                    }
-                } finally {
-                    isLoading = false
-                }
-            }
-        }
-    }
-    
-    // Only trigger on category change (not scraper change, which is handled above)
-    LaunchedEffect(selectedCategory) {
-        // Skip if still loading from scraper change or if search is active
-        if (searchQuery.isBlank() && !isLoading && selectedScraper != null && selectedProvider != null) {
-            loadMovies(false)
-        }
-    }
-    
-    // Main UI Layout (Premium Light Theme)
+
+    // Main UI Layout
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
         if (vegaProvidersList.isEmpty()) {
-            // Empty State
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -243,7 +110,7 @@ fun MoviesScreen(
                 }
             }
         } else {
-            // Top Section: Provider Selection Dropdown (if multiple providers)
+            // Provider dropdown (only when multiple providers)
             if (vegaProvidersList.size > 1) {
                 var dropdownExpanded by remember { mutableStateOf(false) }
                 Box(
@@ -267,17 +134,48 @@ fun MoviesScreen(
                             DropdownMenuItem(
                                 text = { Text(provider.title) },
                                 onClick = {
-                                    selectedProvider = provider
+                                    viewModel.selectProvider(provider)
                                     dropdownExpanded = false
-                                    searchQuery = ""
                                 }
                             )
                         }
                     }
                 }
             }
-            
-            // Scraper Selector Tabs
+
+            // Search bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { viewModel.setSearchQuery(it) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                placeholder = { Text("Search movies...", color = Color(0xFF9CA3AF)) },
+                leadingIcon = {
+                    Icon(Icons.Filled.Search, contentDescription = null, tint = Color(0xFF6B7280))
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.clearSearch() }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Clear", tint = Color(0xFF6B7280))
+                        }
+                    }
+                },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = {
+                    viewModel.submitSearch()
+                }),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color(0xFF26A69A),
+                    unfocusedBorderColor = Color(0xFFE0E0E0),
+                    focusedTextColor = MaterialTheme.colorScheme.onBackground,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onBackground
+                )
+            )
+
+            // Scraper tabs
             if (isScrapersLoading) {
                 LinearProgressIndicator(
                     modifier = Modifier.fillMaxWidth().height(2.dp),
@@ -294,10 +192,7 @@ fun MoviesScreen(
                         val isSelected = selectedScraper?.value == scraper.value
                         FilterChip(
                             selected = isSelected,
-                            onClick = {
-                                selectedScraper = scraper
-                                searchQuery = ""
-                            },
+                            onClick = { viewModel.selectScraper(scraper) },
                             label = { Text(scraper.display_name, fontSize = 13.sp) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = Color(0xFF26A69A),
@@ -311,8 +206,8 @@ fun MoviesScreen(
                     }
                 }
             }
-            
-            // Categories Selector Tabs (Only if search is empty)
+
+            // Category tabs (only when search is empty)
             if (searchQuery.isEmpty() && categories.isNotEmpty()) {
                 LazyRow(
                     modifier = Modifier
@@ -324,7 +219,7 @@ fun MoviesScreen(
                         val isSelected = selectedCategory?.filter == category.filter
                         FilterChip(
                             selected = isSelected,
-                            onClick = { selectedCategory = category },
+                            onClick = { viewModel.selectCategory(category) },
                             label = { Text(category.title, fontSize = 13.sp) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = Color(0xFF26A69A).copy(alpha = 0.2f),
@@ -332,22 +227,24 @@ fun MoviesScreen(
                                 containerColor = Color.Transparent,
                                 labelColor = Color(0xFF6B7280)
                             ),
-                            border = if (isSelected) BorderStroke(1.dp, Color(0xFF26A69A)) else BorderStroke(1.dp, Color(0xFFE0E0E0)),
+                            border = if (isSelected)
+                                BorderStroke(1.dp, Color(0xFF26A69A))
+                            else
+                                BorderStroke(1.dp, Color(0xFFE0E0E0)),
                             shape = RoundedCornerShape(20.dp)
                         )
                     }
                 }
             }
-            
-            // Movies Grid Content
+
+            // Movies Grid
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
             ) {
                 val gridState = rememberLazyGridState()
-                
-                // Triggers loading next page near end of list
+
                 val shouldLoadMore = remember {
                     derivedStateOf {
                         val lastVisibleItem = gridState.layoutInfo.visibleItemsInfo.lastOrNull()
@@ -355,32 +252,36 @@ fun MoviesScreen(
                         lastVisibleItem.index >= gridState.layoutInfo.totalItemsCount - 6
                     }
                 }
-                
+
                 LaunchedEffect(shouldLoadMore.value) {
                     if (shouldLoadMore.value && hasMore && !isLoading && movies.isNotEmpty()) {
-                        loadMovies(true)
+                        viewModel.loadMovies(true)
                     }
                 }
-                
+
                 if (movies.isEmpty() && !isLoading) {
-                    // No matches state
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            text = if (scrapers.isEmpty()) "No extensions installed. Please install an extension from Settings." else "No movies or shows found",
+                            text = if (scrapers.isEmpty())
+                                "No extensions installed. Please install an extension from Settings."
+                            else
+                                "No movies or shows found",
                             color = Color(0xFF6B7280),
-                            fontSize = 16.sp
+                            fontSize = 16.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 24.dp)
                         )
                     }
                 } else {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(3), // Standard movie poster column count
+                        columns = GridCells.Fixed(3),
                         state = gridState,
                         contentPadding = PaddingValues(16.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        itemsIndexed(movies) { index, movie ->
+                        itemsIndexed(movies) { _, movie ->
                             MovieCard(
                                 movie = movie,
                                 onClick = {
@@ -392,8 +293,8 @@ fun MoviesScreen(
                                 }
                             )
                         }
-                        
-                        // Loading footer item
+
+                        // Loading footer
                         if (isLoading && movies.isNotEmpty()) {
                             item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(3) }) {
                                 Box(
@@ -411,8 +312,8 @@ fun MoviesScreen(
                         }
                     }
                 }
-                
-                // Overlay spinner for full reload loading
+
+                // Full-screen spinner for first load
                 if (isLoading && movies.isEmpty()) {
                     CircularProgressIndicator(
                         color = Color(0xFF26A69A),
@@ -423,4 +324,3 @@ fun MoviesScreen(
         }
     }
 }
-
