@@ -1,70 +1,135 @@
-# IPTVMine Pro
+# 📺 IPTVMine Pro
+
+[![Kotlin Version](https://img.shields.io/badge/Kotlin-1.9.0-purple.svg?style=flat-square&logo=kotlin)](https://kotlinlang.org/)
+[![Compose](https://img.shields.io/badge/Jetpack_Compose-Modern_UI-teal.svg?style=flat-square&logo=android)](https://developer.android.com/jetpack/compose)
+[![Media3](https://img.shields.io/badge/AndroidX_Media3-ExoPlayer-blue.svg?style=flat-square&logo=exoplayer)](https://developer.android.com/guide/topics/media/media3)
+[![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 
 > [!WARNING]
-> **This project is currently under construction.** Features are being actively developed and some parts of the codebase might be unstable.
+> **This project is currently under construction.** Features are being actively developed, and some parts of the codebase might be unstable.
 
-IPTVMine Pro is a powerful and versatile Android IPTV application built with modern technologies. It allows users to stream Live TV, Movies, and TV Shows by integrating custom provider sources (M3U or Vega-compatible extensions).
+IPTVMine Pro is a premium, versatile, and high-performance Android IPTV application built with modern Android development paradigms. It enables users to stream Live TV, Movies, and TV Shows by integrating standard M3U playlists and advanced Vega-compatible JavaScript/TypeScript provider extensions.
 
-## 🚀 Features
+---
 
-- **Live TV Streaming**: Support for M3U playlists with category filtering.
-- **VOD Support**: Integrated movie and series catalogs through provider extensions.
-- **Provider Management**: Easily add, remove, and manage multiple IPTV providers.
-- **Global Search**: Search for channels and movies across all active providers.
-- **Modern UI**: Built entirely with Jetpack Compose for a smooth, responsive, and teal-themed user experience.
-- **Advanced Player**: Powered by AndroidX Media3 (ExoPlayer) with support for HLS, DASH, RTSP, and more.
-- **Extension System**: Support for Vega-style JavaScript/TypeScript provider extensions for dynamic content scraping.
-- **Leanback Support**: Basic integration for TV and Cast functionality.
+## 🎨 Screenshot Galleries
+
+### Mobile App UI
+<p align="center">
+  <img src="Screenshot/mobile/1.png" width="30%" alt="Home Screen" />
+  <img src="Screenshot/mobile/2.png" width="30%" alt="Provider Selection" />
+  <img src="Screenshot/mobile/3.png" width="30%" alt="Movie Detail" />
+</p>
+
+### Android TV UI
+<p align="center">
+  <img src="Screenshot/television/1.png" width="48%" alt="TV Dashboard" />
+  <img src="Screenshot/television/2.png" width="48%" alt="TV Playback & Series Details" />
+</p>
+
+---
+
+## ⚙️ Architecture & Module Breakdown
+
+The project is structured as a multi-module Gradle project to enforce clean separation of concerns, improve build speeds, and share playback/scraping modules between the Mobile and Android TV apps.
+
+```mermaid
+graph TD
+    subgraph UI Modules
+        App[Mobile App Module :app]
+        TV[Android TV Module :television]
+    end
+    
+    subgraph Shared Core
+        Player[Media Playback Module :Player]
+        DTPV[Double-Tap Seek library :doubletapplayerview]
+    end
+
+    subgraph Content Engines
+        M3U[M3U Parser / Playlists]
+        Vega[Vega JavaScript Extension Runner]
+    end
+
+    App --> Player
+    TV --> Player
+    Player --> DTPV
+    App --> Vega
+    TV --> Vega
+    App --> M3U
+    TV --> M3U
+```
+
+### Module Descriptions
+- **[:app](file:///c:/Users/ADMIN/AndroidStudioProjects/IPTVMine-Pro/app/)**: The main phone/tablet client built using Jetpack Compose, containing provider configurations, watch history, downloads, search, and device pairing setups.
+- **[:television](file:///c:/Users/ADMIN/AndroidStudioProjects/IPTVMine-Pro/television/)**: A tailored Android TV Leanback/TV-Compose app optimized for D-pad navigation, featuring weather forecast screens, custom pairing receivers, and dynamic layouts.
+- **[:Player](file:///c:/Users/ADMIN/AndroidStudioProjects/IPTVMine-Pro/Player/)**: A shared media playback library wrapper for AndroidX Media3 (ExoPlayer) with PiP (Picture-in-Picture) lifecycle support.
+- **[:doubletapplayerview](file:///c:/Users/ADMIN/AndroidStudioProjects/IPTVMine-Pro/doubletapplayerview/)**: Custom Compose component providing YouTube-like double-tap-to-seek overlays on top of the media controller.
+
+---
+
+## 🚀 Key Features
+
+### 📱 Mobile Experience
+- **Live TV Streaming**: Load massive M3U playlists with rapid group filtering, quick search, and category list UI.
+- **VOD Catalogs**: Categorized movies and TV shows gathered from active provider channels.
+- **Local Downloads**: Manage offline VOD downloads with progress tracking and storage control.
+- **Watch History & Bookmarks**: Keep track of recently played channels, movies, and current playback resume positions.
+- **Mobile-TV Pairing**: Scan and pair with your Android TV module to synchronize and cast provider content.
+
+### 📺 Android TV Experience (`television`)
+- **Leanback Engine & Compose**: Fluid 10ft user interface tailored for standard remote control D-pads.
+- **Universal Search**: On-screen keyboard for looking up channels and series across all scrapers.
+- **Integrated Speed Test**: Measure real-time network download speeds and latency straight from your TV.
+- **Weather Dashboard**: Full Compose-based weather forecast widget showing current weather parameters and upcoming days' outlook.
+- **Smart Episode Filtering**: Clean, filtered lists of episodes that automatically hide warning messages and dead scraper links.
+
+### 🌐 Advanced Extension Engine (Vega Scrapers)
+- Uses a headless JS/TS WebView bridge to execute custom external scrapers securely.
+- **Automatic Playback**: Resolves streams dynamically and starts the highest-quality source first.
+- **Resilient Execution**: Implements a 3-attempt JS evaluation retry loop with automatic WebView re-creation on scrapes that timeout.
+- For a developer guide on writing JS extensions, see [VEGA_DOCS.md](VEGA_DOCS.md).
+
+---
 
 ## 🛠 Tech Stack
 
 - **Language**: [Kotlin](https://kotlinlang.org/)
-- **UI Framework**: [Jetpack Compose](https://developer.android.com/jetpack/compose)
-- **Navigation**: [Compose Navigation](https://developer.android.com/jetpack/compose/navigation)
-- **Media Playback**: [AndroidX Media3](https://developer.android.com/guide/topics/media/media3) (ExoPlayer)
+- **UI Framework**: [Jetpack Compose](https://developer.android.com/jetpack/compose) & [Compose for TV](https://developer.android.com/develop/ui/compose/tv)
+- **Media Engine**: [AndroidX Media3 (ExoPlayer)](https://developer.android.com/guide/topics/media/media3)
 - **Networking**: [OkHttp](https://square.github.io/okhttp/) & [Gson](https://github.com/google/gson)
+- **Async Execution**: [Kotlin Coroutines](https://kotlinlang.org/docs/coroutines-overview.html) & Flow
 - **Image Loading**: [Coil](https://coil-kt.github.io/coil/)
 - **Animations**: [Lottie for Compose](https://github.com/airbnb/lottie-android)
-- **Architecture**: MVVM with ViewModel and State management.
 
-## 📂 Project Structure
-
-- `app/`: Main application module containing UI screens, ViewModels, and provider logic.
-- `Player/`: Dedicated module for the video playback activity and Media3 implementation.
-- `VEGA_DOCS.md`: Comprehensive documentation for the Vega extension system and developer guide.
+---
 
 ## 🏁 Getting Started
 
 ### Prerequisites
+- Android Studio Ladybug/Meerkat or newer.
+- JDK 17 configured in Android Studio Gradle settings.
+- Android SDK 24+ (Minimum SDK) / SDK 36 (Target SDK).
 
-- Android Studio Meerkat (or newer)
-- JDK 17 or 11
-- Android SDK 24+ (Minimum) / 36+ (Target)
+### Installation & Run
 
-### Installation
-
-1. Clone the repository:
+1. Clone this repository:
    ```bash
    git clone https://github.com/samyak2403/IPTVMine-Pro.git
    ```
-2. Open the project in Android Studio.
-3. Sync Project with Gradle Files.
-4. Build and run the `app` module on your device or emulator.
-
-## 📺 Adding Providers
-
-### M3U Providers
-1. Open the app and navigate to **Settings > Manage Providers**.
-2. Tap the **+** button to add a new provider.
-3. Enter your M3U URL or select a local file.
-
-### Vega Extensions
-1. Check [VEGA_DOCS.md](VEGA_DOCS.md) for detailed instructions on how to build and add Vega-compatible provider extensions.
-2. Extensions can be managed under **Settings > Extensions**.
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details (if available).
+2. Open Android Studio and import the directory.
+3. Gradle Sync the project.
+4. Select your run configuration target:
+   - **`app`**: To run the mobile/tablet client.
+   - **`television`**: To run the Android TV client (use an Android TV Emulator or physical TV box with Developer Options enabled).
 
 ---
-*Built with ❤️ for the IPTV community.*
+
+## 🐞 Bugs, Testing & Contributions
+
+We track active defects and code health details in [BUGS.md](BUGS.md). Feel free to refer to it for API compatibility considerations and known lifecycle issues.
+
+- To submit bug reports, navigate to **Settings > Bug Report** in the mobile app, or open a GitHub issue.
+- Maintainers can review ongoing issues in [BUGS.md](BUGS.md)'s defect registry before submitting Pull Requests.
+
+---
+*Built with ❤️ for the Android & IPTV Developer Community.*
