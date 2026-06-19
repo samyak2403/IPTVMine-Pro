@@ -84,10 +84,11 @@ fun MovieDetailScreen(
     var episodesMap by remember { mutableStateOf<Map<String, List<VegaLink>>>(emptyMap()) }
     var loadingEpisodesLink by remember { mutableStateOf<String?>(null) }
 
-    // Stream resolution state
+    // Stream resolution state (Note: streamsToSelect panel is inactive — auto-play uses streams[0])
     var streamsToSelect by remember { mutableStateOf<List<VegaStream>?>(null) }
     var resolvingStream by remember { mutableStateOf(false) }
     var selectedItemTitle by remember { mutableStateOf("") }
+    var streamResolutionJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     // Expanded states for season categories
     var expandedLinks by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -136,14 +137,17 @@ fun MovieDetailScreen(
     }
 
     val onDirectLinkClick: (VegaDirectLink, String) -> Unit = { directLink, title ->
-        scope.launch {
+        streamResolutionJob?.cancel()
+        streamResolutionJob = scope.launch {
             resolvingStream = true
             try {
                 val resolveType = getResolveType(directLink.type)
                 val streams = runner.getStream(providerUrl, scraperValue, directLink.link, resolveType).filter { it.link.isNotBlank() }
                 if (streams.isEmpty()) {
                     Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
-                } else if (streams.size == 1) {
+                } else {
+                    val selectedStream = streams[0]
+                    Toast.makeText(context, "Playing: ${selectedStream.server} - ${selectedStream.quality}", Toast.LENGTH_SHORT).show()
                     val mLink = if (meta?.type?.lowercase() == "series") {
                         "$link#${android.net.Uri.encode(title)}"
                     } else {
@@ -151,18 +155,15 @@ fun MovieDetailScreen(
                     }
                     com.samyak.player.PlayerActivity.start(
                         context = context,
-                        name = "$title - ${streams[0].quality}",
-                        streamUrl = streams[0].link,
-                        headers = streams[0].headers,
+                        name = "$title - ${selectedStream.quality}",
+                        streamUrl = selectedStream.link,
+                        headers = selectedStream.headers,
                         watchHistoryEnabled = true,
                         movieLink = mLink,
                         movieImage = meta?.image ?: "",
                         providerUrl = providerUrl,
                         scraperValue = scraperValue
                     )
-                } else {
-                    selectedItemTitle = title
-                    streamsToSelect = streams
                 }
             } catch (e: Exception) {
                 Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -437,13 +438,14 @@ fun MovieDetailScreen(
                         .padding(start = 24.dp)
                 ) {
                     Text(
-                        text = if (resolvingStream) "Resolving Stream Links..." else if (streamsToSelect != null) "Select Stream Link:" else if (movieMeta.type.lowercase() == "series") "Seasons & Episodes" else "Stream Playback Links",
+                        text = if (resolvingStream) "Resolving Stream Links..." else if (movieMeta.type.lowercase() == "series") "Seasons & Episodes" else "Stream Playback Links",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
 
+                    // INACTIVE stream selection panel (streamsToSelect is never set — auto-play uses streams[0])
                     val streams = streamsToSelect
                     if (resolvingStream) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -605,7 +607,15 @@ fun MovieDetailScreen(
                                                         CircularProgressIndicator(color = Color(0xFF26A69A), modifier = Modifier.size(24.dp))
                                                     }
                                                 } else {
-                                                    val episodes = episodesMap[vegaLink.episodesLink]
+                                                    val episodes = episodesMap[vegaLink.episodesLink]?.filter { ep ->
+                                                        val titleLower = ep.title.lowercase()
+                                                        !titleLower.contains("note") &&
+                                                        !titleLower.contains("warning") &&
+                                                        !titleLower.contains("download") &&
+                                                        !titleLower.contains("join") &&
+                                                        !titleLower.contains("telegram") &&
+                                                        !titleLower.contains("click")
+                                                    }
                                                     if (episodes.isNullOrEmpty()) {
                                                         Text("No episodes loaded.", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
                                                     } else {
@@ -618,28 +628,28 @@ fun MovieDetailScreen(
                                                                     if (hasDirectLinks) {
                                                                         onDirectLinkClick(episode.directLinks!![0], "${vegaLink.title} - ${episode.title}")
                                                                     } else if (hasEpLink) {
-                                                                        scope.launch {
+                                                                        streamResolutionJob?.cancel()
+                                                                        streamResolutionJob = scope.launch {
                                                                             resolvingStream = true
                                                                             try {
                                                                                 val streams = runner.getStream(providerUrl, scraperValue, episode.episodesLink!!, getResolveType("series")).filter { it.link.isNotBlank() }
                                                                                 if (streams.isEmpty()) {
                                                                                     Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
-                                                                                } else if (streams.size == 1) {
+                                                                                } else {
+                                                                                    val selectedStream = streams[0]
                                                                                     val epTitle = "${vegaLink.title} - ${episode.title}"
+                                                                                    Toast.makeText(context, "Playing: ${selectedStream.server} - ${selectedStream.quality}", Toast.LENGTH_SHORT).show()
                                                                                     com.samyak.player.PlayerActivity.start(
                                                                                         context = context,
-                                                                                        name = "$epTitle - ${streams[0].quality}",
-                                                                                        streamUrl = streams[0].link,
-                                                                                        headers = streams[0].headers,
+                                                                                        name = "$epTitle - ${selectedStream.quality}",
+                                                                                        streamUrl = selectedStream.link,
+                                                                                        headers = selectedStream.headers,
                                                                                         watchHistoryEnabled = true,
                                                                                         movieLink = "$link#${android.net.Uri.encode(epTitle)}",
                                                                                         movieImage = movieMeta.image,
                                                                                         providerUrl = providerUrl,
                                                                                         scraperValue = scraperValue
                                                                                     )
-                                                                                } else {
-                                                                                    selectedItemTitle = "${vegaLink.title} - ${episode.title}"
-                                                                                    streamsToSelect = streams
                                                                                 }
                                                                             } catch (e: Exception) {
                                                                                 Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()

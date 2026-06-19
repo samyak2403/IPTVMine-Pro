@@ -112,11 +112,12 @@ fun MovieDetailScreen(
     var episodesMap by remember { mutableStateOf<Map<String, List<VegaLink>>>(emptyMap()) }
     var loadingEpisodesLink by remember { mutableStateOf<String?>(null) }
 
-    // Stream resolution state
+    // Stream resolution state (Note: streamsToSelect is inactive — auto-play uses streams[0])
     var streamsToSelect by remember { mutableStateOf<List<VegaStream>?>(null) }
     var streamsToDownload by remember { mutableStateOf<List<VegaStream>?>(null) }
     var resolvingStream by remember { mutableStateOf(false) }
     var selectedItemTitle by remember { mutableStateOf("") }
+    var streamResolutionJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     // Expanded states for season categories
     var expandedLinks by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -162,14 +163,17 @@ fun MovieDetailScreen(
     }
 
     val onDirectLinkClick: (VegaDirectLink, String) -> Unit = { directLink, title ->
-        scope.launch {
+        streamResolutionJob?.cancel()
+        streamResolutionJob = scope.launch {
             resolvingStream = true
             try {
                 val resolveType = getResolveType(directLink.type)
                 val streams = runner.getStream(providerUrl, scraperValue, directLink.link, resolveType).filter { it.link.isNotBlank() }
                 if (streams.isEmpty()) {
                     Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
-                } else if (streams.size == 1) {
+                } else {
+                    val selectedStream = streams[0]
+                    Toast.makeText(context, "Playing: ${selectedStream.server} - ${selectedStream.quality}", Toast.LENGTH_SHORT).show()
                     val mLink = if (meta?.type?.lowercase() == "series") {
                         "$link#${android.net.Uri.encode(title)}"
                     } else {
@@ -177,18 +181,15 @@ fun MovieDetailScreen(
                     }
                     PlayerActivity.start(
                         context = context,
-                        name = "$title - ${streams[0].quality}",
-                        streamUrl = streams[0].link,
-                        headers = streams[0].headers,
+                        name = "$title - ${selectedStream.quality}",
+                        streamUrl = selectedStream.link,
+                        headers = selectedStream.headers,
                         watchHistoryEnabled = true,
                         movieLink = mLink,
                         movieImage = meta?.image ?: "",
                         providerUrl = providerUrl,
                         scraperValue = scraperValue
                     )
-                } else {
-                    selectedItemTitle = title
-                    streamsToSelect = streams
                 }
             } catch (e: Exception) {
                 Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -199,7 +200,8 @@ fun MovieDetailScreen(
     }
 
     val onDownloadLinkClick: (VegaDirectLink, String) -> Unit = { directLink, title ->
-        scope.launch {
+        streamResolutionJob?.cancel()
+        streamResolutionJob = scope.launch {
             resolvingStream = true
             try {
                 val resolveType = getResolveType(directLink.type)
@@ -637,28 +639,28 @@ fun MovieDetailScreen(
                                                                                 val dLinks = episodeLink.directLinks!!
                                                                                 onDirectLinkClick(dLinks[0], "${vegaLink.title} - ${episodeLink.title} (${dLinks[0].title})")
                                                                             } else if (hasEpLink) {
-                                                                                scope.launch {
+                                                                                streamResolutionJob?.cancel()
+                                                                                streamResolutionJob = scope.launch {
                                                                                     resolvingStream = true
                                                                                     try {
                                                                                         val streams = runner.getStream(providerUrl, scraperValue, episodeLink.episodesLink!!, getResolveType("series")).filter { it.link.isNotBlank() }
                                                                                         if (streams.isEmpty()) {
                                                                                             Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
-                                                                                        } else if (streams.size == 1) {
+                                                                                        } else {
+                                                                                            val selectedStream = streams[0]
                                                                                             val epTitle = "${vegaLink.title} - ${episodeLink.title}"
+                                                                                            Toast.makeText(context, "Playing: ${selectedStream.server} - ${selectedStream.quality}", Toast.LENGTH_SHORT).show()
                                                                                             PlayerActivity.start(
                                                                                                 context = context,
-                                                                                                name = "$epTitle - ${streams[0].quality}",
-                                                                                                streamUrl = streams[0].link,
-                                                                                                headers = streams[0].headers,
+                                                                                                name = "$epTitle - ${selectedStream.quality}",
+                                                                                                streamUrl = selectedStream.link,
+                                                                                                headers = selectedStream.headers,
                                                                                                 watchHistoryEnabled = true,
                                                                                                 movieLink = "$link#${android.net.Uri.encode(epTitle)}",
                                                                                                 movieImage = meta?.image ?: "",
                                                                                                 providerUrl = providerUrl,
                                                                                                 scraperValue = scraperValue
                                                                                             )
-                                                                                        } else {
-                                                                                            selectedItemTitle = "${vegaLink.title} - ${episodeLink.title}"
-                                                                                            streamsToSelect = streams
                                                                                         }
                                                                                     } catch (e: Exception) {
                                                                                         Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -696,28 +698,28 @@ fun MovieDetailScreen(
                                                                                             val dLinks = episodeLink.directLinks!!
                                                                                             onDirectLinkClick(dLinks[0], "${vegaLink.title} - ${episodeLink.title} (${dLinks[0].title})")
                                                                                         } else if (hasEpLink) {
-                                                                                            scope.launch {
+                                                                                            streamResolutionJob?.cancel()
+                                                                                            streamResolutionJob = scope.launch {
                                                                                                 resolvingStream = true
                                                                                                 try {
                                                                                                     val streams = runner.getStream(providerUrl, scraperValue, episodeLink.episodesLink!!, getResolveType("series")).filter { it.link.isNotBlank() }
                                                                                                     if (streams.isEmpty()) {
                                                                                                         Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
-                                                                                                    } else if (streams.size == 1) {
+                                                                                                    } else {
+                                                                                                        val selectedStream = streams[0]
                                                                                                         val epTitle = "${vegaLink.title} - ${episodeLink.title}"
+                                                                                                        Toast.makeText(context, "Playing: ${selectedStream.server} - ${selectedStream.quality}", Toast.LENGTH_SHORT).show()
                                                                                                         PlayerActivity.start(
                                                                                                             context = context,
-                                                                                                            name = "$epTitle - ${streams[0].quality}",
-                                                                                                            streamUrl = streams[0].link,
-                                                                                                            headers = streams[0].headers,
+                                                                                                            name = "$epTitle - ${selectedStream.quality}",
+                                                                                                            streamUrl = selectedStream.link,
+                                                                                                            headers = selectedStream.headers,
                                                                                                             watchHistoryEnabled = true,
                                                                                                             movieLink = "$link#${android.net.Uri.encode(epTitle)}",
                                                                                                             movieImage = meta?.image ?: "",
                                                                                                             providerUrl = providerUrl,
                                                                                                             scraperValue = scraperValue
                                                                                                         )
-                                                                                                    } else {
-                                                                                                        selectedItemTitle = "${vegaLink.title} - ${episodeLink.title}"
-                                                                                                        streamsToSelect = streams
                                                                                                     }
                                                                                                 } catch (e: Exception) {
                                                                                                     Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -747,7 +749,8 @@ fun MovieDetailScreen(
                                                                                             val dLinks = episodeLink.directLinks!!
                                                                                             onDownloadLinkClick(dLinks[0], "${vegaLink.title} - ${episodeLink.title} (${dLinks[0].title})")
                                                                                         } else if (hasEpLink) {
-                                                                                            scope.launch {
+                                                                                            streamResolutionJob?.cancel()
+                                                                                            streamResolutionJob = scope.launch {
                                                                                                 resolvingStream = true
                                                                                                 try {
                                                                                                     val streams = runner.getStream(providerUrl, scraperValue, episodeLink.episodesLink!!, getResolveType("series")).filter { it.link.isNotBlank() }
@@ -899,7 +902,7 @@ fun MovieDetailScreen(
             }
         }
 
-        // Dialog for Stream Selection
+        // Dialog for Stream Selection (INACTIVE — auto-play uses streams[0], will be removed in cleanup)
         streamsToSelect?.let { streams ->
             AlertDialog(
                 onDismissRequest = { streamsToSelect = null },
@@ -1082,5 +1085,3 @@ fun MovieDetailScreen(
     }
 }
 
-// Inline helper extension
-private fun <T> List<T>?.isNullOrEmpty(): Boolean = this == null || this.isEmpty()

@@ -226,6 +226,21 @@ class VegaProviderRunner(private val context: Context) {
         if (webViewReady.isCompleted) {
             webViewReady = CompletableDeferred()
         }
+
+        // Safely destroy old webView if exists to avoid memory and execution leaks
+        webView?.let { oldWebView ->
+            try {
+                oldWebView.stopLoading()
+                oldWebView.clearHistory()
+                oldWebView.clearCache(true)
+                oldWebView.loadUrl("about:blank")
+                oldWebView.onPause()
+                oldWebView.destroy()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error destroying old WebView: ${e.message}")
+            }
+        }
+
         val webViewInstance = WebView(context.applicationContext)
         webViewInstance.settings.javaScriptEnabled = true
         webViewInstance.settings.domStorageEnabled = true
@@ -289,41 +304,56 @@ class VegaProviderRunner(private val context: Context) {
         }
     }
 
+    // Helper to evaluate JS and await the result with automatic retry on timeout
     private suspend fun evalJsAsync(jsCode: String): String {
-        val deferred = CompletableDeferred<String>()
-        val callbackId = bridge.registerCallback(deferred)
-        val processedJs = jsCode.replace("__CALLBACK_ID__", callbackId)
-        
-        val wrappedJs = """
-            (async function() {
-                try {
-                    $processedJs
-                } catch(err) {
-                    console.error("JS Error:", err);
-                    window.AndroidBridge.onError('$callbackId', err.message || err.toString());
+        var lastException: Exception? = null
+        for (attempt in 1..3) {
+            val deferred = CompletableDeferred<String>()
+            val callbackId = bridge.registerCallback(deferred)
+            val processedJs = jsCode.replace("__CALLBACK_ID__", callbackId)
+            
+            val wrappedJs = """
+                (async function() {
+                    try {
+                        $processedJs
+                    } catch(err) {
+                        console.error("JS Error:", err);
+                        window.AndroidBridge.onError('$callbackId', err.message || err.toString());
+                    }
+                })();
+            """.trimIndent()
+            
+            awaitWebViewReady()
+            
+            withContext(Dispatchers.Main) {
+                if (webView == null) {
+                    setupWebView()
+                    withContext(Dispatchers.Default) {
+                        awaitWebViewReady()
+                    }
                 }
-            })();
-        """.trimIndent()
-        
-        awaitWebViewReady()
-        
-        withContext(Dispatchers.Main) {
-            if (webView == null) {
-                setupWebView()
-                withContext(Dispatchers.Default) {
-                    awaitWebViewReady()
-                }
+                webView?.evaluateJavascript(wrappedJs, null)
             }
-            webView?.evaluateJavascript(wrappedJs, null)
+            
+            try {
+                return withTimeout(45_000) { deferred.await() }
+            } catch (e: TimeoutCancellationException) {
+                Log.e(TAG, "JS evaluation timed out after 45s on attempt $attempt")
+                deferred.cancel()
+                lastException = Exception("JS evaluation timed out")
+                if (attempt < 3) {
+                    Log.d(TAG, "Re-initializing WebView due to timeout before attempt ${attempt + 1}")
+                    withContext(Dispatchers.Main) {
+                        setupWebView()
+                    }
+                    delay(1000)
+                }
+            } catch (e: Exception) {
+                deferred.cancel()
+                throw e
+            }
         }
-        
-        return try {
-            withTimeout(45_000) { deferred.await() }
-        } catch (e: TimeoutCancellationException) {
-            Log.e(TAG, "JS evaluation timed out after 45s")
-            deferred.cancel()
-            throw Exception("JS evaluation timed out")
-        }
+        throw lastException ?: Exception("JS evaluation timed out after 3 attempts")
     }
 
     private suspend fun evalJsDirect(jsCode: String) {
@@ -1524,9 +1554,21 @@ class VegaProviderRunner(private val context: Context) {
 
     fun destroy() {
         mainHandler.post {
-            webView?.destroy()
+            webView?.let { oldWebView ->
+                try {
+                    oldWebView.stopLoading()
+                    oldWebView.clearHistory()
+                    oldWebView.clearCache(true)
+                    oldWebView.loadUrl("about:blank")
+                    oldWebView.onPause()
+                    oldWebView.destroy()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error destroying WebView in destroy(): ${e.message}")
+                }
+            }
             webView = null
         }
+        bridge.clearPendingCallbacks()
         isCompatInjected = false
         loadedScrapers.clear()
     }
@@ -1534,6 +1576,15 @@ class VegaProviderRunner(private val context: Context) {
     inner class AndroidBridge {
         private val callbacks = java.util.concurrent.ConcurrentHashMap<String, CompletableDeferred<String>>()
         private var callbackIdCounter = 0
+
+        fun clearPendingCallbacks() {
+            callbacks.values.forEach { deferred ->
+                if (deferred.isActive) {
+                    deferred.cancel()
+                }
+            }
+            callbacks.clear()
+        }
 
         fun registerCallback(deferred: CompletableDeferred<String>): String {
             val id = "cb_${++callbackIdCounter}"
