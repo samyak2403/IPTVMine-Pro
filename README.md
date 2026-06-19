@@ -9,7 +9,7 @@
 > **This project is currently under construction.** Features are being actively developed, and some parts of the codebase might be unstable.
 
 > [!IMPORTANT]
-> **Disclaimer**: IPTVMine Pro App does not host, store, or provide any media content. It is not affiliated with or connected to any external providers or extensions. All content accessed through the app is managed and sourced directly by the user via third-party tools or integrations. Vega App has no control over it.
+> **Disclaimer**: IPTVMine Pro App does not host, store, or provide any media content. It is not affiliated with or connected to any external providers or extensions. All content accessed through the app is managed and sourced directly by the user via third-party tools or integrations. IPTVMine Pro has no control over it.
 
 IPTVMine Pro is a premium, versatile, and high-performance Android IPTV application built with modern Android development paradigms. It enables users to stream Live TV, Movies, and TV Shows by integrating standard M3U playlists and advanced Vega-compatible JavaScript/TypeScript provider extensions.
 
