@@ -198,6 +198,16 @@ class MoviesViewModel(application: Application) : AndroidViewModel(application) 
             _scrapers.value = filteredScrapers
             Log.d("MoviesViewModel", "Scrapers loaded: ${filteredScrapers.size}")
 
+            // No installed scrapers → clear all cached data so UI shows empty state
+            if (filteredScrapers.isEmpty()) {
+                _selectedScraper.value = null
+                _movies.value = emptyList()
+                _categories.value = emptyList()
+                _selectedCategory.value = null
+                _hasMore.value = false
+                return
+            }
+
             val current = _selectedScraper.value
             if (current == null || !filteredScrapers.any { it.value == current.value }) {
                 _selectedScraper.value = filteredScrapers.firstOrNull()
