@@ -46,29 +46,35 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.samyak.iptvminepro.ui.screens.HomeScreen
-import com.samyak.iptvminepro.ui.screens.PlayerScreen
-import com.samyak.iptvminepro.ui.screens.CategoryScreen
-import com.samyak.iptvminepro.ui.screens.CategoryDetailScreen
-import com.samyak.iptvminepro.ui.screens.AboutScreen
-import com.samyak.iptvminepro.ui.screens.BugReportScreen
-import com.samyak.iptvminepro.ui.screens.ExtensionsScreen
-import com.samyak.iptvminepro.ui.screens.MovieDetailScreen
-import com.samyak.iptvminepro.ui.screens.CategoryMoviesScreen
-import com.samyak.iptvminepro.ui.screens.MovieSearchScreen
+import com.samyak.iptvminepro.ui.screens.home.HomeScreen
+import com.samyak.iptvminepro.ui.screens.common.PlayerScreen
+import com.samyak.iptvminepro.ui.screens.tv.CategoryScreen
+import com.samyak.iptvminepro.ui.screens.tv.CategoryDetailScreen
+import com.samyak.iptvminepro.ui.screens.settings.AboutScreen
+import com.samyak.iptvminepro.ui.screens.settings.BugReportScreen
+import com.samyak.iptvminepro.ui.screens.settings.ExtensionsScreen
+import com.samyak.iptvminepro.ui.screens.movies.MovieDetailScreen
+import com.samyak.iptvminepro.ui.screens.movies.CategoryMoviesScreen
+import com.samyak.iptvminepro.ui.screens.movies.MovieSearchScreen
+import com.samyak.iptvminepro.ui.screens.movies.MoviesScreen
+import com.samyak.iptvminepro.ui.screens.settings.DownloadsScreen
+import com.samyak.iptvminepro.ui.screens.settings.WatchHistoryScreen
+import com.samyak.iptvminepro.ui.screens.settings.LegalDocumentScreen
+import com.samyak.iptvminepro.ui.screens.common.NoInternetScreen
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.samyak.iptvminepro.ui.screens.SettingsScreen
-import com.samyak.iptvminepro.ui.screens.AddProviderScreen
-import com.samyak.iptvminepro.ui.screens.ProviderListScreen
-import com.samyak.iptvminepro.ui.screens.PairingScreen
+import com.samyak.iptvminepro.ui.screens.settings.SettingsScreen
+import com.samyak.iptvminepro.ui.screens.provider.AddProviderScreen
+import com.samyak.iptvminepro.ui.screens.provider.ProviderListScreen
+import com.samyak.iptvminepro.ui.screens.settings.PairingScreen
 import com.samyak.iptvminepro.ui.theme.IPTVMineProTheme
 import com.samyak.iptvminepro.ui.viewmodel.MoviesViewModel
+import com.samyak.iptvminepro.ui.viewmodel.HomeViewModel
 
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Tv
-import com.samyak.iptvminepro.ui.screens.TelevisionScreen
+import com.samyak.iptvminepro.ui.screens.tv.TelevisionScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -121,6 +127,7 @@ fun MainApp() {
     val channelsViewModel: com.samyak.iptvminepro.provider.ChannelsProvider = viewModel()
     // Activity-scoped: survives ALL navigation including back from MovieDetail
     val moviesViewModel: MoviesViewModel = viewModel()
+    val homeViewModel: HomeViewModel = viewModel()
     val startDestination = if (repository.getProviders().isEmpty()) Screen.AddProvider.route else Screen.Home.route
 
     val isConnected by remember(context) {
@@ -128,7 +135,7 @@ fun MainApp() {
     }.collectAsState(initial = com.samyak.iptvminepro.utils.NetworkUtils.isNetworkAvailable(context))
 
     if (!isConnected) {
-        com.samyak.iptvminepro.ui.screens.NoInternetScreen(
+        NoInternetScreen(
             onRetry = {
                 if (!com.samyak.iptvminepro.utils.NetworkUtils.isNetworkAvailable(context)) {
                     android.widget.Toast.makeText(
@@ -315,6 +322,7 @@ fun MainApp() {
                 val context = androidx.compose.ui.platform.LocalContext.current
                 HomeScreen(
                     viewModel = channelsViewModel,
+                    homeViewModel = homeViewModel,
                     navController = navController,
                     onChannelClick = { channel ->
                         if (channel.streamUrl.isEmpty()) {
@@ -347,7 +355,7 @@ fun MainApp() {
                 })
             ) { backStackEntry ->
                 val category = backStackEntry.arguments?.getString("category")
-                com.samyak.iptvminepro.ui.screens.MoviesScreen(
+                MoviesScreen(
                     viewModel = moviesViewModel,
                     initialCategoryTitle = category,
                     onMovieClick = { post, scraper, provider ->
@@ -389,7 +397,7 @@ fun MainApp() {
                 ) 
             }
             composable(Screen.Downloads.route) {
-                com.samyak.iptvminepro.ui.screens.DownloadsScreen(
+                DownloadsScreen(
                     navController = navController
                 )
             }
@@ -440,7 +448,7 @@ fun MainApp() {
             composable(Screen.About.route) { AboutScreen() }
             composable(Screen.BugReport.route) { BugReportScreen() }
             composable(Screen.WatchHistory.route) {
-                com.samyak.iptvminepro.ui.screens.WatchHistoryScreen(
+                WatchHistoryScreen(
                     navController = navController,
                     onClearClickRegistered = { onWatchHistoryClearClick = it }
                 )
@@ -456,7 +464,7 @@ fun MainApp() {
                 )
             ) { backStackEntry ->
                 val docType = backStackEntry.arguments?.getString("docType") ?: "privacy"
-                com.samyak.iptvminepro.ui.screens.LegalDocumentScreen(docType = docType)
+                LegalDocumentScreen(docType = docType)
             }
             composable(Screen.MovieSearch.route) {
                 MovieSearchScreen(

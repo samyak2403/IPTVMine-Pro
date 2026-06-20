@@ -71,9 +71,15 @@ class MoviesViewModel(application: Application) : AndroidViewModel(application) 
     /**
      * Called from the Composable. Triggers the first load only once.
      * Safe to call on every recomposition / back-navigation.
+     *
+     * Guard priority:
+     *  1. [Primary]   Movies already cached → return instantly (back-navigation from MovieDetail).
+     *                 No API call, no spinner, scroll position preserved.
+     *  2. [Secondary] Load already in-flight / completed → skip duplicate call.
      */
     fun initIfNeeded(initialCategoryTitle: String? = null) {
-        if (dataLoaded) return   // Already have data – do nothing
+        if (_movies.value.isNotEmpty()) return  // Primary: cached data → no API call on back-nav
+        if (dataLoaded) return                   // Secondary: load already triggered
         dataLoaded = true
         viewModelScope.launch {
             loadScrapers(
