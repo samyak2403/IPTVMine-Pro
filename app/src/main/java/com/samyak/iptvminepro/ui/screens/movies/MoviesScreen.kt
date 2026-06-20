@@ -162,38 +162,6 @@ fun MoviesScreen(
                 }
             }
 
-            // Search bar
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { viewModel.setSearchQuery(it) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                placeholder = { Text("Search movies...", color = Color(0xFF9CA3AF)) },
-                leadingIcon = {
-                    Icon(Icons.Filled.Search, contentDescription = null, tint = Color(0xFF6B7280))
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.clearSearch() }) {
-                            Icon(Icons.Filled.Close, contentDescription = "Clear", tint = Color(0xFF6B7280))
-                        }
-                    }
-                },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = {
-                    viewModel.submitSearch()
-                }),
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFF26A69A),
-                    unfocusedBorderColor = Color(0xFFE0E0E0),
-                    focusedTextColor = MaterialTheme.colorScheme.onBackground,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onBackground
-                )
-            )
-
             // Scraper tabs
             if (isScrapersLoading) {
                 LinearProgressIndicator(

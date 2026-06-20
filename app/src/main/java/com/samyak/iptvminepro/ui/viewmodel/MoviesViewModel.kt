@@ -66,6 +66,27 @@ class MoviesViewModel(application: Application) : AndroidViewModel(application) 
     // Guard: true once the very first load has been triggered
     private var dataLoaded = false
 
+    // Track which extension set was used for the last load.
+    // When extensions change (install/uninstall), we reload scrapers automatically.
+    private var lastInstalledExtensions: Set<String>? = null
+
+    init {
+        // Observe installed extensions for real-time updates.
+        // When the user installs or uninstalls an extension from Settings,
+        // the scraper tabs and movies update immediately — no manual refresh needed.
+        viewModelScope.launch {
+            extensionRepo.installedExtensionsFlow.collect { installed ->
+                // Only react to CHANGES after the initial load has completed.
+                // lastInstalledExtensions == null means initIfNeeded hasn't run yet.
+                val previous = lastInstalledExtensions
+                if (previous != null && previous != installed) {
+                    lastInstalledExtensions = installed
+                    loadScrapers(installed = installed)
+                }
+            }
+        }
+    }
+
     // ── Public actions ─────────────────────────────────────────────────────────
 
     /**
@@ -81,9 +102,11 @@ class MoviesViewModel(application: Application) : AndroidViewModel(application) 
         if (_movies.value.isNotEmpty()) return  // Primary: cached data → no API call on back-nav
         if (dataLoaded) return                   // Secondary: load already triggered
         dataLoaded = true
+        val installed = extensionRepo.installedExtensionsFlow.value
+        lastInstalledExtensions = installed      // Record for change detection
         viewModelScope.launch {
             loadScrapers(
-                installed = extensionRepo.installedExtensionsFlow.value,
+                installed = installed,
                 initialCategoryTitle = initialCategoryTitle
             )
         }
