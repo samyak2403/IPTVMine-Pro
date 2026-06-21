@@ -4,7 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.samyak.iptvminepro.ui.screens.SearchScreen
+import com.samyak.iptvminepro.ui.screens.tv.SearchScreen
 import com.samyak.iptvminepro.ui.theme.IPTVMineProTheme
 
 class SearchActivity : ComponentActivity() {

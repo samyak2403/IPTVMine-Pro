@@ -71,6 +71,8 @@ import com.samyak.iptvminepro.ui.screens.settings.PairingScreen
 import com.samyak.iptvminepro.ui.theme.IPTVMineProTheme
 import com.samyak.iptvminepro.ui.viewmodel.MoviesViewModel
 import com.samyak.iptvminepro.ui.viewmodel.HomeViewModel
+import com.samyak.updater.AppUpdateDialog
+import com.samyak.updater.rememberUpdaterState
 
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Tv
@@ -130,6 +132,9 @@ fun MainApp() {
     val homeViewModel: HomeViewModel = viewModel()
     val startDestination = if (repository.getProviders().isEmpty()) Screen.AddProvider.route else Screen.Home.route
 
+    // In-app update check
+    val updaterState = rememberUpdaterState("samyak2403", "IPTVMine-Pro")
+
     val isConnected by remember(context) {
         com.samyak.iptvminepro.utils.NetworkUtils.observeConnectivity(context)
     }.collectAsState(initial = com.samyak.iptvminepro.utils.NetworkUtils.isNetworkAvailable(context))
@@ -147,6 +152,11 @@ fun MainApp() {
             }
         )
     } else {
+        // Show update dialog if available
+        if (updaterState.showDialog && updaterState.updateInfo != null) {
+            AppUpdateDialog(state = updaterState)
+        }
+
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
