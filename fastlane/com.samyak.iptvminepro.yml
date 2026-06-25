@@ -1,0 +1,24 @@
+Categories:
+  - Multimedia
+  - Video
+License: MIT
+SourceCode: https://github.com/samyak2403/IPTVMine-Pro
+IssueTracker: https://github.com/samyak2403/IPTVMine-Pro/issues
+
+AutoName: IPTVMine Pro
+
+RepoType: git
+Repo: https://github.com/samyak2403/IPTVMine-Pro.git
+
+Builds:
+  - versionName: 1.0.3
+    versionCode: 3
+    commit: v1.0.3
+    gradle:
+      - yes
+    gradleprops:
+      - android.useAndroidX=true
+    output: app/build/outputs/apk/release/app-release-unsigned.apk
+
+AutoUpdateMode: Version v%v
+UpdateCheckMode: Tags
