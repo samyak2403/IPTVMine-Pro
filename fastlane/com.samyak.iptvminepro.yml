@@ -19,7 +19,8 @@ Builds:
     commit: 295ed8402ca02b2c10d08b5f54d08347ae05e0e7
     subdir: .
     gradle:
-      - :app:assembleRelease
+      - yes
+    output: app/build/outputs/apk/release/app-release-unsigned.apk
 
 AllowedAPKSigningKeys: dbddc76bf7056f3cfde555c3859c3bbfc31a6f38da89764be9a7633c7e64ce25
 
