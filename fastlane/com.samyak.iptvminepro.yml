@@ -16,10 +16,11 @@ Binaries: https://github.com/samyak2403/IPTVMine-Pro/releases/download/v%v/app-r
 Builds:
   - versionName: 1.0.3
     versionCode: 3
-    commit: faf29c36e019ee7932e0cdee7fd5c999574f8bfd
-    subdir: app
+    commit: 49f550705790485ad79bcf7bbcc0b18522d129c6
+    subdir: .
     gradle:
       - yes
+    output: app/build/outputs/apk/release/app-release-unsigned.apk
 
 AllowedAPKSigningKeys: dbddc76bf7056f3cfde555c3859c3bbfc31a6f38da89764be9a7633c7e64ce25
 
