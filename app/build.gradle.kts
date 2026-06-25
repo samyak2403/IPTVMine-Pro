@@ -1,7 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.google.services)
 }
 
 android {
@@ -31,6 +30,11 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
     }
 }
 
@@ -65,7 +69,6 @@ dependencies {
 
     // TV & Cast
     implementation(libs.androidx.leanback)
-    implementation(libs.play.services.cast.framework)
     implementation(libs.androidx.mediarouter)
 
     // Networking & Utils
@@ -74,12 +77,9 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.security.crypto)
 
-    // Firebase
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.firestore)
+
 
     implementation(project(":Player"))
-    implementation(project(":Updater"))
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

@@ -13,6 +13,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.ui.res.painterResource
+import com.samyak.iptvminepro.R
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -136,7 +138,7 @@ fun CategoryMoviesScreen(
                     } else {
                         IconButton(onClick = { viewModel.activateSearch() }) {
                             Icon(
-                                imageVector = Icons.Filled.Search,
+                                painter = painterResource(id = R.drawable.ic_search),
                                 contentDescription = "Search"
                             )
                         }

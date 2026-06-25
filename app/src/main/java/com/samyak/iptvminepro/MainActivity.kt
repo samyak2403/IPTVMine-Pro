@@ -7,6 +7,23 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.ui.draw.scale
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -71,8 +88,6 @@ import com.samyak.iptvminepro.ui.screens.settings.PairingScreen
 import com.samyak.iptvminepro.ui.theme.IPTVMineProTheme
 import com.samyak.iptvminepro.ui.viewmodel.MoviesViewModel
 import com.samyak.iptvminepro.ui.viewmodel.HomeViewModel
-import com.samyak.updater.AppUpdateDialog
-import com.samyak.updater.rememberUpdaterState
 
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Tv
@@ -91,11 +106,11 @@ class MainActivity : ComponentActivity() {
 }
 
 sealed class Screen(val route: String, val label: String, val icon: @Composable () -> Unit) {
-    object Home : Screen("home", "Home", { Icon(Icons.Outlined.Home, contentDescription = null) })
+    object Home : Screen("home", "Home", { Icon(painterResource(id = R.drawable.ic_home), contentDescription = null) })
     object Television : Screen("television", "Television", { Icon(Icons.Outlined.Tv, contentDescription = null) })
     object Movies : Screen("movies?category={category}", "Movies", { Icon(Icons.Outlined.Movie, contentDescription = null) })
-    object Category : Screen("category", "Category", { Icon(Icons.Outlined.GridView, contentDescription = null) })
-    object Settings : Screen("settings", "Settings", { Icon(Icons.Outlined.Settings, contentDescription = null) })
+    object Category : Screen("category", "Category", { Icon(painterResource(id = R.drawable.ic_category), contentDescription = null) })
+    object Settings : Screen("settings", "Settings", { Icon(painterResource(id = R.drawable.ic_settings), contentDescription = null) })
     object Player : Screen("player", "Player", { }) // Used for navigation but not in bottom bar
     object AddProvider : Screen("add_provider", "Add Provider", { })
     object ProviderList : Screen("provider_list", "Provider List", { })
@@ -132,9 +147,6 @@ fun MainApp() {
     val homeViewModel: HomeViewModel = viewModel()
     val startDestination = if (repository.getProviders().isEmpty()) Screen.AddProvider.route else Screen.Home.route
 
-    // In-app update check
-    val updaterState = rememberUpdaterState("samyak2403", "IPTVMine-Pro")
-
     val isConnected by remember(context) {
         com.samyak.iptvminepro.utils.NetworkUtils.observeConnectivity(context)
     }.collectAsState(initial = com.samyak.iptvminepro.utils.NetworkUtils.isNetworkAvailable(context))
@@ -152,10 +164,6 @@ fun MainApp() {
             }
         )
     } else {
-        // Show update dialog if available
-        if (updaterState.showDialog && updaterState.updateInfo != null) {
-            AppUpdateDialog(state = updaterState)
-        }
 
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -177,32 +185,79 @@ fun MainApp() {
                 currentRoute != Screen.Legal.route &&
                 currentRoute != "pairing"
             ) {
-                NavigationBar(
-                    containerColor = Color.White // White background
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White)
                 ) {
-                    val currentDestination = navBackStackEntry?.destination
-                    items.forEach { screen ->
-                        NavigationBarItem(
-                            icon = screen.icon,
-                            label = { Text(screen.label) },
-                            selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color(0xFF26A69A), // Teal color
-                                selectedTextColor = Color(0xFF26A69A),
-                                unselectedIconColor = Color(0xFF6B7280), // Gray
-                                unselectedTextColor = Color(0xFF6B7280),
-                                indicatorColor = Color.Transparent // Removes the pill/circle indicator
-                            ),
-                            onClick = {
-                                navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
+                    // Thin top border/divider
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(Color(0xFFE5E7EB))
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .height(72.dp),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val currentDestination = navBackStackEntry?.destination
+                        items.forEach { screen ->
+                            val selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
+
+                            val scale by animateFloatAsState(
+                                targetValue = if (selected) 1f else 0f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessMediumLow
+                                ),
+                                label = "SelectedIndicatorScale"
+                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        if (!selected) {
+                                            navController.navigate(screen.route) {
+                                                popUpTo(navController.graph.findStartDestination().id) {
+                                                    saveState = true
+                                                }
+                                                launchSingleTop = true
+                                                restoreState = true
+                                            }
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (scale > 0f) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .scale(scale)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF26A69A))
+                                    )
+                                }
+
+                                CompositionLocalProvider(
+                                    LocalContentColor provides (if (selected) Color.White else Color(0xFF6B7280))
+                                ) {
+                                    val iconScale = if (selected) 1.05f else 1f
+                                    Box(modifier = Modifier.scale(iconScale)) {
+                                        screen.icon()
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
                                 }
                             }
-                        )
+                        }
                     }
                 }
             }
@@ -295,7 +350,7 @@ fun MainApp() {
                             IconButton(onClick = { 
                                 navController.navigate(Screen.MovieSearch.route)
                             }) {
-                                Icon(Icons.Filled.Search, contentDescription = "Search")
+                                Icon(painterResource(id = R.drawable.ic_search), contentDescription = "Search")
                             }
                         }
                     },

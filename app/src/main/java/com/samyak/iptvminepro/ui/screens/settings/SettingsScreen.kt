@@ -32,10 +32,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import android.widget.Toast
-import com.samyak.updater.GithubUpdater
-import com.samyak.updater.UpdateDialog
-import com.samyak.updater.DownloadState
-import com.samyak.updater.UpdateInfo
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
@@ -56,74 +52,7 @@ fun SettingsScreen(
     val providerRepo = remember { ProviderRepository(context) }
     val hasActiveVegaProvider = providerRepo.getProviders().any { it.isActive && it.safeType == ProviderType.VEGA }
 
-    // Update check states
-    var isCheckingUpdates by remember { mutableStateOf(false) }
-    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
-    var downloadState by remember { mutableStateOf<DownloadState>(DownloadState.Idle) }
-    var showUpdateDialog by remember { mutableStateOf(false) }
-    val updater = remember { GithubUpdater("samyak2403", "IPTVMine-Pro") }
 
-    // Loading overlay dialog for checking updates
-    if (isCheckingUpdates) {
-        Dialog(
-            onDismissRequest = { /* Cannot dismiss */ },
-            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
-        ) {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(24.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CircularProgressIndicator(
-                        color = Color(0xFF26A69A),
-                        modifier = Modifier.size(36.dp)
-                    )
-                    Spacer(modifier = Modifier.width(20.dp))
-                    Text(
-                        text = "Checking for updates...",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-        }
-    }
-
-    // Material 3 Update Dialog
-    if (showUpdateDialog && updateInfo != null) {
-        UpdateDialog(
-            updateInfo = updateInfo!!,
-            downloadState = downloadState,
-            onDownloadClick = {
-                scope.launch {
-                    updater.downloadApk(context, updateInfo!!).collectLatest { state ->
-                        downloadState = state
-                    }
-                }
-            },
-            onInstallClick = { uri ->
-                downloadState = DownloadState.Installing
-                updater.installApk(context, uri)
-            },
-            onRetryClick = {
-                downloadState = DownloadState.Idle
-                scope.launch {
-                    updater.downloadApk(context, updateInfo!!).collectLatest { state ->
-                        downloadState = state
-                    }
-                }
-            },
-            onDismiss = {
-                showUpdateDialog = false
-                downloadState = DownloadState.Idle
-            }
-        )
-    }
 
     Column(
         modifier = Modifier
@@ -168,38 +97,7 @@ fun SettingsScreen(
             icon = Icons.Filled.BugReport,
             onClick = onNavigateToBugReport
         )
-        SettingsItem(
-            title = "Check for Updates",
-            icon = Icons.Filled.SystemUpdate,
-            onClick = {
-                if (!isCheckingUpdates) {
-                    isCheckingUpdates = true
-                    scope.launch {
-                        GithubUpdater.clearCache()
-                        val result = updater.checkForUpdate(context)
-                        isCheckingUpdates = false
-                        result.onSuccess { info ->
-                            if (info.isUpdateAvailable) {
-                                updateInfo = info
-                                showUpdateDialog = true
-                            } else {
-                                Toast.makeText(
-                                    context,
-                                    "App is up to date (v${info.currentVersion})",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        }.onFailure { error ->
-                            Toast.makeText(
-                                context,
-                                "Failed to check for updates: ${error.message}",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    }
-                }
-            }
-        )
+
 
         SettingsSectionTitle(title = stringResource(id = R.string.section_legal))
         SettingsItem(

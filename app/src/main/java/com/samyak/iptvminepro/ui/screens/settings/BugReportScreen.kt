@@ -60,28 +60,7 @@ fun BugReportScreen() {
     var telegramChatId by remember { mutableStateOf(TELEGRAM_CHAT_ID) }
 
     LaunchedEffect(Unit) {
-        try {
-            val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-            db.collection("config").document("bug_report").get()
-                .addOnSuccessListener { document ->
-                    if (document != null && document.exists()) {
-                        document.getString("discord_webhook_url")?.takeIf { it.isNotBlank() }?.let {
-                            discordWebhookUrl = it
-                        }
-                        document.getString("telegram_bot_token")?.takeIf { it.isNotBlank() }?.let {
-                            telegramBotToken = it
-                        }
-                        document.getString("telegram_chat_id")?.takeIf { it.isNotBlank() }?.let {
-                            telegramChatId = it
-                        }
-                    }
-                }
-                .addOnFailureListener { e ->
-                    android.util.Log.e("BugReportScreen", "Failed to fetch Firestore config", e)
-                }
-        } catch (e: Exception) {
-            android.util.Log.e("BugReportScreen", "Firestore error", e)
-        }
+        // Fetch config from Firebase Firestore (Removed for F-Droid FOSS compliance)
     }
 
     var title by remember { mutableStateOf("") }

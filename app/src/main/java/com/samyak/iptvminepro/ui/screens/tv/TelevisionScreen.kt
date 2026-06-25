@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
@@ -64,7 +65,7 @@ fun TelevisionScreen(
             placeholder = { Text("Search TV Channels...") },
             leadingIcon = {
                 Icon(
-                    imageVector = Icons.Default.Search,
+                    painter = painterResource(id = R.drawable.ic_search),
                     contentDescription = "Search",
                     tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
