@@ -2,18 +2,22 @@ Categories:
   - Multimedia
   - Video
 License: MIT
+AuthorName: Samyak Kamble
+AuthorEmail: samyakkamble6659@gmail.com
 SourceCode: https://github.com/samyak2403/IPTVMine-Pro
 IssueTracker: https://github.com/samyak2403/IPTVMine-Pro/issues
+Changelog: https://github.com/samyak2403/IPTVMine-Pro/releases
 
 AutoName: IPTVMine Pro
 
 RepoType: git
 Repo: https://github.com/samyak2403/IPTVMine-Pro.git
+Binaries: https://github.com/samyak2403/IPTVMine-Pro/releases/download/v%v/app-release.apk
 
 Builds:
   - versionName: 1.0.3
     versionCode: 3
-    commit: v1.0.3
+    commit: faf29c36e019ee7932e0cdee7fd5c999574f8bfd
     subdir: app
     gradle:
       - yes
