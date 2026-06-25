@@ -1,0 +1,6 @@
+- Replaced standard bottom bar with custom animated, bouncy navigation bar
+- Integrated local XML vector drawable icons for Home, Categories, Settings, and Search
+- Reverted proprietary fonts to system typefaces for open-source compliance
+- Removed proprietary Google Cast and Firebase Firestore SDK dependencies
+- Removed GitHub releases auto-updater to comply with F-Droid client update policies
+- Excluded dependency metadata tracking to optimize APK size and scanning

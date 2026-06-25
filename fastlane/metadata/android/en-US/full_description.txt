@@ -1,0 +1,8 @@
+IPTV Mine Pro is a clean, modern, and open-source IPTV player for Android and Android TV.
+
+Features:
+- Stream live TV channels, movies, and TV shows using M3U playlists.
+- Premium, animated navigation UI with custom vector drawable icons.
+- Built-in video player with media control options.
+- Support for television devices with Leanback UI navigation.
+- 100% open-source, private, and free of proprietary Google services/tracking.
