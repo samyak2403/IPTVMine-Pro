@@ -63,7 +63,6 @@ dependencies {
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.common)
     implementation(libs.androidx.media3.common.ktx)
-    implementation(libs.androidx.media3.datasource.cronet)
     implementation(libs.androidx.media3.datasource.rtmp)
     implementation(libs.androidx.media3.datasource.okhttp)
 
