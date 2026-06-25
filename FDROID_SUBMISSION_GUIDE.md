@@ -1,6 +1,6 @@
 # F-Droid Submission Guide 🚀
 
-This guide explains the step-by-step process to submit both **IPTVMine Pro** (mobile app) and **IPTVMine TV** (television app) to the official F-Droid repository.
+This guide explains the step-by-step process to submit **IPTVMine Pro** (mobile app) to the official F-Droid repository.
 
 ---
 
@@ -30,26 +30,25 @@ git push origin v1.0.3
 
 ---
 
-## Step 3: Add Build Recipes to Your Fork
+## Step 3: Add Build Recipe to Your Fork
 F-Droid uses YAML files in the `metadata/` folder of the `fdroiddata` repository to fetch, compile, and configure app listings.
 
-We have generated these files for you in the `fastlane/` directory of your project:
+We have generated this file for you in the `fastlane/` directory of your project:
 1. Copy [com.samyak.iptvminepro.yml](file:///c:/Users/ADMIN/AndroidStudioProjects/IPTVMine-Pro/fastlane/com.samyak.iptvminepro.yml) into the `metadata/` directory of your `fdroiddata` clone.
-2. Copy [com.samyak.television.yml](file:///c:/Users/ADMIN/AndroidStudioProjects/IPTVMine-Pro/fastlane/com.samyak.television.yml) into the `metadata/` directory of your `fdroiddata` clone.
 
 ---
 
-## Step 4: Commit and Push the Recipes
-Commit the two new recipe files to a new branch in your fork:
+## Step 4: Commit and Push the Recipe
+Commit the new recipe file to a new branch in your fork:
 ```bash
 # Create a new branch
 git checkout -b add-iptvmine-pro
 
-# Stage the new recipe files
-git add metadata/com.samyak.iptvminepro.yml metadata/com.samyak.television.yml
+# Stage the new recipe file
+git add metadata/com.samyak.iptvminepro.yml
 
-# Commit the recipes
-git commit -m "Add IPTVMine Pro and IPTVMine TV"
+# Commit the recipe
+git commit -m "Add IPTVMine Pro"
 
 # Push to your GitLab fork
 git push origin add-iptvmine-pro
@@ -70,7 +69,8 @@ git push origin add-iptvmine-pro
 ---
 
 ## How F-Droid Updates Your App Automatically
-Thanks to the `AutoUpdateMode` and `UpdateCheckMode` configured in the recipes:
+Thanks to the `AutoUpdateMode` and `UpdateCheckMode` configured in the recipe:
 - F-Droid's bots run checkupdate checks periodically (usually every 24-48 hours).
 - When you push a new tag matching `v*` (e.g. `v1.0.4`), the bot automatically detects it, updates the recipe file with the new version details, and triggers a build.
-- Store descriptions and image assets are parsed automatically from the `fastlane/metadata/android/` folder in your GitHub repository, so you can update descriptions/screenshots without changing the F-Droid recipes!
+- Store descriptions and image assets are parsed automatically from the `fastlane/metadata/android/` folder in your GitHub repository, so you can update descriptions/screenshots without changing the F-Droid recipe!
+
