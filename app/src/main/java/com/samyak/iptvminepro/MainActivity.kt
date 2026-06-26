@@ -91,7 +91,15 @@ import com.samyak.iptvminepro.ui.viewmodel.HomeViewModel
 
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Tv
+import androidx.compose.material.icons.outlined.Info
 import com.samyak.iptvminepro.ui.screens.tv.TelevisionScreen
+import com.samyak.iptvminepro.ui.screens.provider.AddProviderHelpScreen
+import android.content.Context
+import androidx.compose.material3.MaterialTheme
+import com.psoffritti.taptargetcompose.TapTargetCoordinator
+import com.psoffritti.taptargetcompose.TapTargetStyle
+import com.psoffritti.taptargetcompose.TextDefinition
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -113,6 +121,7 @@ sealed class Screen(val route: String, val label: String, val icon: @Composable 
     object Settings : Screen("settings", "Settings", { Icon(painterResource(id = R.drawable.ic_settings), contentDescription = null) })
     object Player : Screen("player", "Player", { }) // Used for navigation but not in bottom bar
     object AddProvider : Screen("add_provider", "Add Provider", { })
+    object AddProviderHelp : Screen("add_provider_help", "Add Provider Sources", { })
     object ProviderList : Screen("provider_list", "Provider List", { })
     object CategoryDetail : Screen("category_detail/{categoryName}", "Category Detail", { })
     object About : Screen("about", "About App", { })
@@ -130,6 +139,13 @@ sealed class Screen(val route: String, val label: String, val icon: @Composable 
 @Composable
 fun MainApp() {
     val navController = rememberNavController()
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val sharedPrefs = remember(context) { context.getSharedPreferences("app_settings", Context.MODE_PRIVATE) }
+    var firstTimeHelp by remember { mutableStateOf(sharedPrefs.getBoolean("first_time_add_provider_help", true)) }
+    val showHelpTapTarget = firstTimeHelp && currentRoute == Screen.AddProvider.route
+
     var onWatchHistoryClearClick by remember { mutableStateOf<(() -> Unit)?>(null) }
     val items = listOf(
         Screen.Home,
@@ -138,8 +154,6 @@ fun MainApp() {
         Screen.Category,
         Screen.Settings
     )
-
-    val context = androidx.compose.ui.platform.LocalContext.current
     val repository = remember { com.samyak.iptvminepro.provider.ProviderRepository(context) }
     val channelsViewModel: com.samyak.iptvminepro.provider.ChannelsProvider = viewModel()
     // Activity-scoped: survives ALL navigation including back from MovieDetail
@@ -164,14 +178,22 @@ fun MainApp() {
             }
         )
     } else {
-
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            containerColor = Color.Transparent,
+        TapTargetCoordinator(
+            showTapTargets = showHelpTapTarget,
+            onComplete = {
+                sharedPrefs.edit().putBoolean("first_time_add_provider_help", false).apply()
+                firstTimeHelp = false
+            }
+        ) {
+            val tapTargetScope = this
+            Scaffold(
+                modifier = Modifier.fillMaxSize(),
+                containerColor = Color.Transparent,
         bottomBar = {
             val navBackStackEntry by navController.currentBackStackEntryAsState()
             val currentRoute = navBackStackEntry?.destination?.route
             if (currentRoute != Screen.AddProvider.route &&
+                currentRoute != Screen.AddProviderHelp.route &&
                 currentRoute != Screen.ProviderList.route &&
                 currentRoute != Screen.CategoryDetail.route &&
                 currentRoute != Screen.MovieDetail.route &&
@@ -279,6 +301,7 @@ fun MainApp() {
                             Screen.Television.route -> "Television"
                             Screen.ProviderList.route -> "Manage Providers"
                             Screen.AddProvider.route -> "Add Provider"
+                            Screen.AddProviderHelp.route -> "Add Provider Sources"
                             Screen.About.route -> "About App"
                             "pairing" -> "TV Pairing"
                             Screen.CategoryDetail.route -> categoryName ?: "Category"
@@ -301,6 +324,7 @@ fun MainApp() {
                     navigationIcon = {
                         if (currentRoute == Screen.ProviderList.route ||
                             currentRoute == Screen.AddProvider.route ||
+                            currentRoute == Screen.AddProviderHelp.route ||
                             currentRoute == Screen.CategoryDetail.route ||
                             currentRoute == Screen.About.route ||
                             currentRoute == Screen.Downloads.route ||
@@ -337,8 +361,36 @@ fun MainApp() {
                             IconButton(onClick = { navController.navigate("pairing") }) {
                                 Icon(Icons.Outlined.Tv, contentDescription = "Pair with TV", tint = Color.White)
                             }
+                        } else if (currentRoute == Screen.AddProvider.route) {
+                            IconButton(
+                                onClick = { navController.navigate(Screen.AddProviderHelp.route) },
+                                modifier = with(tapTargetScope) {
+                                    Modifier.tapTarget(
+                                        precedence = 0,
+                                        title = TextDefinition(
+                                            text = "Need Help adding providers?",
+                                            textStyle = MaterialTheme.typography.titleLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        ),
+                                        description = TextDefinition(
+                                            text = "Tap here to see step-by-step instructions and copy default provider source links.",
+                                            textStyle = MaterialTheme.typography.bodyMedium,
+                                            color = Color.White.copy(alpha = 0.9f)
+                                        ),
+                                        tapTargetStyle = TapTargetStyle(
+                                            backgroundColor = Color(0xFF26A69A),
+                                            tapTargetHighlightColor = Color.White,
+                                            backgroundAlpha = 0.95f
+                                        )
+                                    )
+                                }
+                            ) {
+                                Icon(Icons.Outlined.Info, contentDescription = "Help", tint = Color.White)
+                            }
                         } else if (currentRoute != Screen.ProviderList.route &&
                             currentRoute != Screen.AddProvider.route &&
+                            currentRoute != Screen.AddProviderHelp.route &&
                             currentRoute != Screen.CategoryDetail.route &&
                             currentRoute != Screen.About.route &&
                             currentRoute != Screen.Downloads.route &&
@@ -575,7 +627,11 @@ fun MainApp() {
                     } else null
                 )
             }
+            composable(Screen.AddProviderHelp.route) {
+                AddProviderHelpScreen()
+            }
         }
+    }
     }
     }
 }

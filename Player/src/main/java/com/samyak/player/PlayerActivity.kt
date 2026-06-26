@@ -123,6 +123,21 @@ class PlayerActivity : AppCompatActivity() {
     private var trackSelector: DefaultTrackSelector? = null
     private var isDataSavingEnabled = false
 
+    // Cascading format-retry state. Used when ExoPlayer cannot recognize the
+    // container of an extension-less IPTV stream (ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED).
+    // We re-prepare the stream forcing each known MIME type until one plays.
+    private var formatRetryIndex = -1
+    private val formatRetryMimeTypes: List<String?> by lazy {
+        listOf(
+            "application/x-mpegURL",        // HLS - most common for IPTV
+            "video/mp2t",                   // raw MPEG-TS
+            "application/dash+xml",         // DASH
+            "application/vnd.ms-sstr+xml",  // SmoothStreaming
+            "video/mp4",                    // progressive MP4
+            null                            // auto-detect (last resort)
+        )
+    }
+
     companion object {
         private const val TAG = "PlayerActivity"
         private const val INCREMENT_MILLIS = 5000L
@@ -617,6 +632,12 @@ class PlayerActivity : AppCompatActivity() {
                     when (state) {
                         Player.STATE_READY -> {
                             this@PlayerActivity.isPlayerReady = true
+                            // Stream is playing fine, clear any pending format-retry state
+                            formatRetryIndex = -1
+                            // Now that the timeline is known, resolve real live status
+                            // so VOD content keeps its seek bar and only true live
+                            // streams show the LIVE badge.
+                            checkIfLiveStream()
                             progressBar.visibility = View.GONE
                             playerView.visibility = View.VISIBLE
                             startProgressBarUpdates()
@@ -647,6 +668,11 @@ class PlayerActivity : AppCompatActivity() {
                 override fun onTracksChanged(tracks: Tracks) {
                     updateAudioTrackButtonVisibility()
                     updateSubtitleButtonVisibility()
+                }
+
+                override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                    // Timeline now reflects whether the stream is live (dynamic) or VOD.
+                    checkIfLiveStream()
                 }
             }
 
@@ -850,13 +876,16 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun checkIfLiveStream() {
         try {
-            val url = channelStreamUrl?.lowercase() ?: ""
-            isLiveStream = url.contains("live") || url.contains("24/7") ||
-                    url.contains("stream") || url.contains("m3u8") ||
-                    url.contains("mpd") || url.contains("dash")
+            // Determine live status from ExoPlayer's actual timeline rather than guessing
+            // from URL keywords. A dynamic (growing) window means a genuine live stream;
+            // VOD content (e.g. an episode served over HLS) is not dynamic and must keep
+            // its seek bar. Falls back to false until the timeline is known.
+            isLiveStream = player?.isCurrentMediaItemDynamic ?: false
 
             if (isLiveStream) {
                 exoLiveText.visibility = View.VISIBLE
+            } else {
+                exoLiveText.visibility = View.GONE
             }
             updateProgressBar()
         } catch (e: Exception) {
@@ -973,21 +1002,10 @@ class PlayerActivity : AppCompatActivity() {
             Log.d(TAG, "Setting MIME type: $it")
         }
 
-        isLiveStream = url.contains("live") || url.contains("24x7") ||
-                url.contains("stream") || url.contains("real-time")
-
-        if (isLiveStream) {
-            Log.d(TAG, "Configuring for live streaming")
-            builder.setLiveConfiguration(
-                MediaItem.LiveConfiguration.Builder()
-                    .setMaxPlaybackSpeed(1.02f)
-                    .setTargetOffsetMs(5000)
-                    .setMaxOffsetMs(10000)
-                    .setMinOffsetMs(3000)
-                    .setMinPlaybackSpeed(0.97f)
-                    .build()
-            )
-        }
+        // Do NOT infer live status from URL keywords. ExoPlayer auto-detects live
+        // streams from the HLS/DASH manifest and applies the correct windowing.
+        // Forcing live configuration onto VOD content breaks seeking and hides the
+        // seek bar. Actual live status is resolved later via isCurrentMediaItemDynamic.
 
         return builder.build()
     }
@@ -1079,6 +1097,20 @@ class PlayerActivity : AppCompatActivity() {
             Log.e(TAG, "Error checking for source error", e)
         }
 
+        // Detect the "unrecognized container" case that is common for extension-less
+        // IPTV streams. ExoPlayer defaults to a progressive (extractor) source and none
+        // of the extractors can read an HLS/TS/DASH stream, producing this error.
+        var containerUnsupported = false
+        try {
+            containerUnsupported =
+                error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
+                error.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED ||
+                error.cause?.message?.contains("UnrecognizedInputFormatException") == true ||
+                error.cause?.message?.contains("None of the available extractors") == true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking for container unsupported error", e)
+        }
+
         when {
             cleartextError && channelStreamUrl?.startsWith("http://") == true -> {
                 Log.d(TAG, "Attempting to use HTTPS instead of HTTP")
@@ -1116,6 +1148,11 @@ class PlayerActivity : AppCompatActivity() {
                 tryAlternativeFormat(channelStreamUrl ?: "")
                 return
             }
+            containerUnsupported -> {
+                Log.d(TAG, "Container unsupported, cascading through known stream formats")
+                tryNextFormat()
+                return
+            }
         }
 
         errorTextView.visibility = View.VISIBLE
@@ -1134,49 +1171,63 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    private fun tryAlternativeFormat(streamUrl: String) {
-        val mimeTypesToTry = mutableListOf<String?>().apply {
-            add(supportedFormats["m3u8"])
-            add(supportedFormats["mpd"])
-            add(supportedFormats["ts"])
-            add(supportedFormats["mp4"])
-            add(supportedFormats["webm"])
-            add(supportedFormats["mkv"])
-            add(supportedFormats["ism"])
-            add(supportedFormats["flv"])
-            add(null)
+    /**
+     * Cascades through known streaming container MIME types one at a time.
+     * Each attempt re-prepares the player forcing a specific MIME type, which selects
+     * the correct MediaSource (HLS/DASH/SS/Progressive). If that attempt also fails,
+     * onPlayerError routes back here to try the next format. When all formats are
+     * exhausted a final error is shown.
+     */
+    private fun tryNextFormat() {
+        val streamUrl = channelStreamUrl
+        if (streamUrl.isNullOrBlank()) {
+            showFormatExhaustedError()
+            return
         }
 
-        for ((index, mimeType) in mimeTypesToTry.withIndex()) {
+        formatRetryIndex++
+
+        if (formatRetryIndex >= formatRetryMimeTypes.size) {
+            Log.e(TAG, "Exhausted all format options for stream")
+            showFormatExhaustedError()
+            return
+        }
+
+        val mimeType = formatRetryMimeTypes[formatRetryIndex]
+        Log.d(TAG, "Format retry ${formatRetryIndex + 1}/${formatRetryMimeTypes.size}: ${mimeType ?: "auto-detect"}")
+
+        try {
             val builder = MediaItem.Builder().setUri(Uri.parse(streamUrl))
             mimeType?.let { builder.setMimeType(it) }
 
-            try {
-                Log.d(TAG, "Trying format ${mimeType ?: "auto-detect"} (attempt ${index + 1})")
-                val mediaItem = builder.build()
-                player?.apply {
-                    clearMediaItems()
-                    setMediaItem(mediaItem)
-                    prepare()
-                    play()
-                }
+            errorTextView.visibility = View.GONE
+            playerView.visibility = View.VISIBLE
+            progressBar.visibility = View.VISIBLE
 
-                Handler(Looper.getMainLooper()).postDelayed({
-                    if (player?.isPlaying == true) {
-                        Log.d(TAG, "Successfully playing with format ${mimeType ?: "auto-detect"}")
-                    } else if (index < mimeTypesToTry.size - 1) {
-                        Log.d(TAG, "Playback failed with ${mimeType ?: "auto-detect"}, trying next format")
-                    }
-                }, 2000)
-                return
-            } catch (e: Exception) {
-                Log.e(TAG, "Error with format ${mimeType ?: "auto-detect"}: ${e.message}")
+            player?.apply {
+                clearMediaItems()
+                setMediaItem(builder.build())
+                prepare()
+                playWhenReady = true
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error preparing format ${mimeType ?: "auto-detect"}: ${e.message}", e)
+            // Advance to the next format immediately if this one threw synchronously
+            tryNextFormat()
         }
+    }
 
+    private fun showFormatExhaustedError() {
+        formatRetryIndex = -1
         errorTextView.visibility = View.VISIBLE
         playerView.visibility = View.GONE
+        progressBar.visibility = View.GONE
         errorTextView.text = "Unable to play this stream. Format not supported."
+    }
+
+    private fun tryAlternativeFormat(streamUrl: String) {
+        // Delegate to the cascading format retry which handles failures sequentially.
+        tryNextFormat()
     }
 
     private fun setupBackButton() {

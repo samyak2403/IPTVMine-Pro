@@ -26,6 +26,7 @@ googleServices = "4.4.2"
 firebaseBom = "33.1.1"
 tvFoundation = "1.0.0-alpha07"
 tvMaterial = "1.0.0-alpha07"
+tapTargetCompose = "1.2.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -82,6 +83,7 @@ firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.r
 firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore" }
 androidx-tv-foundation = { group = "androidx.tv", name = "tv-foundation", version.ref = "tvFoundation" }
 androidx-tv-material = { group = "androidx.tv", name = "tv-material", version.ref = "tvMaterial" }
+tap-target-compose = { group = "com.pierfrancescosoffritti.taptargetcompose", name = "core", version.ref = "tapTargetCompose" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

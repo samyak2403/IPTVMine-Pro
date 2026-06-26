@@ -53,6 +53,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.coil.compose)
     implementation(libs.lottie.compose)
+    implementation("com.pierfrancescosoffritti.taptargetcompose:core:1.2.1")
 
     // Media3 for Video Playback
     implementation(libs.androidx.media3.exoplayer)
