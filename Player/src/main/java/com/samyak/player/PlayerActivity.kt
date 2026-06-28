@@ -53,6 +53,9 @@ import androidx.media3.ui.PlayerView
 import com.samyak.doubletapplayerview.DoubleTapPlayerView
 import com.samyak.doubletapplayerview.youtube.YouTubeOverlay
 import com.samyak.player.R
+import java.io.InputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
 
 @OptIn(UnstableApi::class)
@@ -133,6 +136,9 @@ class PlayerActivity : AppCompatActivity() {
     private var isResolvingNextEpisode = false
     private var streamCandidates: ArrayList<StreamOption> = arrayListOf()
     private var currentStreamIndex = 0
+    private var triedHeaderWorkaround = false
+    private var requestHeaders: Map<String, String> = emptyMap()
+    private var requestUserAgent: String? = null
 
     // Cascading format-retry state. Used when ExoPlayer cannot recognize the
     // container of an extension-less IPTV stream (ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED).
@@ -154,6 +160,8 @@ class PlayerActivity : AppCompatActivity() {
         private const val INCREMENT_MILLIS = 5000L
         private const val PROGRESS_BAR_UPDATE_INTERVAL_MS = 16
         private const val NEXT_EPISODE_OVERLAY_THRESHOLD_MS = 60_000L
+        private const val CHROME_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
         private const val SCALE_MODE_FIT = 0
         private const val SCALE_MODE_FILL = 1
@@ -611,12 +619,16 @@ class PlayerActivity : AppCompatActivity() {
             if (userAgent != null) {
                 httpDataSourceFactory.setUserAgent(userAgent)
             } else {
-                httpDataSourceFactory.setUserAgent("IPTVmine/1.0 (Android)")
+                httpDataSourceFactory.setUserAgent(CHROME_USER_AGENT)
             }
 
             if (headersMap.isNotEmpty()) {
                 httpDataSourceFactory.setDefaultRequestProperties(headersMap)
             }
+
+            // Persist for the background content probe and 403 header retry.
+            requestHeaders = headersMap.toMap()
+            requestUserAgent = userAgent
 
             // Setup track selector with data saving constraints
             trackSelector = DefaultTrackSelector(this).apply {
@@ -630,19 +642,71 @@ class PlayerActivity : AppCompatActivity() {
 
             val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(this, httpDataSourceFactory)
 
+            // Route rtmp:// (and rtmps://) to the RTMP data source, everything else to the
+            // default one, so HTTP, file, content and RTMP live streams all work.
+            val rtmpAwareFactory = RtmpAwareDataSourceFactory(
+                dataSourceFactory,
+                androidx.media3.datasource.rtmp.RtmpDataSource.Factory()
+            )
+
+            // Maximise progressive-container support: constant-bitrate seeking for
+            // MP3/ADTS/AMR, and full MPEG-TS audio stream detection (AC-3/E-AC-3/DTS).
+            val extractorsFactory = androidx.media3.extractor.DefaultExtractorsFactory()
+                .setConstantBitrateSeekingEnabled(true)
+                .setConstantBitrateSeekingAlwaysEnabled(true)
+                .setTsExtractorFlags(
+                    androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS
+                )
+
+            // Buffer tuning for smoother playback on weak/variable connections.
+            val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    30_000,   // min buffer
+                    60_000,   // max buffer
+                    2_500,    // buffer required before playback starts
+                    5_000     // buffer required after a rebuffer
+                )
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build()
+
             player = ExoPlayer.Builder(this)
                 .setTrackSelector(trackSelector!!)
                 .setSeekBackIncrementMs(10000)
                 .setSeekForwardIncrementMs(10000)
                 .setHandleAudioBecomingNoisy(true)
+                .setAudioAttributes(
+                    androidx.media3.common.AudioAttributes.Builder()
+                        .setUsage(C.USAGE_MEDIA)
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                        .build(),
+                    /* handleAudioFocus = */ true
+                )
+                .setLoadControl(loadControl)
                 .setMediaSourceFactory(
-                    DefaultMediaSourceFactory(this)
-                        .setDataSourceFactory(dataSourceFactory)
+                    DefaultMediaSourceFactory(rtmpAwareFactory, extractorsFactory)
                 )
                 .build()
 
             playerView.player = player
             playerView.keepScreenOn = true
+
+            // Style subtitles for better readability over video.
+            try {
+                playerView.subtitleView?.setStyle(
+                    androidx.media3.ui.CaptionStyleCompat(
+                        android.graphics.Color.WHITE,
+                        android.graphics.Color.TRANSPARENT,
+                        android.graphics.Color.TRANSPARENT,
+                        androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                        android.graphics.Color.BLACK,
+                        null
+                    )
+                )
+                playerView.subtitleView?.setApplyEmbeddedStyles(false)
+                playerView.subtitleView?.setApplyEmbeddedFontSizes(false)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error styling subtitles", e)
+            }
             playerView.controllerHideOnTouch = true
             playerView.controllerShowTimeoutMs = 3000
             playerView.setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
@@ -669,8 +733,9 @@ class PlayerActivity : AppCompatActivity() {
                     when (state) {
                         Player.STATE_READY -> {
                             this@PlayerActivity.isPlayerReady = true
-                            // Stream is playing fine, clear any pending format-retry state
+                            // Stream is playing fine, clear any pending retry state
                             formatRetryIndex = -1
+                            triedHeaderWorkaround = false
                             // Now that the timeline is known, resolve real live status
                             // so VOD content keeps its seek bar and only true live
                             // streams show the LIVE badge.
@@ -723,14 +788,15 @@ class PlayerActivity : AppCompatActivity() {
 
             player?.apply {
                 addListener(playerListener!!)
-                if (startPosition > 0L) {
-                    setMediaItem(mediaItem, startPosition)
-                } else {
-                    setMediaItem(mediaItem)
-                }
                 setPlayWhenReady(true)
-                prepare()
             }
+
+            // Probe the stream's real content type on a background thread before
+            // preparing. Extension-less IPTV/scraper links often lack a usable
+            // Content-Type, making ExoPlayer fall back to a progressive source and fail.
+            // The probe forces the correct MediaSource (HLS/DASH/TS) and detects dead
+            // links that return an HTML page instead of media.
+            probeAndPrepare(channelStreamUrl ?: "", mediaItem, startPosition)
 
             setupProgressBarHandler()
             checkIfLiveStream()
@@ -914,6 +980,7 @@ class PlayerActivity : AppCompatActivity() {
         playbackPosition = 0L
         isPlayerReady = false
         formatRetryIndex = -1
+        triedHeaderWorkaround = false
 
         intent.putExtra("channel_name", title)
         intent.putExtra("channel_stream_url", url)
@@ -1119,6 +1186,127 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    private enum class ProbeResult { HLS, DASH, TS, MP4, HTML, UNKNOWN }
+
+    /**
+     * Probes the stream URL on a background thread to determine its real content type,
+     * then prepares the player with the correct MediaSource. Falls back to [fallbackItem]
+     * when the type can't be determined. If the server returns an HTML page (dead/expired
+     * link) it tries the next mirror or shows a clear error.
+     */
+    private fun probeAndPrepare(url: String, fallbackItem: MediaItem, startPosition: Long) {
+        if (!url.startsWith("http://", ignoreCase = true) &&
+            !url.startsWith("https://", ignoreCase = true)) {
+            prepareWithItem(fallbackItem, startPosition)
+            return
+        }
+        Thread {
+            val result = try {
+                probeContent(url)
+            } catch (e: Exception) {
+                Log.w(TAG, "Content probe failed: ${e.message}")
+                ProbeResult.UNKNOWN
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                Log.d(TAG, "Content probe result: $result")
+                if (result == ProbeResult.HTML) {
+                    if (tryNextStreamCandidate()) return@runOnUiThread
+                    showError("This link isn't a playable video. The server returned a web page, so the stream may be expired, geo-blocked, or require sign-in.")
+                    return@runOnUiThread
+                }
+                val mime = when (result) {
+                    ProbeResult.HLS -> "application/x-mpegURL"
+                    ProbeResult.DASH -> "application/dash+xml"
+                    ProbeResult.TS -> "video/mp2t"
+                    ProbeResult.MP4 -> "video/mp4"
+                    else -> null
+                }
+                val item = if (mime != null) {
+                    MediaItem.Builder().setUri(Uri.parse(url)).setMimeType(mime).build()
+                } else {
+                    fallbackItem
+                }
+                prepareWithItem(item, startPosition)
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun prepareWithItem(item: MediaItem, startPosition: Long) {
+        player?.apply {
+            if (startPosition > 0L) setMediaItem(item, startPosition) else setMediaItem(item)
+            setPlayWhenReady(true)
+            prepare()
+        }
+    }
+
+    private fun probeContent(url: String): ProbeResult {
+        var connection: HttpURLConnection? = null
+        try {
+            val conn = URL(url).openConnection() as HttpURLConnection
+            connection = conn
+            conn.instanceFollowRedirects = true
+            conn.connectTimeout = 8000
+            conn.readTimeout = 8000
+            conn.requestMethod = "GET"
+            conn.setRequestProperty("Accept", "*/*")
+            conn.setRequestProperty("Range", "bytes=0-8191")
+            conn.setRequestProperty("User-Agent", requestUserAgent ?: CHROME_USER_AGENT)
+            for ((k, v) in requestHeaders) {
+                try { conn.setRequestProperty(k, v) } catch (_: Exception) {}
+            }
+            conn.connect()
+
+            val status = conn.responseCode
+            val contentType = (conn.contentType ?: "").lowercase()
+            val buf = ByteArray(1024)
+            val read = try {
+                val input = if (status in 200..299) conn.inputStream else conn.errorStream
+                input?.use { readUpTo(it, buf) } ?: 0
+            } catch (e: Exception) { 0 }
+            val head = if (read > 0) String(buf, 0, read, Charsets.ISO_8859_1) else ""
+            val headTrim = head.trimStart()
+            val headLower = headTrim.lowercase()
+
+            when {
+                contentType.contains("mpegurl") || contentType.contains("vnd.apple.mpegurl") -> return ProbeResult.HLS
+                contentType.contains("dash+xml") -> return ProbeResult.DASH
+                contentType.contains("mp2t") -> return ProbeResult.TS
+                contentType.startsWith("video/mp4") || contentType.startsWith("audio/mp4") -> return ProbeResult.MP4
+                (contentType.startsWith("text/html") || contentType.contains("xhtml")) &&
+                    (headLower.startsWith("<!doctype html") || headLower.startsWith("<html") ||
+                     headLower.contains("<head") || headLower.contains("<body")) -> return ProbeResult.HTML
+            }
+
+            if (read > 0) {
+                if (headTrim.startsWith("#EXTM3U")) return ProbeResult.HLS
+                if (headLower.startsWith("<mpd") || headLower.contains("urn:mpeg:dash:schema")) return ProbeResult.DASH
+                if (headLower.startsWith("<!doctype html") || headLower.startsWith("<html")) return ProbeResult.HTML
+                if (buf[0] == 0x47.toByte() && read > 188 && buf[188] == 0x47.toByte()) return ProbeResult.TS
+                if (read > 8 && buf[4] == 'f'.code.toByte() && buf[5] == 't'.code.toByte() &&
+                    buf[6] == 'y'.code.toByte() && buf[7] == 'p'.code.toByte()) return ProbeResult.MP4
+            }
+
+            if (status >= 400 &&
+                (headLower.startsWith("<!doctype html") || headLower.startsWith("<html") || contentType.startsWith("text/"))) {
+                return ProbeResult.HTML
+            }
+            return ProbeResult.UNKNOWN
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    private fun readUpTo(input: InputStream, buf: ByteArray): Int {
+        var total = 0
+        while (total < buf.size) {
+            val r = input.read(buf, total, buf.size - total)
+            if (r == -1) break
+            total += r
+        }
+        return total
+    }
+
     private fun detectAndCreateMediaItem(url: String): MediaItem {
         if (!url.startsWith("http") && !url.startsWith("rtmp")) {
             Log.w(TAG, "Invalid URL scheme: $url")
@@ -1223,7 +1411,8 @@ class PlayerActivity : AppCompatActivity() {
         var sourceError = false
 
         try {
-            cleartextError = error.cause?.cause?.message?.contains("Cleartext HTTP traffic") == true
+            cleartextError = error.errorCode == PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED ||
+                error.cause?.cause?.message?.contains("Cleartext HTTP traffic") == true
         } catch (e: Exception) {
             Log.e(TAG, "Error checking for cleartext error", e)
         }
@@ -1238,9 +1427,11 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         try {
-            formatError = error.cause?.message?.let {
-                it.contains("Format") || it.contains("No decoder")
-            } == true
+            formatError = error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ||
+                error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED ||
+                error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ||
+                error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES ||
+                error.cause?.message?.let { it.contains("Format") || it.contains("No decoder") } == true
         } catch (e: Exception) {
             Log.e(TAG, "Error checking for format error", e)
         }
@@ -1266,12 +1457,39 @@ class PlayerActivity : AppCompatActivity() {
             Log.e(TAG, "Error checking for container unsupported error", e)
         }
 
+        // HTTP 403 Forbidden: the host is rejecting the request, usually because it
+        // wants a Referer/Origin or a browser User-Agent. Retry once with those headers
+        // before falling back to other mirrors. Cascading MIME types can't fix this.
+        var forbiddenError = false
+        try {
+            val cause = error.cause
+            val httpCode = if (cause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                cause.responseCode
+            } else -1
+            forbiddenError = error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS &&
+                (httpCode == 403 || httpCode == 401 ||
+                 (httpCode == -1 && (error.cause?.message?.contains("403") == true ||
+                                     error.cause?.message?.contains("401") == true)))
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking for 403", e)
+        }
+
         when {
             cleartextError && channelStreamUrl?.startsWith("http://") == true -> {
                 Log.d(TAG, "Attempting to use HTTPS instead of HTTP")
                 val httpsUrl = tryHttpsUrl(channelStreamUrl ?: "")
                 playStream(httpsUrl)
                 return
+            }
+            forbiddenError -> {
+                if (!triedHeaderWorkaround) {
+                    Log.d(TAG, "403 Forbidden - retrying with Referer/Origin/browser headers")
+                    triedHeaderWorkaround = true
+                    retryWithEnhancedHeaders()
+                    return
+                }
+                if (tryNextStreamCandidate()) return
+                // Fall through to show the error below.
             }
             hlsParsingError -> {
                 if (channelStreamUrl?.lowercase()?.endsWith(".m3u8") == true) {
@@ -1314,6 +1532,7 @@ class PlayerActivity : AppCompatActivity() {
         playerView.visibility = View.GONE
 
         errorTextView.text = when {
+            forbiddenError -> "This source refused the connection (403). It may be expired or region-locked. Try another quality or provider."
             hlsParsingError -> "Invalid stream format. This stream may not be available."
             cleartextError -> "Insecure connection not allowed. Try using an HTTPS stream or check app settings."
             formatError -> "This media format is not supported on your device."
@@ -1386,11 +1605,48 @@ class PlayerActivity : AppCompatActivity() {
     private fun tryNextStreamCandidate(): Boolean {
         if (currentStreamIndex + 1 >= streamCandidates.size) return false
         currentStreamIndex++
+        triedHeaderWorkaround = false // give the new mirror its own header retry
         val next = streamCandidates[currentStreamIndex]
         Log.d(TAG, "Falling back to stream ${currentStreamIndex + 1}/${streamCandidates.size}")
         Toast.makeText(this, "Trying another source...", Toast.LENGTH_SHORT).show()
         applyStreamAndReload(next.url, next.headers)
         return true
+    }
+
+    /**
+     * Retries the current stream after a 403 by adding a Referer/Origin (derived from the
+     * stream host) and a browser User-Agent, which many CDNs require.
+     */
+    private fun retryWithEnhancedHeaders() {
+        val url = channelStreamUrl
+        if (url.isNullOrBlank()) {
+            showError("Stream blocked by the server (403).")
+            return
+        }
+        val enhanced = HashMap<String, String>()
+        intent.getBundleExtra("channel_headers")?.let { b ->
+            for (k in b.keySet()) b.getString(k)?.let { enhanced[k] = it }
+        }
+        try {
+            val uri = Uri.parse(url)
+            val scheme = uri.scheme ?: "https"
+            val host = uri.host
+            if (host != null) {
+                val origin = "$scheme://$host"
+                if (enhanced.keys.none { it.equals("Referer", ignoreCase = true) }) {
+                    enhanced["Referer"] = "$origin/"
+                }
+                if (enhanced.keys.none { it.equals("Origin", ignoreCase = true) }) {
+                    enhanced["Origin"] = origin
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error building enhanced headers", e)
+        }
+        if (enhanced.keys.none { it.equals("User-Agent", ignoreCase = true) }) {
+            enhanced["User-Agent"] = CHROME_USER_AGENT
+        }
+        applyStreamAndReload(url, enhanced)
     }
 
     /** Swaps the player to a different stream URL (mirror/quality) without recreating it. */
@@ -1438,6 +1694,28 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
         }
+        // Long-press to change playback speed.
+        playPauseBtn.setOnLongClickListener {
+            showPlaybackSpeedDialog()
+            true
+        }
+    }
+
+    private fun showPlaybackSpeedDialog() {
+        val p = player ?: return
+        val speeds = floatArrayOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+        val labels = speeds.map { if (it == 1.0f) "Normal (1x)" else "${it}x" }.toTypedArray()
+        val current = p.playbackParameters.speed
+        val checked = speeds.indexOfFirst { kotlin.math.abs(it - current) < 0.01f }.let { if (it < 0) 3 else it }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Playback Speed")
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                player?.setPlaybackSpeed(speeds[which])
+                Toast.makeText(this, "Speed: ${labels[which]}", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun setupNavigationButtons() {
@@ -1703,7 +1981,14 @@ class PlayerActivity : AppCompatActivity() {
                 addAction(ACTION_PIP_PLAY)
                 addAction(ACTION_PIP_PAUSE)
             }
-            registerReceiver(pipReceiver, filter, RECEIVER_NOT_EXPORTED)
+            // ContextCompat applies RECEIVER_NOT_EXPORTED only on API 33+ and registers
+            // correctly on Android 12 (where that flag isn't a valid registerReceiver arg).
+            androidx.core.content.ContextCompat.registerReceiver(
+                this,
+                pipReceiver,
+                filter,
+                androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+            )
         }
     }
 

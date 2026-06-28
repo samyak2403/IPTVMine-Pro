@@ -102,6 +102,13 @@ import com.psoffritti.taptargetcompose.TextDefinition
 
 
 class MainActivity : ComponentActivity() {
+
+    private val notificationPermissionLauncher =
+        registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {
+            // Downloads work regardless; this only controls whether the progress
+            // notification is visible in the status bar (required on Android 13+).
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.samyak.iptvminepro.download.DownloadManager.init(applicationContext)
@@ -109,9 +116,22 @@ class MainActivity : ComponentActivity() {
         // can resolve provider links to playable streams.
         com.samyak.player.StreamResolverHolder.resolver =
             com.samyak.iptvminepro.provider.VegaStreamResolver(applicationContext)
+        requestNotificationPermissionIfNeeded()
         setContent {
             IPTVMineProTheme {
                 MainApp()
+            }
+        }
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }

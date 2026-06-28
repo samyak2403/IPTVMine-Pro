@@ -55,53 +55,50 @@ fun MovieDetailScreen(
     val scope = rememberCoroutineScope()
     val runner = remember { VegaProviderRunner(context) }
     val cleanLink = remember(link) { link.split('#')[0] }
-    
-    val storagePermissions = remember {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            arrayOf(android.Manifest.permission.READ_MEDIA_VIDEO)
-        } else {
-            arrayOf(
-                android.Manifest.permission.READ_EXTERNAL_STORAGE,
-                android.Manifest.permission.WRITE_EXTERNAL_STORAGE
-            )
-        }
+
+    // Downloads write to app-specific storage + MediaStore (scoped storage), so no
+    // runtime permission is needed on Android 10+ (API 29+). Only legacy devices
+    // (API <= 28) require WRITE_EXTERNAL_STORAGE. Requiring it on Android 11+ would be a
+    // permanent denial (the permission is capped at API 29 in the manifest).
+    val storagePermissions = remember { arrayOf(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+
+    var pendingDownload by remember {
+        mutableStateOf<Triple<String, String, Map<String, String>?>?>(null)
+    }
+
+    val performDownload: (String, String, Map<String, String>?) -> Unit = { dlUrl, dlTitle, dlHeaders ->
+        com.samyak.iptvminepro.download.DownloadManager.download(
+            title = dlTitle,
+            downloadUrl = dlUrl,
+            headers = dlHeaders
+        )
+        Toast.makeText(context, "Added to downloads queue", Toast.LENGTH_SHORT).show()
     }
 
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val granted = permissions.entries.all { it.value }
-        if (!granted) {
+        val granted = permissions.values.all { it }
+        if (granted) {
+            pendingDownload?.let { performDownload(it.first, it.second, it.third) }
+        } else {
             Toast.makeText(context, "Storage permission is required to download videos.", Toast.LENGTH_LONG).show()
         }
+        pendingDownload = null
     }
 
     val downloadWithPermissionCheck: (String, String, Map<String, String>?) -> Unit = { dlUrl, dlTitle, dlHeaders ->
-        val hasPermission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            androidx.core.content.ContextCompat.checkSelfPermission(
-                context,
-                android.Manifest.permission.READ_MEDIA_VIDEO
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        } else {
-            androidx.core.content.ContextCompat.checkSelfPermission(
-                context,
-                android.Manifest.permission.READ_EXTERNAL_STORAGE
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED &&
+        val needsLegacyWrite = android.os.Build.VERSION.SDK_INT <= android.os.Build.VERSION_CODES.P
+        val hasPermission = !needsLegacyWrite ||
             androidx.core.content.ContextCompat.checkSelfPermission(
                 context,
                 android.Manifest.permission.WRITE_EXTERNAL_STORAGE
             ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        }
 
         if (hasPermission) {
-            com.samyak.iptvminepro.download.DownloadManager.download(
-                title = dlTitle,
-                downloadUrl = dlUrl,
-                headers = dlHeaders
-            )
-            Toast.makeText(context, "Added to downloads queue", Toast.LENGTH_SHORT).show()
+            performDownload(dlUrl, dlTitle, dlHeaders)
         } else {
-            Toast.makeText(context, "Storage permissions required to download", Toast.LENGTH_SHORT).show()
+            pendingDownload = Triple(dlUrl, dlTitle, dlHeaders)
             permissionLauncher.launch(storagePermissions)
         }
     }

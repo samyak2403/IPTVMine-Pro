@@ -252,9 +252,8 @@ fun MovieSearchScreen(
                 }
 
                 if ((isLoading || isScrapersLoading) && movies.isEmpty()) {
-                    CircularProgressIndicator(
-                        color = Color(0xFF26A69A),
-                        modifier = Modifier.align(Alignment.Center)
+                    com.samyak.iptvminepro.ui.components.GridShimmerPlaceholder(
+                        modifier = Modifier.align(Alignment.TopCenter)
                     )
                 }
             }
