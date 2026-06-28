@@ -105,6 +105,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.samyak.iptvminepro.download.DownloadManager.init(applicationContext)
+        // Register the episode stream resolver so the player's "Next Episode" button
+        // can resolve provider links to playable streams.
+        com.samyak.player.StreamResolverHolder.resolver =
+            com.samyak.iptvminepro.provider.VegaStreamResolver(applicationContext)
         setContent {
             IPTVMineProTheme {
                 MainApp()

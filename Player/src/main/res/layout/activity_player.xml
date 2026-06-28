@@ -131,4 +131,43 @@
             android:textStyle="bold"
             android:text="50%" />
     </LinearLayout>
+
+    <!-- Disney+/Hotstar style "Next Episode" overlay. Lives outside the auto-hiding
+         controller so it can pop up near the end of an episode and stay visible. -->
+    <LinearLayout
+        android:id="@+id/nextEpisodeOverlay"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentRight="true"
+        android:layout_alignParentBottom="true"
+        android:layout_marginRight="28dp"
+        android:layout_marginBottom="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/next_episode_bg"
+        android:paddingStart="18dp"
+        android:paddingEnd="22dp"
+        android:paddingTop="11dp"
+        android:paddingBottom="11dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:elevation="12dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_marginEnd="10dp"
+            android:src="@drawable/next_episode_icon"
+            android:contentDescription="@string/next_episode_btn"
+            app:tint="#111111" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/next_episode_btn"
+            android:textColor="#111111"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+    </LinearLayout>
 </RelativeLayout>

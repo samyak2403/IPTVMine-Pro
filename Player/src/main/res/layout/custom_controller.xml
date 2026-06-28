@@ -153,6 +153,18 @@
             app:tint="@color/white" />
 
         <ImageButton
+            android:id="@+id/nextEpisodeBtn"
+            android:layout_width="45dp"
+            android:layout_height="match_parent"
+            android:background="?attr/selectableItemBackground"
+            android:contentDescription="@string/next_episode_btn"
+            android:focusable="true"
+            android:nextFocusUp="@+id/playPauseBtn"
+            android:src="@drawable/next_episode_icon"
+            android:visibility="gone"
+            app:tint="@color/white" />
+
+        <ImageButton
             android:id="@+id/fullScreenBtn"
             android:layout_width="45dp"
             android:layout_height="match_parent"

@@ -102,6 +102,7 @@
     <string name="menu">Menu</string>
     <string name="prev_btn">Previous</string>
     <string name="next_btn">Next</string>
+    <string name="next_episode_btn">Next Episode</string>
     <string name="repeat_btn">Repeat</string>
     <string name="fullscreen_btn">Fullscreen</string>
     <string name="play_btn">Play</string>

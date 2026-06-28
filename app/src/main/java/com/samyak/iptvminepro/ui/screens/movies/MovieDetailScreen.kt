@@ -39,6 +39,8 @@ import coil.request.ImageRequest
 import com.samyak.iptvminepro.model.*
 import com.samyak.iptvminepro.provider.VegaProviderRunner
 import com.samyak.player.PlayerActivity
+import com.samyak.player.EpisodeItem
+import com.samyak.player.StreamOption
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -173,6 +175,7 @@ fun MovieDetailScreen(
                     Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
                 } else {
                     val selectedStream = streams[0]
+                    val fallbacks = ArrayList(streams.map { StreamOption(it.link, HashMap(it.headers ?: emptyMap())) })
                     Toast.makeText(context, "Playing: ${selectedStream.server} - ${selectedStream.quality}", Toast.LENGTH_SHORT).show()
                     val mLink = if (meta?.type?.lowercase() == "series") {
                         "$link#${android.net.Uri.encode(title)}"
@@ -188,7 +191,8 @@ fun MovieDetailScreen(
                         movieLink = mLink,
                         movieImage = meta?.image ?: "",
                         providerUrl = providerUrl,
-                        scraperValue = scraperValue
+                        scraperValue = scraperValue,
+                        streamFallbacks = fallbacks
                     )
                 }
             } catch (e: Exception) {
@@ -222,6 +226,47 @@ fun MovieDetailScreen(
                 Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
             } finally {
                 resolvingStream = false
+            }
+        }
+    }
+
+    // Resolves and plays an episode from a playlist, passing the whole playlist + index
+    // to the player so its "Next Episode" button can advance through the season.
+    val playEpisodeFromPlaylist: (ArrayList<EpisodeItem>, Int) -> Unit = { playlist, index ->
+        val item = playlist.getOrNull(index)
+        if (item != null) {
+            streamResolutionJob?.cancel()
+            streamResolutionJob = scope.launch {
+                resolvingStream = true
+                try {
+                    val streams = runner.getStream(providerUrl, scraperValue, item.link, item.type)
+                        .filter { it.link.isNotBlank() }
+                    if (streams.isEmpty()) {
+                        Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val selectedStream = streams[0]
+                        val fallbacks = ArrayList(streams.map { StreamOption(it.link, HashMap(it.headers ?: emptyMap())) })
+                        Toast.makeText(context, "Playing: ${selectedStream.server} - ${selectedStream.quality}", Toast.LENGTH_SHORT).show()
+                        PlayerActivity.start(
+                            context = context,
+                            name = "${item.title} - ${selectedStream.quality}",
+                            streamUrl = selectedStream.link,
+                            headers = selectedStream.headers,
+                            watchHistoryEnabled = true,
+                            movieLink = "$link#${android.net.Uri.encode(item.title)}",
+                            movieImage = meta?.image ?: "",
+                            providerUrl = providerUrl,
+                            scraperValue = scraperValue,
+                            episodes = playlist,
+                            episodeIndex = index,
+                            streamFallbacks = fallbacks
+                        )
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
+                } finally {
+                    resolvingStream = false
+                }
             }
         }
     }
@@ -623,9 +668,15 @@ fun MovieDetailScreen(
                                                     if (episodes == null || episodes.isEmpty()) {
                                                         Text("No episodes loaded.", color = Color.Gray, fontSize = 13.sp)
                                                     } else {
+                                                        val episodePlaylist = buildEpisodePlaylist(episodes, vegaLink.title, getResolveType)
                                                         episodes.forEach { episodeLink ->
                                                             val hasEpLink = episodeLink.episodesLink != null
                                                             val hasDirectLinks = episodeLink.directLinks != null && episodeLink.directLinks.isNotEmpty()
+                                                            val episodeTargetLink = if (hasDirectLinks) episodeLink.directLinks!![0].link else episodeLink.episodesLink
+                                                            val playEpisode = {
+                                                                val idx = episodePlaylist.indexOfFirst { it.link == episodeTargetLink }
+                                                                playEpisodeFromPlaylist(episodePlaylist, if (idx >= 0) idx else 0)
+                                                            }
                                                             Column(
                                                                 modifier = Modifier
                                                                     .fillMaxWidth()
@@ -635,40 +686,7 @@ fun MovieDetailScreen(
                                                                     modifier = Modifier
                                                                         .fillMaxWidth()
                                                                         .clickable(enabled = hasEpLink || hasDirectLinks) {
-                                                                            if (hasDirectLinks) {
-                                                                                val dLinks = episodeLink.directLinks!!
-                                                                                onDirectLinkClick(dLinks[0], "${vegaLink.title} - ${episodeLink.title} (${dLinks[0].title})")
-                                                                            } else if (hasEpLink) {
-                                                                                streamResolutionJob?.cancel()
-                                                                                streamResolutionJob = scope.launch {
-                                                                                    resolvingStream = true
-                                                                                    try {
-                                                                                        val streams = runner.getStream(providerUrl, scraperValue, episodeLink.episodesLink!!, getResolveType("series")).filter { it.link.isNotBlank() }
-                                                                                        if (streams.isEmpty()) {
-                                                                                            Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
-                                                                                        } else {
-                                                                                            val selectedStream = streams[0]
-                                                                                            val epTitle = "${vegaLink.title} - ${episodeLink.title}"
-                                                                                            Toast.makeText(context, "Playing: ${selectedStream.server} - ${selectedStream.quality}", Toast.LENGTH_SHORT).show()
-                                                                                            PlayerActivity.start(
-                                                                                                context = context,
-                                                                                                name = "$epTitle - ${selectedStream.quality}",
-                                                                                                streamUrl = selectedStream.link,
-                                                                                                headers = selectedStream.headers,
-                                                                                                watchHistoryEnabled = true,
-                                                                                                movieLink = "$link#${android.net.Uri.encode(epTitle)}",
-                                                                                                movieImage = meta?.image ?: "",
-                                                                                                providerUrl = providerUrl,
-                                                                                                scraperValue = scraperValue
-                                                                                            )
-                                                                                        }
-                                                                                    } catch (e: Exception) {
-                                                                                        Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
-                                                                                    } finally {
-                                                                                        resolvingStream = false
-                                                                                    }
-                                                                                }
-                                                                            }
+                                                                            playEpisode()
                                                                         }
                                                                         .padding(vertical = 6.dp),
                                                                     verticalAlignment = Alignment.CenterVertically,
@@ -694,40 +712,7 @@ fun MovieDetailScreen(
                                                                                     .background(Color(0xFF26A69A).copy(alpha = 0.2f), RoundedCornerShape(16.dp))
                                                                                     .clip(RoundedCornerShape(16.dp))
                                                                                     .clickable {
-                                                                                        if (hasDirectLinks) {
-                                                                                            val dLinks = episodeLink.directLinks!!
-                                                                                            onDirectLinkClick(dLinks[0], "${vegaLink.title} - ${episodeLink.title} (${dLinks[0].title})")
-                                                                                        } else if (hasEpLink) {
-                                                                                            streamResolutionJob?.cancel()
-                                                                                            streamResolutionJob = scope.launch {
-                                                                                                resolvingStream = true
-                                                                                                try {
-                                                                                                    val streams = runner.getStream(providerUrl, scraperValue, episodeLink.episodesLink!!, getResolveType("series")).filter { it.link.isNotBlank() }
-                                                                                                    if (streams.isEmpty()) {
-                                                                                                        Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
-                                                                                                    } else {
-                                                                                                        val selectedStream = streams[0]
-                                                                                                        val epTitle = "${vegaLink.title} - ${episodeLink.title}"
-                                                                                                        Toast.makeText(context, "Playing: ${selectedStream.server} - ${selectedStream.quality}", Toast.LENGTH_SHORT).show()
-                                                                                                        PlayerActivity.start(
-                                                                                                            context = context,
-                                                                                                            name = "$epTitle - ${selectedStream.quality}",
-                                                                                                            streamUrl = selectedStream.link,
-                                                                                                            headers = selectedStream.headers,
-                                                                                                            watchHistoryEnabled = true,
-                                                                                                            movieLink = "$link#${android.net.Uri.encode(epTitle)}",
-                                                                                                            movieImage = meta?.image ?: "",
-                                                                                                            providerUrl = providerUrl,
-                                                                                                            scraperValue = scraperValue
-                                                                                                        )
-                                                                                                    }
-                                                                                                } catch (e: Exception) {
-                                                                                                    Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
-                                                                                                } finally {
-                                                                                                    resolvingStream = false
-                                                                                                }
-                                                                                            }
-                                                                                        }
+                                                                                        playEpisode()
                                                                                     }
                                                                             ) {
                                                                                 Icon(
@@ -851,13 +836,34 @@ fun MovieDetailScreen(
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                                 ) {
-                                                    vegaLink.directLinks.forEach { directLink ->
+                                                    val isSeriesLinks = movieMeta.type.equals("series", ignoreCase = true) ||
+                                                        (vegaLink.directLinks.size > 1 && vegaLink.directLinks.any {
+                                                            it.title.contains("episode", ignoreCase = true) ||
+                                                            it.title.contains("ep ", ignoreCase = true) ||
+                                                            Regex("(?i)\\bep?\\s*\\d{1,3}\\b").containsMatchIn(it.title)
+                                                        })
+                                                    val seasonPlaylist = if (isSeriesLinks) ArrayList(
+                                                        vegaLink.directLinks.map { dl ->
+                                                            EpisodeItem(
+                                                                title = "${movieMeta.title} - ${vegaLink.title} (${dl.title})",
+                                                                link = dl.link,
+                                                                type = getResolveType(dl.type)
+                                                            )
+                                                        }
+                                                    ) else null
+                                                    vegaLink.directLinks.forEachIndexed { dlIndex, directLink ->
                                                         Row(
                                                             verticalAlignment = Alignment.CenterVertically,
                                                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                                                         ) {
                                                             Button(
-                                                                onClick = { onDirectLinkClick(directLink, "${movieMeta.title} - ${vegaLink.title} (${directLink.title})") },
+                                                                onClick = {
+                                                                    if (seasonPlaylist != null) {
+                                                                        playEpisodeFromPlaylist(seasonPlaylist, dlIndex)
+                                                                    } else {
+                                                                        onDirectLinkClick(directLink, "${movieMeta.title} - ${vegaLink.title} (${directLink.title})")
+                                                                    }
+                                                                },
                                                                 colors = ButtonDefaults.buttonColors(
                                                                     containerColor = Color(0xFF26A69A),
                                                                     contentColor = Color.White
@@ -1085,3 +1091,40 @@ fun MovieDetailScreen(
     }
 }
 
+
+/**
+ * Builds an ordered playlist of episodes (within a season) so the player can offer
+ * "Next Episode" playback. Each entry carries the unresolved provider link and the
+ * resolve type; the player resolves it to a stream on demand via the registered
+ * StreamResolver. Episodes that expose neither a direct link nor an episodes link are
+ * skipped so indices stay consistent with what is actually playable.
+ */
+private fun buildEpisodePlaylist(
+    episodes: List<VegaLink>,
+    seasonTitle: String,
+    resolveType: (String) -> String
+): ArrayList<EpisodeItem> {
+    val list = ArrayList<EpisodeItem>()
+    for (ep in episodes) {
+        val dls = ep.directLinks
+        if (dls != null && dls.isNotEmpty()) {
+            val dl = dls[0]
+            list.add(
+                EpisodeItem(
+                    title = "$seasonTitle - ${ep.title} (${dl.title})",
+                    link = dl.link,
+                    type = resolveType(dl.type)
+                )
+            )
+        } else if (ep.episodesLink != null) {
+            list.add(
+                EpisodeItem(
+                    title = "$seasonTitle - ${ep.title}",
+                    link = ep.episodesLink,
+                    type = resolveType("series")
+                )
+            )
+        }
+    }
+    return list
+}

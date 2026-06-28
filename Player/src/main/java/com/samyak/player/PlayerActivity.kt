@@ -85,6 +85,8 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var repeatBtn: ImageButton
     private lateinit var prevBtn: ImageButton
     private lateinit var nextBtn: ImageButton
+    private lateinit var nextEpisodeBtn: ImageButton
+    private lateinit var nextEpisodeOverlay: LinearLayout
     private lateinit var videoTitle: TextView
     private lateinit var exoLiveText: TextView
     private lateinit var topController: LinearLayout
@@ -123,6 +125,15 @@ class PlayerActivity : AppCompatActivity() {
     private var trackSelector: DefaultTrackSelector? = null
     private var isDataSavingEnabled = false
 
+    // Next-episode playback state.
+    private var episodeList: ArrayList<EpisodeItem> = arrayListOf()
+    private var currentEpisodeIndex: Int = -1
+    private var providerUrl: String? = null
+    private var scraperValue: String? = null
+    private var isResolvingNextEpisode = false
+    private var streamCandidates: ArrayList<StreamOption> = arrayListOf()
+    private var currentStreamIndex = 0
+
     // Cascading format-retry state. Used when ExoPlayer cannot recognize the
     // container of an extension-less IPTV stream (ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED).
     // We re-prepare the stream forcing each known MIME type until one plays.
@@ -142,6 +153,7 @@ class PlayerActivity : AppCompatActivity() {
         private const val TAG = "PlayerActivity"
         private const val INCREMENT_MILLIS = 5000L
         private const val PROGRESS_BAR_UPDATE_INTERVAL_MS = 16
+        private const val NEXT_EPISODE_OVERLAY_THRESHOLD_MS = 60_000L
 
         private const val SCALE_MODE_FIT = 0
         private const val SCALE_MODE_FILL = 1
@@ -161,7 +173,10 @@ class PlayerActivity : AppCompatActivity() {
             movieLink: String? = null,
             movieImage: String? = null,
             providerUrl: String? = null,
-            scraperValue: String? = null
+            scraperValue: String? = null,
+            episodes: ArrayList<EpisodeItem>? = null,
+            episodeIndex: Int = -1,
+            streamFallbacks: ArrayList<StreamOption>? = null
         ) {
             val intent = Intent(context, PlayerActivity::class.java).apply {
                 putExtra("channel_name", name)
@@ -171,6 +186,13 @@ class PlayerActivity : AppCompatActivity() {
                 putExtra("movie_image", movieImage)
                 putExtra("provider_url", providerUrl)
                 putExtra("scraper_value", scraperValue)
+                if (episodes != null && episodes.isNotEmpty()) {
+                    putExtra("episodes", episodes)
+                    putExtra("episode_index", episodeIndex)
+                }
+                if (streamFallbacks != null && streamFallbacks.isNotEmpty()) {
+                    putExtra("stream_fallbacks", streamFallbacks)
+                }
                 if (headers != null) {
                     val bundle = Bundle()
                     for ((k, v) in headers) {
@@ -205,6 +227,18 @@ class PlayerActivity : AppCompatActivity() {
         channelName = intent?.getStringExtra("channel_name")
         val rawUrl = intent?.getStringExtra("channel_stream_url")
         channelStreamUrl = rawUrl?.let { normalizeUrl(it) }
+
+        // Next-episode playlist + alternate stream mirrors.
+        providerUrl = intent?.getStringExtra("provider_url")
+        scraperValue = intent?.getStringExtra("scraper_value")
+        currentEpisodeIndex = intent?.getIntExtra("episode_index", -1) ?: -1
+        @Suppress("UNCHECKED_CAST", "DEPRECATION")
+        val eps = intent?.getSerializableExtra("episodes") as? ArrayList<EpisodeItem>
+        episodeList = eps ?: arrayListOf()
+        @Suppress("UNCHECKED_CAST", "DEPRECATION")
+        val fallbacks = intent?.getSerializableExtra("stream_fallbacks") as? ArrayList<StreamOption>
+        streamCandidates = fallbacks ?: arrayListOf()
+        currentStreamIndex = 0
 
         // Detect TV mode
         val uiModeManager = getSystemService(Context.UI_MODE_SERVICE) as android.app.UiModeManager
@@ -257,6 +291,8 @@ class PlayerActivity : AppCompatActivity() {
         youtubeOverlay = findViewById(R.id.youtube_overlay)
         progressBar = findViewById(R.id.progressBar)
         errorTextView = findViewById(R.id.errorTextView)
+        nextEpisodeOverlay = findViewById(R.id.nextEpisodeOverlay)
+        nextEpisodeOverlay.setOnClickListener { playNextEpisode() }
 
         // Volume and brightness control overlays
         brightnessControlPanel = findViewById(R.id.brightness_control_panel)
@@ -274,6 +310,7 @@ class PlayerActivity : AppCompatActivity() {
         repeatBtn = playerView.findViewById(R.id.repeatBtn)
         prevBtn = playerView.findViewById(R.id.prevBtn)
         nextBtn = playerView.findViewById(R.id.nextBtn)
+        nextEpisodeBtn = playerView.findViewById(R.id.nextEpisodeBtn)
         videoTitle = playerView.findViewById(R.id.videoTitle)
         exoLiveText = playerView.findViewById(R.id.exo_live_text)
         topController = playerView.findViewById(R.id.topController)
@@ -650,6 +687,7 @@ class PlayerActivity : AppCompatActivity() {
                         }
                         Player.STATE_ENDED -> {
                             updatePlayPauseButton(false)
+                            maybeShowNextEpisodeOverlay()
                         }
                         Player.STATE_IDLE -> {
                             stopProgressBarUpdates()
@@ -781,9 +819,126 @@ class PlayerActivity : AppCompatActivity() {
                     exoLiveText.visibility = View.GONE
                 }
             }
+            maybeShowNextEpisodeOverlay()
         } catch (e: Exception) {
             Log.e(TAG, "Error updating progress bar", e)
         }
+    }
+
+    private fun hasNextEpisode(): Boolean {
+        return StreamResolverHolder.resolver != null &&
+                currentEpisodeIndex in 0 until (episodeList.size - 1)
+    }
+
+    private fun updateNextEpisodeButtonVisibility() {
+        if (::nextEpisodeBtn.isInitialized) {
+            nextEpisodeBtn.visibility = if (hasNextEpisode()) View.VISIBLE else View.GONE
+        }
+    }
+
+    /**
+     * Disney+/Hotstar style: surface the "Next Episode" overlay near the end of a VOD
+     * episode (or once ended), and whenever the controls are visible.
+     */
+    private fun maybeShowNextEpisodeOverlay() {
+        if (!::nextEpisodeOverlay.isInitialized) return
+        if (!hasNextEpisode()) {
+            if (nextEpisodeOverlay.visibility != View.GONE) nextEpisodeOverlay.visibility = View.GONE
+            return
+        }
+        val p = player
+        if (p == null) {
+            nextEpisodeOverlay.visibility = View.GONE
+            return
+        }
+        val duration = p.duration
+        val isVod = duration != C.TIME_UNSET && duration > 0 && !p.isCurrentMediaItemDynamic
+        val remaining = if (isVod) duration - p.currentPosition else Long.MAX_VALUE
+        val nearEnd = isVod && remaining in 1..NEXT_EPISODE_OVERLAY_THRESHOLD_MS
+        val ended = p.playbackState == Player.STATE_ENDED
+        val controllerVisible = try { playerView.isControllerFullyVisible } catch (e: Exception) { false }
+        val show = !isResolvingNextEpisode && (nearEnd || ended || controllerVisible)
+        nextEpisodeOverlay.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
+    private fun playNextEpisode() {
+        if (isResolvingNextEpisode) return
+        if (!hasNextEpisode()) {
+            Toast.makeText(this, "No next episode available", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val resolver = StreamResolverHolder.resolver ?: return
+        val nextIndex = currentEpisodeIndex + 1
+        val nextEpisode = episodeList.getOrNull(nextIndex) ?: return
+
+        isResolvingNextEpisode = true
+        nextEpisodeBtn.isEnabled = false
+        nextEpisodeOverlay.visibility = View.GONE
+        progressBar.visibility = View.VISIBLE
+        errorTextView.visibility = View.GONE
+        Toast.makeText(this, "Loading ${nextEpisode.title}...", Toast.LENGTH_SHORT).show()
+
+        resolver.resolve(
+            providerUrl ?: "",
+            scraperValue ?: "",
+            nextEpisode.link,
+            nextEpisode.type
+        ) { streams, error ->
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                isResolvingNextEpisode = false
+                nextEpisodeBtn.isEnabled = true
+                val first = streams?.firstOrNull()
+                if (first == null || first.url.isBlank()) {
+                    progressBar.visibility = View.GONE
+                    Toast.makeText(this, error ?: "Couldn't load the next episode", Toast.LENGTH_LONG).show()
+                    return@runOnUiThread
+                }
+                streamCandidates = ArrayList(streams)
+                currentStreamIndex = 0
+                loadEpisodeInPlace(nextIndex, nextEpisode.title, first.url, first.headers)
+            }
+        }
+    }
+
+    /**
+     * Switches the current player to a newly resolved episode without recreating the
+     * Activity. Saves the outgoing episode's position, swaps stream + headers, and
+     * rebuilds playback through the existing setup path.
+     */
+    private fun loadEpisodeInPlace(index: Int, title: String, url: String, headers: Map<String, String>?) {
+        releasePlayer()
+        currentEpisodeIndex = index
+        channelName = title
+        channelStreamUrl = normalizeUrl(url)
+        playbackPosition = 0L
+        isPlayerReady = false
+        formatRetryIndex = -1
+
+        intent.putExtra("channel_name", title)
+        intent.putExtra("channel_stream_url", url)
+        intent.putExtra("episode_index", index)
+        val baseMovieLink = intent.getStringExtra("movie_link")?.substringBefore('#')
+        if (!baseMovieLink.isNullOrBlank()) {
+            intent.putExtra("movie_link", "$baseMovieLink#${Uri.encode(title)}")
+        }
+        if (headers != null && headers.isNotEmpty()) {
+            val bundle = Bundle()
+            for ((k, v) in headers) bundle.putString(k, v)
+            intent.putExtra("channel_headers", bundle)
+        } else {
+            intent.removeExtra("channel_headers")
+        }
+
+        errorTextView.visibility = View.GONE
+        playerView.visibility = View.VISIBLE
+        progressBar.visibility = View.VISIBLE
+        nextEpisodeOverlay.visibility = View.GONE
+        if (::videoTitle.isInitialized) videoTitle.text = title
+
+        setupPlayer()
+        updateNextEpisodeButtonVisibility()
+        Toast.makeText(this, "Playing $title", Toast.LENGTH_SHORT).show()
     }
 
     private fun updateLiveIndicator() {
@@ -1219,10 +1374,44 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun showFormatExhaustedError() {
         formatRetryIndex = -1
+        // Before giving up, try the next mirror/quality for this item, if any.
+        if (tryNextStreamCandidate()) return
         errorTextView.visibility = View.VISIBLE
         playerView.visibility = View.GONE
         progressBar.visibility = View.GONE
-        errorTextView.text = "Unable to play this stream. Format not supported."
+        errorTextView.text = "Unable to play this stream. The source may be expired or unsupported. Try another quality or provider."
+    }
+
+    /** Falls back to the next stream mirror/quality for the current item. */
+    private fun tryNextStreamCandidate(): Boolean {
+        if (currentStreamIndex + 1 >= streamCandidates.size) return false
+        currentStreamIndex++
+        val next = streamCandidates[currentStreamIndex]
+        Log.d(TAG, "Falling back to stream ${currentStreamIndex + 1}/${streamCandidates.size}")
+        Toast.makeText(this, "Trying another source...", Toast.LENGTH_SHORT).show()
+        applyStreamAndReload(next.url, next.headers)
+        return true
+    }
+
+    /** Swaps the player to a different stream URL (mirror/quality) without recreating it. */
+    private fun applyStreamAndReload(url: String, headers: Map<String, String>?) {
+        releasePlayer()
+        channelStreamUrl = normalizeUrl(url)
+        formatRetryIndex = -1
+        playbackPosition = 0L
+        isPlayerReady = false
+        intent.putExtra("channel_stream_url", url)
+        if (headers != null && headers.isNotEmpty()) {
+            val bundle = Bundle()
+            for ((k, v) in headers) bundle.putString(k, v)
+            intent.putExtra("channel_headers", bundle)
+        } else {
+            intent.removeExtra("channel_headers")
+        }
+        errorTextView.visibility = View.GONE
+        playerView.visibility = View.VISIBLE
+        progressBar.visibility = View.VISIBLE
+        setupPlayer()
     }
 
     private fun tryAlternativeFormat(streamUrl: String) {
@@ -1265,6 +1454,9 @@ class PlayerActivity : AppCompatActivity() {
                 it.seekTo(newPosition)
             }
         }
+
+        nextEpisodeBtn.setOnClickListener { playNextEpisode() }
+        updateNextEpisodeButtonVisibility()
     }
 
     private fun setupRepeatButton() {
