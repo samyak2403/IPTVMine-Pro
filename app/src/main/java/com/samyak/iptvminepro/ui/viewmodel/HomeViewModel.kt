@@ -29,6 +29,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val runner = VegaProviderRunner(context)
     private val providerRepo = ProviderRepository(context)
 
+    override fun onCleared() {
+        super.onCleared()
+        runner.destroy()
+    }
+
     // ── Exposed state ───────────────────────────────────────────────────────────
 
     private val _isMoviesLoading = MutableStateFlow(false)

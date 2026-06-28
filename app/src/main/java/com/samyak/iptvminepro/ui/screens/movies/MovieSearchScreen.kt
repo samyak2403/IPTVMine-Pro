@@ -43,6 +43,7 @@ fun MovieSearchScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val runner = remember { VegaProviderRunner(context) }
+    DisposableEffect(Unit) { onDispose { runner.destroy() } }
     val providerRepo = remember { ProviderRepository(context) }
 
     // Providers & Scrapers setup

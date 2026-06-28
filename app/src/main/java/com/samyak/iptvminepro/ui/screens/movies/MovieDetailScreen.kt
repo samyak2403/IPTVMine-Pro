@@ -54,6 +54,7 @@ fun MovieDetailScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val runner = remember { VegaProviderRunner(context) }
+    DisposableEffect(Unit) { onDispose { runner.destroy() } }
     val cleanLink = remember(link) { link.split('#')[0] }
 
     // Downloads write to app-specific storage + MediaStore (scoped storage), so no

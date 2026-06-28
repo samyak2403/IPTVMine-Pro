@@ -20,6 +20,11 @@ class MoviesViewModel(application: Application) : AndroidViewModel(application) 
     private val runner = VegaProviderRunner(context)
     private val extensionRepo = ExtensionRepository.getInstance(context)
 
+    override fun onCleared() {
+        super.onCleared()
+        runner.destroy()
+    }
+
     // ── Providers ──────────────────────────────────────────────────────────────
     val vegaProvidersList: List<Provider> =
         repository.getProviders().filter { it.isActive && it.safeType == ProviderType.VEGA }

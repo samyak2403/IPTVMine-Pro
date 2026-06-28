@@ -31,6 +31,11 @@ class CategoryMoviesViewModel(
     private val context = application.applicationContext
     private val runner = VegaProviderRunner(context)
 
+    override fun onCleared() {
+        super.onCleared()
+        runner.destroy()
+    }
+
     // Navigation arguments
     val categoryName: String = savedStateHandle["categoryName"] ?: ""
     val categoryFilter: String = savedStateHandle["categoryFilter"] ?: ""
