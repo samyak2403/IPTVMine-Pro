@@ -649,7 +649,7 @@ fun MainApp() {
             composable(Screen.AddProvider.route) {
                 AddProviderScreen(
                     onProviderAdded = {
-                        channelsViewModel.fetchM3UFile()
+                        channelsViewModel.fetchM3UFile(forceRefresh = true)
                         if (navController.previousBackStackEntry == null) {
                             navController.navigate(Screen.Home.route) {
                                 popUpTo(Screen.AddProvider.route) { inclusive = true }

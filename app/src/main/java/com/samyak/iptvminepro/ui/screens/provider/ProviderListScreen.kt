@@ -44,7 +44,7 @@ fun ProviderListScreen(
         AddProviderScreen(
             onProviderAdded = {
                 editingProvider = null
-                viewModel.fetchM3UFile()
+                viewModel.fetchM3UFile(forceRefresh = true)
             },
             onNavigateBack = { editingProvider = null },
             editUrl = editingProvider!!.url
@@ -158,7 +158,7 @@ fun ProviderListScreen(
                                     onCheckedChange = { isChecked ->
                                         repository.updateProvider(provider.copy(isActive = isChecked))
                                         viewModel.refreshProviders()
-                                        viewModel.fetchM3UFile()
+                                        viewModel.fetchM3UFile(forceRefresh = true)
                                     },
                                     colors = CheckboxDefaults.colors(
                                         checkedColor = Color(0xFF26A69A), // Teal
@@ -241,7 +241,7 @@ fun ProviderListScreen(
                                         onClick = {
                                             repository.removeProvider(provider.url)
                                             viewModel.refreshProviders()
-                                            viewModel.fetchM3UFile()
+                                            viewModel.fetchM3UFile(forceRefresh = true)
                                         },
                                         modifier = Modifier.size(36.dp)
                                     ) {

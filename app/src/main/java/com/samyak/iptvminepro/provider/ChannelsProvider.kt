@@ -54,6 +54,36 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
     private var lastFetchTimestamp = 0L
     private var lastFetchedUrlsHash = 0
 
+    /**
+     * Per-URL failure backoff. Prevents repeated connection attempts (and wasted mobile data)
+     * against sources that are consistently failing. Uses exponential backoff so a broken
+     * provider is retried at most once per backoff window instead of on every screen entry.
+     */
+    private data class FailureState(val failureCount: Int, val nextRetryAt: Long)
+    private val sourceFailureStates = java.util.concurrent.ConcurrentHashMap<String, FailureState>()
+
+    private fun isInBackoff(url: String, now: Long): Boolean {
+        val state = sourceFailureStates[url] ?: return false
+        return now < state.nextRetryAt
+    }
+
+    private fun backoffRemainingSeconds(url: String, now: Long): Long {
+        val state = sourceFailureStates[url] ?: return 0L
+        return ((state.nextRetryAt - now) / 1000L).coerceAtLeast(0L)
+    }
+
+    private fun recordSourceSuccess(url: String) {
+        sourceFailureStates.remove(url)
+    }
+
+    private fun recordSourceFailure(url: String) {
+        val newCount = (sourceFailureStates[url]?.failureCount ?: 0) + 1
+        // Exponential backoff: BASE * 2^(n-1), capped at MAX_BACKOFF_MS
+        val delay = (BASE_BACKOFF_MS shl minOf(newCount - 1, 6)).coerceAtMost(MAX_BACKOFF_MS)
+        sourceFailureStates[url] = FailureState(newCount, System.currentTimeMillis() + delay)
+        Log.w(TAG, "Source failed ($newCount consecutive) — backing off ${delay / 1000}s: $url")
+    }
+
     fun showNewMatchNotification(channel: Channel) {
         notificationCount++
         notificationHelper.showMatchNotification(
@@ -92,6 +122,9 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
         private const val READ_TIMEOUT = 30000
         private const val FETCH_COOLDOWN_MS = 5 * 60 * 1000L // 5 minutes
         private const val MAX_RESPONSE_SIZE = 10 * 1024 * 1024L // 10 MB
+        // Per-source exponential backoff bounds (used to stop hammering failing URLs)
+        private const val BASE_BACKOFF_MS = 60 * 1000L // 1 minute
+        private const val MAX_BACKOFF_MS = 60 * 60 * 1000L // 1 hour cap
         private val VIDEO_EXTENSIONS = setOf(
             ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm",
             ".mpg", ".mpeg", ".3gp", ".ogv", ".rm", ".rmvb"
@@ -133,20 +166,29 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
     fun loadIfNeeded() {
         val now = System.currentTimeMillis()
         val currentUrlsHash = synchronized(sourceUrls) { sourceUrls.hashCode() }
-        val hasData = !_channels.value.isNullOrEmpty()
         val withinCooldown = (now - lastFetchTimestamp) < FETCH_COOLDOWN_MS
         val urlsUnchanged = currentUrlsHash == lastFetchedUrlsHash
+        val fetchAttempted = lastFetchTimestamp != 0L
 
-        if (hasData && withinCooldown && urlsUnchanged) {
-            Log.d(TAG, "loadIfNeeded: skipping fetch — data cached, cooldown active, URLs unchanged")
+        // Skip if we already attempted a fetch recently for the same set of URLs — regardless of
+        // whether it succeeded. This is critical: if every source is failing, _channels stays empty,
+        // and re-fetching on every screen entry would hammer the failing URLs and burn mobile data.
+        if (fetchAttempted && withinCooldown && urlsUnchanged) {
+            Log.d(TAG, "loadIfNeeded: skipping fetch — recent attempt, cooldown active, URLs unchanged")
             return
         }
         fetchM3UFile()
     }
 
-    fun fetchM3UFile() {
+    fun fetchM3UFile(forceRefresh: Boolean = false) {
         refreshProviders()
         fetchJob?.cancel()
+
+        // Explicit user actions (adding/editing/toggling/deleting a provider, manual refresh)
+        // clear any accumulated backoff so the affected sources get a fresh attempt.
+        if (forceRefresh) {
+            sourceFailureStates.clear()
+        }
 
         val sourceUrlsSnapshot = synchronized(sourceUrls) {
             if (sourceUrls.isEmpty()) {
@@ -177,10 +219,23 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                 try {
                     Log.d(TAG, "Fetching source ${index + 1}/$totalSources: $sourceUrl")
 
+                    // Skip sources currently in failure backoff to avoid repeated connection
+                    // attempts and wasted data. Preserve their last known channel count.
+                    val nowMs = System.currentTimeMillis()
+                    if (isInBackoff(sourceUrl, nowMs)) {
+                        val failures = sourceFailureStates[sourceUrl]?.failureCount ?: 0
+                        val waitSec = backoffRemainingSeconds(sourceUrl, nowMs)
+                        errorMessages.append("Source ${index + 1}: Temporarily skipped (failed ${failures}×, retry in ${waitSec}s).\n")
+                        channelCounts[sourceUrl] = repository.getProviders().find { it.url == sourceUrl }?.channelCount ?: 0
+                        Log.d(TAG, "Skipping source ${index + 1} due to backoff (${waitSec}s left): $sourceUrl")
+                        continue
+                    }
+
                     // Pre-flight check: reject direct video file URLs
                     if (isDirectVideoUrl(sourceUrl)) {
                         errorMessages.append("Source ${index + 1}: Rejected — direct video file URLs are not supported. Use an M3U/M3U8 playlist URL.\n")
                         channelCounts[sourceUrl] = 0
+                        recordSourceFailure(sourceUrl)
                         Log.w(TAG, "Rejected video URL: $sourceUrl")
                         continue
                     }
@@ -200,6 +255,7 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                         if (BLOCKED_CONTENT_TYPES.any { contentType.startsWith(it) }) {
                             errorMessages.append("Source ${index + 1}: Rejected — server returned '$contentType' (not a playlist).\n")
                             channelCounts[sourceUrl] = 0
+                            recordSourceFailure(sourceUrl)
                             Log.w(TAG, "Rejected content type '$contentType' for source ${index + 1}")
                             continue
                         }
@@ -209,6 +265,7 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                         if (contentLength > MAX_RESPONSE_SIZE) {
                             errorMessages.append("Source ${index + 1}: Rejected — response too large (${contentLength / 1024 / 1024}MB). Max allowed: ${MAX_RESPONSE_SIZE / 1024 / 1024}MB.\n")
                             channelCounts[sourceUrl] = 0
+                            recordSourceFailure(sourceUrl)
                             Log.w(TAG, "Rejected oversized response (${contentLength} bytes) for source ${index + 1}")
                             continue
                         }
@@ -232,6 +289,7 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                         allChannels.addAll(channels)
                         channelCounts[sourceUrl] = channels.size
                         successCount++
+                        recordSourceSuccess(sourceUrl)
                         
                         // Update persisted count in SharedPreferences
                         val provider = repository.getProviders().find { it.url == sourceUrl }
@@ -243,22 +301,27 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                     } else {
                         errorMessages.append("Source ${index + 1}: HTTP ${connection.responseCode}\n")
                         channelCounts[sourceUrl] = 0
+                        recordSourceFailure(sourceUrl)
                     }
                 } catch (e: java.net.UnknownHostException) {
                     errorMessages.append("Source ${index + 1}: No internet connection or DNS error\n")
                     channelCounts[sourceUrl] = 0
+                    recordSourceFailure(sourceUrl)
                     Log.e(TAG, "Network error for source ${index + 1}", e)
                 } catch (e: java.net.SocketTimeoutException) {
                     errorMessages.append("Source ${index + 1}: Connection timeout\n")
                     channelCounts[sourceUrl] = 0
+                    recordSourceFailure(sourceUrl)
                     Log.e(TAG, "Timeout for source ${index + 1}", e)
                 } catch (e: java.io.IOException) {
                     errorMessages.append("Source ${index + 1}: Network I/O error - ${e.message}\n")
                     channelCounts[sourceUrl] = 0
+                    recordSourceFailure(sourceUrl)
                     Log.e(TAG, "I/O error for source ${index + 1}", e)
                 } catch (e: Exception) {
                     errorMessages.append("Source ${index + 1}: ${e.localizedMessage ?: e.message ?: "Unknown error"}\n")
                     channelCounts[sourceUrl] = 0
+                    recordSourceFailure(sourceUrl)
                     Log.e(TAG, "Error fetching source ${index + 1}", e)
                 } finally {
                     connection?.disconnect()
@@ -293,6 +356,8 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
     fun fetchFromSingleSource(sourceUrl: String) {
         fetchJob?.cancel()
         _isLoading.postValue(true)
+        // Explicit single-source action: clear this URL's backoff so it gets a fresh attempt.
+        sourceFailureStates.remove(sourceUrl)
 
         fetchJob = viewModelScope.launch(Dispatchers.IO) {
             var connection: HttpURLConnection? = null
@@ -352,7 +417,8 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                     }
 
                     val channels = parsePlaylistContent(content)
-                    
+                    recordSourceSuccess(sourceUrl)
+
                     // Update persisted count in SharedPreferences
                     val provider = repository.getProviders().find { it.url == sourceUrl }
                     if (provider != null) {
@@ -372,6 +438,7 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                         _error.value = null
                     }
                 } else {
+                    recordSourceFailure(sourceUrl)
                     withContext(Dispatchers.Main) {
                         val currentMap = _providerChannelCounts.value.orEmpty().toMutableMap()
                         currentMap[sourceUrl] = 0
@@ -381,6 +448,7 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                     }
                 }
             } catch (e: java.net.UnknownHostException) {
+                recordSourceFailure(sourceUrl)
                 withContext(Dispatchers.Main) {
                     val currentMap = _providerChannelCounts.value.orEmpty().toMutableMap()
                     currentMap[sourceUrl] = 0
@@ -388,6 +456,7 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                     _error.value = "Network Error: No internet connection or unable to resolve host. Please check your connection."
                 }
             } catch (e: java.net.SocketTimeoutException) {
+                recordSourceFailure(sourceUrl)
                 withContext(Dispatchers.Main) {
                     val currentMap = _providerChannelCounts.value.orEmpty().toMutableMap()
                     currentMap[sourceUrl] = 0
@@ -395,6 +464,7 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                     _error.value = "Network Error: Connection timeout. Please check your internet speed."
                 }
             } catch (e: java.io.IOException) {
+                recordSourceFailure(sourceUrl)
                 withContext(Dispatchers.Main) {
                     val currentMap = _providerChannelCounts.value.orEmpty().toMutableMap()
                     currentMap[sourceUrl] = 0
@@ -402,6 +472,7 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                     _error.value = "Network Error: ${e.message ?: "Unable to connect to server"}"
                 }
             } catch (e: Exception) {
+                recordSourceFailure(sourceUrl)
                 withContext(Dispatchers.Main) {
                     val currentMap = _providerChannelCounts.value.orEmpty().toMutableMap()
                     currentMap[sourceUrl] = 0
