@@ -131,6 +131,12 @@ fun AddProviderScreen(
                 if (title.isBlank() || url.isBlank()) {
                     Toast.makeText(context, context.getString(R.string.msg_required_fields), Toast.LENGTH_SHORT).show()
                 } else {
+                    // Reject direct video file URLs
+                    val videoExtensions = setOf(".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mpg", ".mpeg", ".3gp")
+                    val urlPath = url.trim().lowercase().split("?").first().split("#").first()
+                    if (providerType == ProviderType.IPTV && videoExtensions.any { urlPath.endsWith(it) }) {
+                        Toast.makeText(context, "Direct video file URLs are not supported. Please use an M3U/M3U8 playlist URL.", Toast.LENGTH_LONG).show()
+                    } else {
                     val provider = Provider(
                         title = title.trim(),
                         url = url.trim(),
@@ -145,6 +151,7 @@ fun AddProviderScreen(
                         Toast.makeText(context, context.getString(R.string.msg_provider_updated), Toast.LENGTH_SHORT).show()
                     }
                     onProviderAdded()
+                    }
                 }
             },
             modifier = Modifier

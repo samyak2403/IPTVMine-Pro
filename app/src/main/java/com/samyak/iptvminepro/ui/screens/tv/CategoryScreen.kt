@@ -43,9 +43,7 @@ fun CategoryScreen(
     val errorMessage by viewModel.error.observeAsState(null)
 
     LaunchedEffect(Unit) {
-        if (viewModel.channels.value.isNullOrEmpty()) {
-            viewModel.fetchM3UFile()
-        }
+        viewModel.loadIfNeeded()
     }
 
     val categoriesWithCount = remember(channels) {

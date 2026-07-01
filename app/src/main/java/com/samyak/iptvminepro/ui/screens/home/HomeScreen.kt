@@ -56,7 +56,7 @@ fun HomeScreen(
     val installedExtensionsState by extensionRepo.installedExtensionsFlow.collectAsState()
 
     LaunchedEffect(Unit) {
-        viewModel.fetchM3UFile()
+        viewModel.loadIfNeeded()
     }
 
     // Delegate loading to ViewModel – internal guards skip the call on back-navigation

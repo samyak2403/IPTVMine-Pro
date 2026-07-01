@@ -49,6 +49,21 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
     private val notificationHelper = NotificationHelper(application)
     private var notificationCount = 0
 
+    // Fetch cooldown: prevent repeated network requests
+    private var lastFetchTimestamp = 0L
+    private var lastFetchedUrlsHash = 0
+    private companion object FetchConfig {
+        private const val FETCH_COOLDOWN_MS = 5 * 60 * 1000L // 5 minutes
+        private const val MAX_RESPONSE_SIZE = 10 * 1024 * 1024L // 10 MB
+        private val VIDEO_EXTENSIONS = setOf(
+            ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm",
+            ".mpg", ".mpeg", ".3gp", ".ogv", ".rm", ".rmvb"
+        )
+        private val BLOCKED_CONTENT_TYPES = setOf(
+            "video/", "audio/", "image/", "application/octet-stream"
+        )
+    }
+
     fun showNewMatchNotification(channel: Channel) {
         notificationCount++
         notificationHelper.showMatchNotification(
@@ -82,7 +97,7 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
 
     companion object {
         private const val TAG = "ChannelsProvider"
-        private const val DEFAULT_LOGO_URL = "assets/images/ic_tv.png"
+        private const val DEFAULT_LOGO_URL = ""
         private const val CONNECT_TIMEOUT = 30000
         private const val READ_TIMEOUT = 30000
     }
@@ -112,6 +127,24 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * Load channels only if needed — skips fetching if data is cached and cooldown hasn't expired.
+     * Use this for automatic/screen-entry fetches. Use [fetchM3UFile] for explicit user-triggered refreshes.
+     */
+    fun loadIfNeeded() {
+        val now = System.currentTimeMillis()
+        val currentUrlsHash = synchronized(sourceUrls) { sourceUrls.hashCode() }
+        val hasData = !_channels.value.isNullOrEmpty()
+        val withinCooldown = (now - lastFetchTimestamp) < FETCH_COOLDOWN_MS
+        val urlsUnchanged = currentUrlsHash == lastFetchedUrlsHash
+
+        if (hasData && withinCooldown && urlsUnchanged) {
+            Log.d(TAG, "loadIfNeeded: skipping fetch — data cached, cooldown active, URLs unchanged")
+            return
+        }
+        fetchM3UFile()
+    }
+
     fun fetchM3UFile() {
         refreshProviders()
         fetchJob?.cancel()
@@ -128,6 +161,9 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
             sourceUrls.toList()
         }
 
+        lastFetchTimestamp = System.currentTimeMillis()
+        lastFetchedUrlsHash = sourceUrlsSnapshot.hashCode()
+
         _isLoading.postValue(true)
 
         fetchJob = viewModelScope.launch(Dispatchers.IO) {
@@ -141,7 +177,15 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                 var connection: HttpURLConnection? = null
                 try {
                     Log.d(TAG, "Fetching source ${index + 1}/$totalSources: $sourceUrl")
-                    
+
+                    // Pre-flight check: reject direct video file URLs
+                    if (isDirectVideoUrl(sourceUrl)) {
+                        errorMessages.append("Source ${index + 1}: Rejected — direct video file URLs are not supported. Use an M3U/M3U8 playlist URL.\n")
+                        channelCounts[sourceUrl] = 0
+                        Log.w(TAG, "Rejected video URL: $sourceUrl")
+                        continue
+                    }
+
                     val url = URL(sourceUrl)
                     connection = url.openConnection() as HttpURLConnection
                     connection.connectTimeout = CONNECT_TIMEOUT
@@ -152,10 +196,34 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                     connection.instanceFollowRedirects = true
 
                     if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                        // Validate Content-Type: reject video/audio/image responses
+                        val contentType = connection.contentType?.lowercase() ?: ""
+                        if (BLOCKED_CONTENT_TYPES.any { contentType.startsWith(it) }) {
+                            errorMessages.append("Source ${index + 1}: Rejected — server returned '$contentType' (not a playlist).\n")
+                            channelCounts[sourceUrl] = 0
+                            Log.w(TAG, "Rejected content type '$contentType' for source ${index + 1}")
+                            continue
+                        }
+
+                        // Validate Content-Length: reject responses larger than 10MB
+                        val contentLength = connection.contentLengthLong
+                        if (contentLength > MAX_RESPONSE_SIZE) {
+                            errorMessages.append("Source ${index + 1}: Rejected — response too large (${contentLength / 1024 / 1024}MB). Max allowed: ${MAX_RESPONSE_SIZE / 1024 / 1024}MB.\n")
+                            channelCounts[sourceUrl] = 0
+                            Log.w(TAG, "Rejected oversized response (${contentLength} bytes) for source ${index + 1}")
+                            continue
+                        }
+
                         val content = BufferedReader(InputStreamReader(connection.inputStream)).use { reader ->
                             val stringBuilder = StringBuilder()
                             var line: String?
+                            var totalRead = 0L
                             while (reader.readLine().also { line = it } != null) {
+                                totalRead += (line?.length ?: 0) + 1
+                                if (totalRead > MAX_RESPONSE_SIZE) {
+                                    Log.w(TAG, "Aborting read — response exceeded $MAX_RESPONSE_SIZE bytes for source ${index + 1}")
+                                    break
+                                }
                                 stringBuilder.append(line).append("\n")
                             }
                             stringBuilder.toString()
@@ -230,6 +298,15 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
         fetchJob = viewModelScope.launch(Dispatchers.IO) {
             var connection: HttpURLConnection? = null
             try {
+                // Pre-flight check: reject direct video file URLs
+                if (isDirectVideoUrl(sourceUrl)) {
+                    withContext(Dispatchers.Main) {
+                        _error.value = "Error: Direct video file URLs are not supported. Use an M3U/M3U8 playlist URL."
+                        _isLoading.value = false
+                    }
+                    return@launch
+                }
+
                 val url = URL(sourceUrl)
                 connection = url.openConnection() as HttpURLConnection
                 connection.connectTimeout = CONNECT_TIMEOUT
@@ -240,10 +317,36 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                 connection.instanceFollowRedirects = true
 
                 if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                    // Validate Content-Type: reject video/audio/image responses
+                    val contentType = connection.contentType?.lowercase() ?: ""
+                    if (BLOCKED_CONTENT_TYPES.any { contentType.startsWith(it) }) {
+                        withContext(Dispatchers.Main) {
+                            _error.value = "Error: Server returned '$contentType' — this is not a playlist file."
+                            _isLoading.value = false
+                        }
+                        return@launch
+                    }
+
+                    // Validate Content-Length: reject responses larger than 10MB
+                    val contentLength = connection.contentLengthLong
+                    if (contentLength > MAX_RESPONSE_SIZE) {
+                        withContext(Dispatchers.Main) {
+                            _error.value = "Error: Response too large (${contentLength / 1024 / 1024}MB). This doesn't appear to be a playlist."
+                            _isLoading.value = false
+                        }
+                        return@launch
+                    }
+
                     val content = BufferedReader(InputStreamReader(connection.inputStream)).use { reader ->
                         val stringBuilder = StringBuilder()
                         var line: String?
+                        var totalRead = 0L
                         while (reader.readLine().also { line = it } != null) {
+                            totalRead += (line?.length ?: 0) + 1
+                            if (totalRead > MAX_RESPONSE_SIZE) {
+                                Log.w(TAG, "Aborting read — response exceeded $MAX_RESPONSE_SIZE bytes")
+                                break
+                            }
                             stringBuilder.append(line).append("\n")
                         }
                         stringBuilder.toString()
@@ -378,27 +481,35 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
         
         // Check if it's M3U format
         val isM3U = trimmed.contains("#EXTM3U") || trimmed.contains("#EXTINF")
+
+        // Check if it's an HLS master playlist (contains stream variant info but no EXTINF channel list)
+        val isHlsMaster = trimmed.contains("#EXT-X-STREAM-INF") && !trimmed.contains("#EXTINF")
         
         // Check if it's JSON format (contains matches and starts/contains brace)
         val hasBraces = trimmed.contains("{") || trimmed.contains("[")
         val hasMatches = trimmed.contains("\"matches\"") || trimmed.contains("\"event_category\"") || trimmed.contains("\"channels\"") || trimmed.contains("\"streams\"")
         
-        return if (!isM3U && hasBraces && hasMatches) {
-            // Extract the clean JSON part (from first brace/bracket to last brace/bracket)
-            val firstBrace = trimmed.indexOf('{')
-            val firstBracket = trimmed.indexOf('[')
-            val jsonStart = when {
-                firstBrace != -1 && firstBracket != -1 -> minOf(firstBrace, firstBracket)
-                firstBrace != -1 -> firstBrace
-                else -> firstBracket
+        return when {
+            isHlsMaster -> {
+                // HLS master playlist: parse stream variants
+                parseHlsMasterPlaylist(content)
             }
-            if (jsonStart != -1) {
-                parseJSONFile(trimmed.substring(jsonStart).trim())
-            } else {
-                parseM3UFile(content)
+            !isM3U && hasBraces && hasMatches -> {
+                // Extract the clean JSON part (from first brace/bracket to last brace/bracket)
+                val firstBrace = trimmed.indexOf('{')
+                val firstBracket = trimmed.indexOf('[')
+                val jsonStart = when {
+                    firstBrace != -1 && firstBracket != -1 -> minOf(firstBrace, firstBracket)
+                    firstBrace != -1 -> firstBrace
+                    else -> firstBracket
+                }
+                if (jsonStart != -1) {
+                    parseJSONFile(trimmed.substring(jsonStart).trim())
+                } else {
+                    parseM3UFile(content)
+                }
             }
-        } else {
-            parseM3UFile(content)
+            else -> parseM3UFile(content)
         }
     }
 
@@ -554,6 +665,58 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                url.contains(".mkv") || url.contains(".ts") || url.contains(".mpd") ||
                url.contains("stream") || url.contains("live") ||
                (url.startsWith("http") && url.split(":").size >= 3)
+    }
+
+    /**
+     * Check if a URL points directly to a video file (not a playlist).
+     * These should be rejected as provider URLs since downloading them
+     * into memory causes OOM crashes and high data consumption.
+     */
+    private fun isDirectVideoUrl(url: String): Boolean {
+        val lowerUrl = url.lowercase().split("?").first().split("#").first()
+        return VIDEO_EXTENSIONS.any { lowerUrl.endsWith(it) }
+    }
+
+    /**
+     * Parse an HLS master playlist that contains #EXT-X-STREAM-INF entries.
+     * Extracts stream variant URLs as individual channels.
+     */
+    private fun parseHlsMasterPlaylist(content: String): List<Channel> {
+        val channels = mutableListOf<Channel>()
+        val lines = content.split("\n")
+        var streamInfo: String? = null
+
+        for (line in lines) {
+            val trimmed = line.trim()
+            when {
+                trimmed.startsWith("#EXT-X-STREAM-INF:") -> {
+                    streamInfo = trimmed
+                }
+                streamInfo != null && trimmed.isNotEmpty() && !trimmed.startsWith("#") -> {
+                    // Extract bandwidth and resolution from stream info
+                    val bandwidth = Regex("BANDWIDTH=(\\d+)").find(streamInfo)?.groupValues?.get(1)?.toLongOrNull()
+                    val resolution = Regex("RESOLUTION=(\\S+)").find(streamInfo)?.groupValues?.get(1) ?: "Unknown"
+                    val bandwidthLabel = if (bandwidth != null) "${bandwidth / 1000}kbps" else "Unknown"
+                    val name = "Stream $resolution ($bandwidthLabel)"
+
+                    val streamUrl = if (isValidUrl(trimmed)) trimmed else ""
+                    if (streamUrl.isNotEmpty()) {
+                        channels.add(
+                            Channel(
+                                name = name,
+                                logoUrl = DEFAULT_LOGO_URL,
+                                streamUrl = streamUrl,
+                                category = "HLS Streams"
+                            )
+                        )
+                    }
+                    streamInfo = null
+                }
+            }
+        }
+
+        Log.d(TAG, "Parsed HLS master playlist: ${channels.size} stream variants")
+        return channels
     }
 
     fun filterChannels(query: String) {

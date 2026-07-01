@@ -44,9 +44,7 @@ fun TelevisionScreen(
     var selectedCategory by remember { mutableStateOf("All") }
 
     LaunchedEffect(Unit) {
-        if (viewModel.channels.value.isNullOrEmpty()) {
-            viewModel.fetchM3UFile()
-        }
+        viewModel.loadIfNeeded()
     }
 
     LaunchedEffect(searchQuery, selectedCategory) {

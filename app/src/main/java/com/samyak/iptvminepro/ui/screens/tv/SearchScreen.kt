@@ -48,9 +48,7 @@ fun SearchScreen(
     }
 
     LaunchedEffect(Unit) {
-        if (viewModel.channels.value.isNullOrEmpty()) {
-            viewModel.fetchM3UFile()
-        }
+        viewModel.loadIfNeeded()
     }
 
     Scaffold(
