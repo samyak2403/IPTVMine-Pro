@@ -126,7 +126,13 @@ fun ProviderListScreen(
                         }
                     }
 
-                    items(providers) { provider ->
+                    items(providers, key = { it.url }) { provider ->
+                        // Optimistic checkbox state: flips instantly on tap and re-syncs whenever
+                        // the persisted provider state changes (LiveData postValue is async, so
+                        // binding the Checkbox directly to it made taps feel unresponsive).
+                        var isActiveState by remember(provider.url, provider.isActive) {
+                            mutableStateOf(provider.isActive)
+                        }
                         val channelCount = if (provider.isActive) {
                             providerChannelCounts[provider.url] ?: provider.channelCount
                         } else {
@@ -134,6 +140,8 @@ fun ProviderListScreen(
                         }
                         val statusText = if (provider.safeType == com.samyak.iptvminepro.model.ProviderType.VEGA) {
                             "VOD Scraper"
+                        } else if (provider.safeType == com.samyak.iptvminepro.model.ProviderType.VIDEO) {
+                            "Direct Video"
                         } else if (provider.isActive && channelCount == 0 && isLoading) {
                             stringResource(id = R.string.loading)
                         } else {
@@ -154,8 +162,9 @@ fun ProviderListScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Checkbox(
-                                    checked = provider.isActive,
+                                    checked = isActiveState,
                                     onCheckedChange = { isChecked ->
+                                        isActiveState = isChecked
                                         repository.updateProvider(provider.copy(isActive = isChecked))
                                         viewModel.refreshProviders()
                                         viewModel.fetchM3UFile(forceRefresh = true)

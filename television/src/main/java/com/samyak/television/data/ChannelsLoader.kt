@@ -26,13 +26,20 @@ object ChannelsLoader {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    suspend fun fetchChannels(url: String): List<Channel> {
+    suspend fun fetchChannels(url: String, providerTitle: String? = null): List<Channel> {
         return try {
-            // Pre-flight check: reject direct video file URLs
+            // Pre-flight check: handle direct video file URLs
             val lowerUrl = url.lowercase().split("?").first().split("#").first()
             if (VIDEO_EXTENSIONS.any { lowerUrl.endsWith(it) }) {
-                Log.w(TAG, "Rejected direct video URL: $url")
-                return emptyList()
+                val name = providerTitle ?: lowerUrl.substringAfterLast("/").substringBeforeLast(".")
+                return listOf(
+                    Channel(
+                        name = name,
+                        logoUrl = DEFAULT_LOGO_URL,
+                        streamUrl = url,
+                        category = "Direct Videos"
+                    )
+                )
             }
 
             val request = Request.Builder()

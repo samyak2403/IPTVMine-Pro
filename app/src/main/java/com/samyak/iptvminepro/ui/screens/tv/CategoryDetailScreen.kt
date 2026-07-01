@@ -27,6 +27,9 @@ fun CategoryDetailScreen(
     val isLoading by viewModel.isLoading.observeAsState(false)
     val context = androidx.compose.ui.platform.LocalContext.current
 
+    // Hoist resource string so it isn't queried via LocalContext inside the click lambda
+    val msgMatchNotLive = stringResource(id = R.string.msg_match_not_live)
+
     val filteredChannels = remember(channels, categoryName) {
         channels.filter { it.category == categoryName }
     }
@@ -60,7 +63,7 @@ fun CategoryDetailScreen(
                         channel = channel,
                         onClick = {
                             if (channel.streamUrl.isEmpty()) {
-                                android.widget.Toast.makeText(context, context.getString(R.string.msg_match_not_live), android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, msgMatchNotLive, android.widget.Toast.LENGTH_SHORT).show()
                             } else {
                                 com.samyak.player.PlayerActivity.start(context, channel.name, channel.streamUrl)
                             }

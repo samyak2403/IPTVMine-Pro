@@ -23,6 +23,28 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 
 import com.samyak.iptvminepro.model.ProviderType
 
+private val VIDEO_URL_EXTENSIONS = setOf(
+    ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm",
+    ".mpg", ".mpeg", ".3gp", ".ogv", ".m4v", ".rm", ".rmvb"
+)
+
+/** True when the URL points directly at a video file (not a playlist). */
+private fun isDirectVideoUrlInput(url: String): Boolean {
+    val path = url.trim().lowercase().substringBefore("?").substringBefore("#")
+    return VIDEO_URL_EXTENSIONS.any { path.endsWith(it) }
+}
+
+/** Auto-detect the provider type from the first URL and the title. */
+private fun detectProviderType(firstUrl: String, title: String): ProviderType {
+    val trimmed = firstUrl.trim()
+    return when {
+        trimmed.startsWith("@") || trimmed.contains("vega", ignoreCase = true) ||
+            title.contains("vega", ignoreCase = true) -> ProviderType.VEGA
+        isDirectVideoUrlInput(trimmed) -> ProviderType.VIDEO
+        else -> ProviderType.IPTV
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddProviderScreen(
@@ -51,6 +73,11 @@ fun AddProviderScreen(
     }
 
     val scrollState = rememberScrollState()
+
+    // Hoist resource strings so they aren't queried via LocalContext inside the click lambda
+    val msgRequiredFields = stringResource(id = R.string.msg_required_fields)
+    val msgProviderAdded = stringResource(id = R.string.msg_provider_added)
+    val msgProviderUpdated = stringResource(id = R.string.msg_provider_updated)
 
     Box(
         modifier = Modifier
@@ -87,12 +114,7 @@ fun AddProviderScreen(
             value = title,
             onValueChange = { 
                 title = it
-                val trimmedUrl = url.trim()
-                providerType = if (trimmedUrl.startsWith("@") || trimmedUrl.contains("vega", ignoreCase = true) || it.contains("vega", ignoreCase = true)) {
-                    ProviderType.VEGA
-                } else {
-                    ProviderType.IPTV
-                }
+                providerType = detectProviderType(url.trim(), it)
             },
             label = { Text(stringResource(id = R.string.label_provider_title)) },
             placeholder = { Text(if (providerType == ProviderType.IPTV) stringResource(id = R.string.placeholder_provider_title) else "e.g. Vega-Org Scraper") },
@@ -102,17 +124,28 @@ fun AddProviderScreen(
 
         OutlinedTextField(
             value = url,
-            onValueChange = { 
-                url = it
-                val trimmed = it.trim()
-                providerType = if (trimmed.startsWith("@") || trimmed.contains("vega", ignoreCase = true) || title.contains("vega", ignoreCase = true)) {
-                    ProviderType.VEGA
-                } else {
-                    ProviderType.IPTV
-                }
+            onValueChange = { newValue ->
+                url = newValue
+                providerType = detectProviderType(newValue.trim(), title)
             },
-            label = { Text(if (providerType == ProviderType.IPTV) stringResource(id = R.string.label_playlist_url) else "Provider URL or identifier (e.g. @vega-org)") },
-            placeholder = { Text(if (providerType == ProviderType.IPTV) stringResource(id = R.string.placeholder_url) else "@vega-org or URL") },
+            label = { 
+                Text(
+                    when (providerType) {
+                        ProviderType.IPTV -> stringResource(id = R.string.label_playlist_url)
+                        ProviderType.VIDEO -> "Video URL (.mp4, .mkv, ...)"
+                        else -> "Provider URL or identifier"
+                    }
+                ) 
+            },
+            placeholder = {
+                Text(
+                    when (providerType) {
+                        ProviderType.VEGA -> "@vega-org or URL"
+                        ProviderType.VIDEO -> "http://.../video.mp4"
+                        else -> stringResource(id = R.string.placeholder_url)
+                    }
+                )
+            },
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
             singleLine = true
         )
@@ -128,30 +161,24 @@ fun AddProviderScreen(
 
         Button(
             onClick = {
-                if (title.isBlank() || url.isBlank()) {
-                    Toast.makeText(context, context.getString(R.string.msg_required_fields), Toast.LENGTH_SHORT).show()
+                val trimmedUrl = url.trim()
+                if (title.isBlank() || trimmedUrl.isEmpty()) {
+                    Toast.makeText(context, msgRequiredFields, Toast.LENGTH_SHORT).show()
                 } else {
-                    // Reject direct video file URLs
-                    val videoExtensions = setOf(".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mpg", ".mpeg", ".3gp")
-                    val urlPath = url.trim().lowercase().split("?").first().split("#").first()
-                    if (providerType == ProviderType.IPTV && videoExtensions.any { urlPath.endsWith(it) }) {
-                        Toast.makeText(context, "Direct video file URLs are not supported. Please use an M3U/M3U8 playlist URL.", Toast.LENGTH_LONG).show()
-                    } else {
                     val provider = Provider(
                         title = title.trim(),
-                        url = url.trim(),
+                        url = trimmedUrl,
                         userAgent = userAgent.trim().takeIf { it.isNotEmpty() },
                         type = providerType
                     )
                     if (editUrl == null) {
                         repository.addProvider(provider)
-                        Toast.makeText(context, context.getString(R.string.msg_provider_added), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, msgProviderAdded, Toast.LENGTH_SHORT).show()
                     } else {
                         repository.updateProviderWithUrl(editUrl, provider)
-                        Toast.makeText(context, context.getString(R.string.msg_provider_updated), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, msgProviderUpdated, Toast.LENGTH_SHORT).show()
                     }
                     onProviderAdded()
-                    }
                 }
             },
             modifier = Modifier

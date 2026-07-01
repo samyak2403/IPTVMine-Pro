@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
@@ -148,6 +149,7 @@ sealed class Screen(val route: String, val label: String, val icon: @Composable 
     object AddProvider : Screen("add_provider", "Add Provider", { })
     object AddProviderHelp : Screen("add_provider_help", "Add Provider Sources", { })
     object ProviderList : Screen("provider_list", "Provider List", { })
+    object VideoList : Screen("video_list", "My Videos", { })
     object CategoryDetail : Screen("category_detail/{categoryName}", "Category Detail", { })
     object About : Screen("about", "About App", { })
     object Extensions : Screen("extensions", "Extensions", { })
@@ -171,6 +173,9 @@ fun MainApp() {
     val sharedPrefs = remember(context) { context.getSharedPreferences("app_settings", Context.MODE_PRIVATE) }
     var firstTimeHelp by remember { mutableStateOf(sharedPrefs.getBoolean("first_time_add_provider_help", true)) }
     val showHelpTapTarget = firstTimeHelp && currentRoute == Screen.AddProvider.route
+
+    // Hoist resource string so it isn't queried via LocalContext inside the click lambda
+    val msgStillOffline = stringResource(id = R.string.msg_still_offline)
 
     var onWatchHistoryClearClick by remember { mutableStateOf<(() -> Unit)?>(null) }
     val items = listOf(
@@ -197,7 +202,7 @@ fun MainApp() {
                 if (!com.samyak.iptvminepro.utils.NetworkUtils.isNetworkAvailable(context)) {
                     android.widget.Toast.makeText(
                         context,
-                        context.getString(R.string.msg_still_offline),
+                        msgStillOffline,
                         android.widget.Toast.LENGTH_SHORT
                     ).show()
                 }
@@ -232,7 +237,8 @@ fun MainApp() {
                 currentRoute != Screen.BugReport.route &&
                 currentRoute != Screen.WatchHistory.route &&
                 currentRoute != Screen.Legal.route &&
-                currentRoute != "pairing"
+                currentRoute != "pairing" &&
+                currentRoute != Screen.VideoList.route
             ) {
                 Box(
                     modifier = Modifier
@@ -320,7 +326,8 @@ fun MainApp() {
                 currentRoute != Screen.MovieDetail.route &&
                 currentRoute != Screen.CategoryMovies.route &&
                 currentRoute != Screen.Extensions.route &&
-                currentRoute != Screen.MovieSearch.route
+                currentRoute != Screen.MovieSearch.route &&
+                currentRoute != Screen.VideoList.route
             ) {
                 TopAppBar(
                     title = {
@@ -452,7 +459,8 @@ fun MainApp() {
         val isFullScreenRoute = currentRoute == Screen.MovieDetail.route ||
             currentRoute == Screen.CategoryMovies.route ||
             currentRoute == Screen.Extensions.route ||
-            currentRoute == Screen.MovieSearch.route
+            currentRoute == Screen.MovieSearch.route ||
+            currentRoute == Screen.VideoList.route
 
         NavHost(
             navController = navController,
@@ -639,6 +647,13 @@ fun MainApp() {
                     viewModel = channelsViewModel,
                     onNavigateBack = { navController.popBackStack() },
                     onAddProvider = { navController.navigate(Screen.AddProvider.route) }
+                )
+            }
+            composable(Screen.VideoList.route) {
+                com.samyak.iptvminepro.ui.screens.video.VideoListScreen(
+                    viewModel = channelsViewModel,
+                    onNavigateBack = { navController.popBackStack() },
+                    onAddProviderClick = { navController.navigate(Screen.AddProvider.route) }
                 )
             }
             composable("pairing") {

@@ -55,6 +55,10 @@ fun BugReportScreen() {
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
 
+    // Hoist resource strings so they aren't queried via LocalContext inside click lambdas
+    val msgBugTitleDescRequired = stringResource(id = R.string.msg_bug_title_desc_required)
+    val msgBugCategoryRequired = stringResource(id = R.string.msg_bug_category_required)
+
     var discordWebhookUrl by remember { mutableStateOf(DISCORD_WEBHOOK_URL) }
     var telegramBotToken by remember { mutableStateOf(TELEGRAM_BOT_TOKEN) }
     var telegramChatId by remember { mutableStateOf(TELEGRAM_CHAT_ID) }
@@ -261,9 +265,9 @@ fun BugReportScreen() {
             Button(
                 onClick = {
                     if (title.isBlank() || description.isBlank()) {
-                        Toast.makeText(context, context.getString(R.string.msg_bug_title_desc_required), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, msgBugTitleDescRequired, Toast.LENGTH_SHORT).show()
                     } else if (selectedCategory.isBlank()) {
-                        Toast.makeText(context, context.getString(R.string.msg_bug_category_required), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, msgBugCategoryRequired, Toast.LENGTH_SHORT).show()
                     } else {
                         isSending = true
                         scope.launch(Dispatchers.IO) {

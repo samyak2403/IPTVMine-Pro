@@ -84,6 +84,24 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
         Log.w(TAG, "Source failed ($newCount consecutive) — backing off ${delay / 1000}s: $url")
     }
 
+    /**
+     * Decide whether a response Content-Type is a real media/binary file that should be
+     * rejected (to avoid downloading videos into memory). M3U/M3U8 playlists are frequently
+     * served as audio/x-mpegurl, application/x-mpegurl, or application/octet-stream, so those
+     * must be allowed. Only genuine video/image/audio-media types are blocked.
+     */
+    private fun isBlockedContentType(rawContentType: String?): Boolean {
+        val ct = rawContentType?.lowercase()?.substringBefore(";")?.trim().orEmpty()
+        if (ct.isEmpty()) return false                       // unknown — allow, size caps protect us
+        if (PLAYLIST_CONTENT_TYPES.contains(ct)) return false // explicit playlist types
+        if (ct.contains("mpegurl")) return false             // any *mpegurl* variant is a playlist
+        if (ct.startsWith("text/")) return false             // text/plain, text/html playlists
+        if (ct == "application/json" || ct.endsWith("+json")) return false
+        if (ct == "application/xml" || ct.endsWith("+xml")) return false
+        // Block genuine media files that would waste data / memory
+        return ct.startsWith("video/") || ct.startsWith("image/") || ct.startsWith("audio/")
+    }
+
     fun showNewMatchNotification(channel: Channel) {
         notificationCount++
         notificationHelper.showMatchNotification(
@@ -129,8 +147,37 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
             ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm",
             ".mpg", ".mpeg", ".3gp", ".ogv", ".rm", ".rmvb"
         )
-        private val BLOCKED_CONTENT_TYPES = setOf(
-            "video/", "audio/", "image/", "application/octet-stream"
+        // Content types that ARE valid playlists and must never be rejected.
+        // Note: M3U/M3U8 files are commonly served as audio/x-mpegurl or application/x-mpegurl.
+        private val PLAYLIST_CONTENT_TYPES = setOf(
+            "audio/x-mpegurl", "audio/mpegurl",
+            "application/x-mpegurl", "application/mpegurl",
+            "application/vnd.apple.mpegurl", "application/vnd.apple.mpegurl.audio",
+            "application/octet-stream"
+        )
+
+        // Generic JSON field-name candidates used to parse arbitrary IPTV JSON playlists.
+        private val JSON_URL_KEYS = listOf(
+            "url", "link", "stream", "stream_url", "streamurl", "streamUrl",
+            "source_url", "adfree_url", "dai_url", "file", "playback_url",
+            "manifest", "hls", "m3u8", "playbackUrl", "streamLink"
+        )
+        private val JSON_NAME_KEYS = listOf(
+            "name", "title", "channel", "channel_name", "channelName",
+            "tvg-name", "tvg_name", "tvgName", "display_name"
+        )
+        private val JSON_LOGO_KEYS = listOf(
+            "logo", "logo_url", "logoUrl", "tvg-logo", "tvg_logo", "tvgLogo",
+            "icon", "image", "img", "thumbnail", "poster", "src"
+        )
+        private val JSON_CATEGORY_KEYS = listOf(
+            "group", "group-title", "group_title", "groupTitle", "category",
+            "genre", "event_category", "categoryName", "type"
+        )
+        // Container/wrapper keys that should NOT be used as a category name.
+        private val JSON_CONTAINER_KEYS = setOf(
+            "channels", "streams", "data", "items", "list", "results", "result",
+            "playlist", "playlists", "stations", "entries", "categories", "content"
         )
     }
 
@@ -231,12 +278,25 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                         continue
                     }
 
-                    // Pre-flight check: reject direct video file URLs
+                    // Handle direct video URLs by creating a single virtual channel
                     if (isDirectVideoUrl(sourceUrl)) {
-                        errorMessages.append("Source ${index + 1}: Rejected — direct video file URLs are not supported. Use an M3U/M3U8 playlist URL.\n")
-                        channelCounts[sourceUrl] = 0
-                        recordSourceFailure(sourceUrl)
-                        Log.w(TAG, "Rejected video URL: $sourceUrl")
+                        val provider = repository.getProviders().find { it.url == sourceUrl }
+                        val name = provider?.title ?: sourceUrl.substringAfterLast("/").substringBeforeLast(".")
+                        val channels = listOf(
+                            Channel(
+                                name = name,
+                                logoUrl = DEFAULT_LOGO_URL,
+                                streamUrl = sourceUrl,
+                                category = "Direct Videos"
+                            )
+                        )
+                        allChannels.addAll(channels)
+                        channelCounts[sourceUrl] = channels.size
+                        successCount++
+                        recordSourceSuccess(sourceUrl)
+                        if (provider != null) {
+                            repository.updateProvider(provider.copy(channelCount = channels.size))
+                        }
                         continue
                     }
 
@@ -250,9 +310,10 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                     connection.instanceFollowRedirects = true
 
                     if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                        // Validate Content-Type: reject video/audio/image responses
-                        val contentType = connection.contentType?.lowercase() ?: ""
-                        if (BLOCKED_CONTENT_TYPES.any { contentType.startsWith(it) }) {
+                        // Validate Content-Type: reject genuine video/audio/image media (but allow
+                        // M3U playlists served as audio/x-mpegurl, application/x-mpegurl, etc.)
+                        val contentType = connection.contentType ?: ""
+                        if (isBlockedContentType(contentType)) {
                             errorMessages.append("Source ${index + 1}: Rejected — server returned '$contentType' (not a playlist).\n")
                             channelCounts[sourceUrl] = 0
                             recordSourceFailure(sourceUrl)
@@ -285,14 +346,14 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                             stringBuilder.toString()
                         }
 
-                        val channels = parsePlaylistContent(content)
+                        val provider = repository.getProviders().find { it.url == sourceUrl }
+                        val channels = parsePlaylistContent(content, sourceUrl, provider?.title ?: "")
                         allChannels.addAll(channels)
                         channelCounts[sourceUrl] = channels.size
                         successCount++
                         recordSourceSuccess(sourceUrl)
                         
                         // Update persisted count in SharedPreferences
-                        val provider = repository.getProviders().find { it.url == sourceUrl }
                         if (provider != null) {
                             repository.updateProvider(provider.copy(channelCount = channels.size))
                         }
@@ -362,10 +423,30 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
         fetchJob = viewModelScope.launch(Dispatchers.IO) {
             var connection: HttpURLConnection? = null
             try {
-                // Pre-flight check: reject direct video file URLs
                 if (isDirectVideoUrl(sourceUrl)) {
+                    val provider = repository.getProviders().find { it.url == sourceUrl }
+                    val name = provider?.title ?: sourceUrl.substringAfterLast("/").substringBeforeLast(".")
+                    val channels = listOf(
+                        Channel(
+                            name = name,
+                            logoUrl = DEFAULT_LOGO_URL,
+                            streamUrl = sourceUrl,
+                            category = "Direct Videos"
+                        )
+                    )
+                    recordSourceSuccess(sourceUrl)
+                    if (provider != null) {
+                        repository.updateProvider(provider.copy(channelCount = channels.size))
+                    }
                     withContext(Dispatchers.Main) {
-                        _error.value = "Error: Direct video file URLs are not supported. Use an M3U/M3U8 playlist URL."
+                        refreshProviders()
+                        val currentMap = _providerChannelCounts.value.orEmpty().toMutableMap()
+                        currentMap[sourceUrl] = channels.size
+                        _providerChannelCounts.value = currentMap
+                        _channels.value = channels
+                        _filteredChannels.value = channels
+                        updateCategories(channels)
+                        _error.value = null
                         _isLoading.value = false
                     }
                     return@launch
@@ -381,9 +462,10 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                 connection.instanceFollowRedirects = true
 
                 if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                    // Validate Content-Type: reject video/audio/image responses
-                    val contentType = connection.contentType?.lowercase() ?: ""
-                    if (BLOCKED_CONTENT_TYPES.any { contentType.startsWith(it) }) {
+                    // Validate Content-Type: reject genuine video/audio/image media (but allow
+                    // M3U playlists served as audio/x-mpegurl, application/x-mpegurl, etc.)
+                    val contentType = connection.contentType ?: ""
+                    if (isBlockedContentType(contentType)) {
                         withContext(Dispatchers.Main) {
                             _error.value = "Error: Server returned '$contentType' — this is not a playlist file."
                             _isLoading.value = false
@@ -416,11 +498,11 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                         stringBuilder.toString()
                     }
 
-                    val channels = parsePlaylistContent(content)
+                    val provider = repository.getProviders().find { it.url == sourceUrl }
+                    val channels = parsePlaylistContent(content, sourceUrl, provider?.title ?: "")
                     recordSourceSuccess(sourceUrl)
 
                     // Update persisted count in SharedPreferences
-                    val provider = repository.getProviders().find { it.url == sourceUrl }
                     if (provider != null) {
                         repository.updateProvider(provider.copy(channelCount = channels.size))
                     }
@@ -546,26 +628,49 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
         return channelsList
     }
 
-    private fun parsePlaylistContent(content: String): List<Channel> {
+    private fun parsePlaylistContent(content: String, sourceUrl: String = "", fallbackName: String = ""): List<Channel> {
         val trimmed = content.trim()
         
         // Check if it's M3U format
         val isM3U = trimmed.contains("#EXTM3U") || trimmed.contains("#EXTINF")
 
+        // Detect a direct HLS stream (an actual playable video), NOT an IPTV channel list.
+        // HLS master playlists (#EXT-X-STREAM-INF) and media playlists (#EXT-X-TARGETDURATION,
+        // #EXT-X-MEDIA-SEQUENCE, #EXT-X-PLAYLIST-TYPE) should play as a single video — exactly
+        // like a direct .mp4 URL — by pointing the player straight at the source .m3u8 URL.
+        val isHlsStream = trimmed.contains("#EXT-X-STREAM-INF") ||
+                          trimmed.contains("#EXT-X-TARGETDURATION") ||
+                          trimmed.contains("#EXT-X-MEDIA-SEQUENCE") ||
+                          trimmed.contains("#EXT-X-PLAYLIST-TYPE")
+
         // Check if it's an HLS master playlist (contains stream variant info but no EXTINF channel list)
         val isHlsMaster = trimmed.contains("#EXT-X-STREAM-INF") && !trimmed.contains("#EXTINF")
-        
-        // Check if it's JSON format (contains matches and starts/contains brace)
-        val hasBraces = trimmed.contains("{") || trimmed.contains("[")
-        val hasMatches = trimmed.contains("\"matches\"") || trimmed.contains("\"event_category\"") || trimmed.contains("\"channels\"") || trimmed.contains("\"streams\"")
-        
+
+        // Anything that isn't M3U/HLS but looks like JSON (starts with { or [) is parsed generically.
+        val looksLikeJson = !isM3U && (trimmed.startsWith("{") || trimmed.startsWith("["))
+        val hasEmbeddedJson = !isM3U && (trimmed.contains("{") || trimmed.contains("["))
+
         return when {
+            isHlsStream && sourceUrl.isNotBlank() -> {
+                // Treat the whole .m3u8 as one direct video — the player handles HLS natively.
+                val name = fallbackName.ifBlank {
+                    sourceUrl.substringAfterLast("/").substringBeforeLast(".").ifBlank { "Stream" }
+                }
+                listOf(
+                    Channel(
+                        name = name,
+                        logoUrl = DEFAULT_LOGO_URL,
+                        streamUrl = sourceUrl,
+                        category = "Direct Videos"
+                    )
+                )
+            }
             isHlsMaster -> {
-                // HLS master playlist: parse stream variants
+                // HLS master playlist without a known source URL: parse stream variants
                 parseHlsMasterPlaylist(content)
             }
-            !isM3U && hasBraces && hasMatches -> {
-                // Extract the clean JSON part (from first brace/bracket to last brace/bracket)
+            looksLikeJson || hasEmbeddedJson -> {
+                // Extract the clean JSON part (from first brace/bracket onward)
                 val firstBrace = trimmed.indexOf('{')
                 val firstBracket = trimmed.indexOf('[')
                 val jsonStart = when {
@@ -574,7 +679,9 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
                     else -> firstBracket
                 }
                 if (jsonStart != -1) {
-                    parseJSONFile(trimmed.substring(jsonStart).trim())
+                    val channels = parseJSONFile(trimmed.substring(jsonStart).trim())
+                    // Fall back to M3U parsing if JSON produced nothing (e.g. malformed / not really JSON)
+                    if (channels.isNotEmpty()) channels else parseM3UFile(content)
                 } else {
                     parseM3UFile(content)
                 }
@@ -587,39 +694,109 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
         val channelsList = ArrayList<Channel>()
         try {
             val trimmed = jsonText.trim()
-            if (trimmed.startsWith("[")) {
-                val array = JSONArray(trimmed)
-                parseMatchesArray(array, channelsList)
-            } else {
-                val jsonObject = JSONObject(trimmed)
-                if (jsonObject.has("matches")) {
-                    val matchesArray = jsonObject.getJSONArray("matches")
-                    parseMatchesArray(matchesArray, channelsList)
-                }
+            val root: Any = if (trimmed.startsWith("[")) JSONArray(trimmed) else JSONObject(trimmed)
+
+            // Detect the legacy sports "matches" format so its team/notification behavior is preserved.
+            val isMatchesFormat = when (root) {
+                is JSONObject -> root.has("matches")
+                is JSONArray -> root.length() > 0 && root.optJSONObject(0)?.let { looksLikeMatch(it) } == true
+                else -> false
             }
 
-            // Enhanced proportional notification logic
-            val totalMatches = channelsList.size
-            val newMatchesThreshold = (totalMatches * 0.2).toInt() // 20% threshold
-            
-            if (lastMatchCount > 0) {
-                val newMatchesCount = totalMatches - lastMatchCount
-                
-                // Trigger notification based on proportion of new matches
-                if (newMatchesCount > 0 && newMatchesCount >= newMatchesThreshold) {
-                    // Show notification for the newest matches
-                    val newMatchesToNotify = channelsList.takeLast(newMatchesCount)
-                    newMatchesToNotify.forEach { channel ->
-                        showNewMatchNotification(channel)
+            if (isMatchesFormat) {
+                val matchesArray = if (root is JSONArray) root else (root as JSONObject).getJSONArray("matches")
+                parseMatchesArray(matchesArray, channelsList)
+
+                // Enhanced proportional notification logic (matches/events only)
+                val totalMatches = channelsList.size
+                val newMatchesThreshold = (totalMatches * 0.2).toInt() // 20% threshold
+                if (lastMatchCount > 0) {
+                    val newMatchesCount = totalMatches - lastMatchCount
+                    if (newMatchesCount > 0 && newMatchesCount >= newMatchesThreshold) {
+                        channelsList.takeLast(newMatchesCount).forEach { showNewMatchNotification(it) }
                     }
                 }
+                lastMatchCount = totalMatches
+            } else {
+                // Generic recursive parser — handles arbitrary IPTV JSON shapes:
+                // nested category maps, flat arrays, channels/streams/data wrappers, etc.
+                extractChannelsFromJson(root, null, channelsList)
+                Log.d(TAG, "Generic JSON parse produced ${channelsList.size} channels")
             }
-            
-            lastMatchCount = totalMatches
         } catch (e: Exception) {
             Log.e(TAG, "Error parsing JSON content", e)
         }
         return channelsList
+    }
+
+    /** Heuristic to detect the sports "match" object shape. */
+    private fun looksLikeMatch(obj: JSONObject): Boolean {
+        return obj.has("team_1") || obj.has("team_2") || obj.has("adfree_url") ||
+                obj.has("dai_url") || obj.has("event_name") || obj.has("match_name") ||
+                obj.has("event_category")
+    }
+
+    /**
+     * Recursively walk arbitrary JSON and extract channels. An object is treated as a channel
+     * when it contains a valid http(s) URL under any known URL key; otherwise we recurse into
+     * its arrays/objects. When recursing through a category map (e.g. {"General": [...]}), the
+     * map key is inherited as the category unless the channel object specifies its own group.
+     */
+    private fun extractChannelsFromJson(element: Any?, inheritedCategory: String?, out: ArrayList<Channel>) {
+        when (element) {
+            is JSONObject -> {
+                val streamUrl = findFirstValidUrl(element)
+                if (streamUrl != null) {
+                    val name = findFirstString(element, JSON_NAME_KEYS) ?: "Unknown Channel"
+                    val logo = findFirstString(element, JSON_LOGO_KEYS) ?: DEFAULT_LOGO_URL
+                    val category = findFirstString(element, JSON_CATEGORY_KEYS)
+                        ?: inheritedCategory ?: "Uncategorized"
+                    if (!ContentFilter.shouldBlockContent(name, category)) {
+                        out.add(Channel(name = name, logoUrl = logo, streamUrl = streamUrl, category = category))
+                    }
+                } else {
+                    val keys = element.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        val value = element.get(key)
+                        val isContainer = value is JSONArray || value is JSONObject
+                        val childCategory = if (isContainer && !JSON_CONTAINER_KEYS.contains(key.lowercase())) {
+                            key
+                        } else {
+                            inheritedCategory
+                        }
+                        extractChannelsFromJson(value, childCategory, out)
+                    }
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until element.length()) {
+                    extractChannelsFromJson(element.opt(i), inheritedCategory, out)
+                }
+            }
+        }
+    }
+
+    /** Return the first valid http(s) URL found under any known URL key, or null. */
+    private fun findFirstValidUrl(obj: JSONObject): String? {
+        for (key in JSON_URL_KEYS) {
+            if (obj.has(key) && !obj.isNull(key)) {
+                val value = obj.optString(key, "").trim()
+                if (isValidUrl(value)) return value
+            }
+        }
+        return null
+    }
+
+    /** Return the first non-empty string value found under the given candidate keys, or null. */
+    private fun findFirstString(obj: JSONObject, keys: List<String>): String? {
+        for (key in keys) {
+            if (obj.has(key) && !obj.isNull(key)) {
+                val value = obj.optString(key, "").trim()
+                if (value.isNotEmpty()) return value
+            }
+        }
+        return null
     }
 
     private fun parseMatchesArray(matchesArray: JSONArray, channelsList: ArrayList<Channel>) {

@@ -2,7 +2,8 @@ package com.samyak.iptvminepro.model
 
 enum class ProviderType {
     IPTV,
-    VEGA
+    VEGA,
+    VIDEO
 }
 
 data class Provider(
