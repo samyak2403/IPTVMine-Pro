@@ -1,5 +1,5 @@
 Categories:
-  - Multimedia
+  - Online Media Player
 License: MIT
 AuthorName: Samyak Kamble
 AuthorEmail: samyakkamble6659@gmail.com
@@ -22,9 +22,33 @@ Builds:
       - yes
     output: app/build/outputs/apk/release/app-release-unsigned.apk
 
+  - versionName: 1.0.4
+    versionCode: 4
+    commit: f1cfc0a15f781cd2be5595f04a165a66e174be40
+    subdir: .
+    gradle:
+      - yes
+    output: app/build/outputs/apk/release/app-release-unsigned.apk
+
+  - versionName: 1.0.5
+    versionCode: 5
+    commit: 53f5030c3ec2e0bcbf8a186569c462e51da21fd9
+    subdir: .
+    gradle:
+      - yes
+    output: app/build/outputs/apk/release/app-release-unsigned.apk
+
+  - versionName: 1.0.6
+    versionCode: 6
+    commit: 3c3af64e1d195cec4b3c5bf028e3d8b9c2598a07
+    subdir: .
+    gradle:
+      - yes
+    output: app/build/outputs/apk/release/app-release-unsigned.apk
+
 AllowedAPKSigningKeys: dbddc76bf7056f3cfde555c3859c3bbfc31a6f38da89764be9a7633c7e64ce25
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 1.0.3
-CurrentVersionCode: 3
+CurrentVersion: 1.0.6
+CurrentVersionCode: 6
