@@ -71,9 +71,8 @@ fun HomeScreen(
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             if ((isLoading && channels.isEmpty()) || (isMoviesLoading && moviesByCategory.isEmpty())) {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center),
-                    color = MaterialTheme.colorScheme.primary
+                com.samyak.iptvminepro.ui.components.HomeShimmerPlaceholder(
+                    modifier = Modifier.align(Alignment.TopCenter)
                 )
             } else {
                 val chunkedChannels = remember(channels) { channels.chunked(2) }

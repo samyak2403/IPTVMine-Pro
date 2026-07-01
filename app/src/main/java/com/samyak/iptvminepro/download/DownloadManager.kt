@@ -314,6 +314,26 @@ object DownloadManager {
     }
 
     private suspend fun performDownload(task: DownloadTask): Boolean {
+        // Retry a few times on transient network failures (e.g. connection reset).
+        var attempt = 0
+        while (attempt < 3) {
+            val result = performDownloadOnce(task)
+            if (result.success) return true
+            if (!result.transient) return false
+            // Stop retrying if the task was cancelled/removed.
+            val current = _downloadTasks.value.find { it.id == task.id }
+            if (current == null || current.status != DownloadStatus.DOWNLOADING) return false
+            attempt++
+            if (attempt < 3) {
+                try { kotlinx.coroutines.delay(1000L * attempt) } catch (e: Exception) { return false }
+            }
+        }
+        return false
+    }
+
+    private data class DownloadResult(val success: Boolean, val transient: Boolean)
+
+    private suspend fun performDownloadOnce(task: DownloadTask, redirect416: Boolean = true): DownloadResult {
         val file = File(task.savePath)
         val existingLength = if (file.exists()) file.length() else 0L
 
@@ -332,20 +352,21 @@ object DownloadManager {
         try {
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
-                if (response.code == 416) {
-                    if (file.exists()) {
-                        file.delete()
-                    }
-                    return performDownload(task)
+                // 416 = requested range not satisfiable; restart once from scratch.
+                if (response.code == 416 && redirect416) {
+                    response.close()
+                    if (file.exists()) file.delete()
+                    return performDownloadOnce(task, redirect416 = false)
                 }
-                return false
+                response.close()
+                return DownloadResult(false, transient = false)
             }
-            val body = response.body ?: return false
+            val body = response.body ?: return DownloadResult(false, transient = false)
             val isPartial = response.code == 206
             val contentLength = body.contentLength()
-            
+
             val totalLength = if (isPartial) existingLength + contentLength else contentLength
-            
+
             inputStream = body.byteStream()
             val append = isPartial && existingLength > 0
             if (!append && file.exists()) {
@@ -358,46 +379,56 @@ object DownloadManager {
             var downloaded = if (append) existingLength else 0L
             var lastUpdate = System.currentTimeMillis()
             var lastDownloadedBytes = downloaded
-            var speedStr = ""
 
             while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                 val current = _downloadTasks.value.find { it.id == task.id }
                 if (current == null || current.status != DownloadStatus.DOWNLOADING) {
-                    return false
+                    return DownloadResult(false, transient = false)
                 }
 
                 outputStream.write(buffer, 0, bytesRead)
                 downloaded += bytesRead
 
                 val now = System.currentTimeMillis()
-                if (now - lastUpdate >= 1000) {
+                val elapsed = now - lastUpdate
+                if (elapsed >= 500) {
                     val progress = if (totalLength > 0) downloaded.toFloat() / totalLength else 0f
-                    val speedBytes = downloaded - lastDownloadedBytes
-                    speedStr = formatSpeed(speedBytes)
-                    updateTaskProgress(task.id, progress, downloaded, totalLength, speedStr)
-                    
+                    val speedBytes = ((downloaded - lastDownloadedBytes) * 1000.0 / elapsed).toLong()
+                    updateTaskProgress(task.id, progress, downloaded, totalLength, formatSpeed(speedBytes))
                     lastUpdate = now
                     lastDownloadedBytes = downloaded
-                    
-                    DownloadService.updateNotification(appContext)
                 }
             }
             outputStream.flush()
-            
-            val progress = 1f
-            updateTaskProgress(task.id, progress, downloaded, downloaded, "")
+
+            updateTaskProgress(task.id, 1f, downloaded, downloaded, "")
             success = true
-        } catch (e: IOException) {
+        } catch (e: Exception) {
             e.printStackTrace()
+            return DownloadResult(false, transient = isTransientError(e))
         } finally {
-            try {
-                inputStream?.close()
-            } catch (e: Exception) {}
-            try {
-                outputStream?.close()
-            } catch (e: Exception) {}
+            try { inputStream?.close() } catch (e: Exception) {}
+            try { outputStream?.close() } catch (e: Exception) {}
         }
-        return success
+        return DownloadResult(success, transient = false)
+    }
+
+    private fun isTransientError(e: Throwable): Boolean {
+        if (e is java.net.SocketException ||
+            e is java.net.SocketTimeoutException ||
+            e is java.io.InterruptedIOException ||
+            e is java.net.UnknownHostException) {
+            return true
+        }
+        val msg = (e.message ?: "").lowercase()
+        return msg.contains("connection reset") ||
+            msg.contains("reset by peer") ||
+            msg.contains("unexpected end of stream") ||
+            msg.contains("timeout") ||
+            msg.contains("timed out") ||
+            msg.contains("connection abort") ||
+            msg.contains("failed to connect") ||
+            msg.contains("stream was reset")
     }
 
     private fun formatSpeed(bytesPerSec: Long): String {

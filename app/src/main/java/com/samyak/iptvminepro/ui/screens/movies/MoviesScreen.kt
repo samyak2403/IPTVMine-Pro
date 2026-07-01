@@ -284,11 +284,10 @@ fun MoviesScreen(
                     }
                 }
 
-                // Full-screen spinner for first load
+                // Full-screen skeleton for first load
                 if (isLoading && movies.isEmpty()) {
-                    CircularProgressIndicator(
-                        color = Color(0xFF26A69A),
-                        modifier = Modifier.align(Alignment.Center)
+                    com.samyak.iptvminepro.ui.components.GridShimmerPlaceholder(
+                        modifier = Modifier.align(Alignment.TopCenter)
                     )
                 }
             }

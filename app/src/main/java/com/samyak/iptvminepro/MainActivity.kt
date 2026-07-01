@@ -70,6 +70,7 @@ import com.samyak.iptvminepro.ui.screens.tv.CategoryDetailScreen
 import com.samyak.iptvminepro.ui.screens.settings.AboutScreen
 import com.samyak.iptvminepro.ui.screens.settings.BugReportScreen
 import com.samyak.iptvminepro.ui.screens.settings.ExtensionsScreen
+import com.samyak.iptvminepro.ui.screens.settings.SupportScreen
 import com.samyak.iptvminepro.ui.screens.movies.MovieDetailScreen
 import com.samyak.iptvminepro.ui.screens.movies.CategoryMoviesScreen
 import com.samyak.iptvminepro.ui.screens.movies.MovieSearchScreen
@@ -91,15 +92,47 @@ import com.samyak.iptvminepro.ui.viewmodel.HomeViewModel
 
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Tv
+import androidx.compose.material.icons.outlined.Info
 import com.samyak.iptvminepro.ui.screens.tv.TelevisionScreen
+import com.samyak.iptvminepro.ui.screens.provider.AddProviderHelpScreen
+import android.content.Context
+import androidx.compose.material3.MaterialTheme
+import com.psoffritti.taptargetcompose.TapTargetCoordinator
+import com.psoffritti.taptargetcompose.TapTargetStyle
+import com.psoffritti.taptargetcompose.TextDefinition
+
 
 class MainActivity : ComponentActivity() {
+
+    private val notificationPermissionLauncher =
+        registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {
+            // Downloads work regardless; this only controls whether the progress
+            // notification is visible in the status bar (required on Android 13+).
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.samyak.iptvminepro.download.DownloadManager.init(applicationContext)
+        // Register the episode stream resolver so the player's "Next Episode" button
+        // can resolve provider links to playable streams.
+        com.samyak.player.StreamResolverHolder.resolver =
+            com.samyak.iptvminepro.provider.VegaStreamResolver(applicationContext)
+        requestNotificationPermissionIfNeeded()
         setContent {
             IPTVMineProTheme {
                 MainApp()
+            }
+        }
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }
@@ -113,6 +146,7 @@ sealed class Screen(val route: String, val label: String, val icon: @Composable 
     object Settings : Screen("settings", "Settings", { Icon(painterResource(id = R.drawable.ic_settings), contentDescription = null) })
     object Player : Screen("player", "Player", { }) // Used for navigation but not in bottom bar
     object AddProvider : Screen("add_provider", "Add Provider", { })
+    object AddProviderHelp : Screen("add_provider_help", "Add Provider Sources", { })
     object ProviderList : Screen("provider_list", "Provider List", { })
     object CategoryDetail : Screen("category_detail/{categoryName}", "Category Detail", { })
     object About : Screen("about", "About App", { })
@@ -124,12 +158,20 @@ sealed class Screen(val route: String, val label: String, val icon: @Composable 
     object BugReport : Screen("bug_report", "Report Bug", { })
     object WatchHistory : Screen("watch_history", "Watch History", { })
     object Legal : Screen("legal?docType={docType}", "Legal Information", { })
+    object Support : Screen("support", "Support", { })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainApp() {
     val navController = rememberNavController()
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val sharedPrefs = remember(context) { context.getSharedPreferences("app_settings", Context.MODE_PRIVATE) }
+    var firstTimeHelp by remember { mutableStateOf(sharedPrefs.getBoolean("first_time_add_provider_help", true)) }
+    val showHelpTapTarget = firstTimeHelp && currentRoute == Screen.AddProvider.route
+
     var onWatchHistoryClearClick by remember { mutableStateOf<(() -> Unit)?>(null) }
     val items = listOf(
         Screen.Home,
@@ -138,8 +180,6 @@ fun MainApp() {
         Screen.Category,
         Screen.Settings
     )
-
-    val context = androidx.compose.ui.platform.LocalContext.current
     val repository = remember { com.samyak.iptvminepro.provider.ProviderRepository(context) }
     val channelsViewModel: com.samyak.iptvminepro.provider.ChannelsProvider = viewModel()
     // Activity-scoped: survives ALL navigation including back from MovieDetail
@@ -164,18 +204,27 @@ fun MainApp() {
             }
         )
     } else {
-
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            containerColor = Color.Transparent,
+        TapTargetCoordinator(
+            showTapTargets = showHelpTapTarget,
+            onComplete = {
+                sharedPrefs.edit().putBoolean("first_time_add_provider_help", false).apply()
+                firstTimeHelp = false
+            }
+        ) {
+            val tapTargetScope = this
+            Scaffold(
+                modifier = Modifier.fillMaxSize(),
+                containerColor = Color.Transparent,
         bottomBar = {
             val navBackStackEntry by navController.currentBackStackEntryAsState()
             val currentRoute = navBackStackEntry?.destination?.route
             if (currentRoute != Screen.AddProvider.route &&
+                currentRoute != Screen.AddProviderHelp.route &&
                 currentRoute != Screen.ProviderList.route &&
                 currentRoute != Screen.CategoryDetail.route &&
                 currentRoute != Screen.MovieDetail.route &&
                 currentRoute != Screen.About.route &&
+                currentRoute != Screen.Support.route &&
                 currentRoute != Screen.CategoryMovies.route &&
                 currentRoute != Screen.Extensions.route &&
                 currentRoute != Screen.MovieSearch.route &&
@@ -279,7 +328,9 @@ fun MainApp() {
                             Screen.Television.route -> "Television"
                             Screen.ProviderList.route -> "Manage Providers"
                             Screen.AddProvider.route -> "Add Provider"
+                            Screen.AddProviderHelp.route -> "Add Provider Sources"
                             Screen.About.route -> "About App"
+                            Screen.Support.route -> "Support"
                             "pairing" -> "TV Pairing"
                             Screen.CategoryDetail.route -> categoryName ?: "Category"
                             Screen.Downloads.route -> "Downloads"
@@ -301,8 +352,10 @@ fun MainApp() {
                     navigationIcon = {
                         if (currentRoute == Screen.ProviderList.route ||
                             currentRoute == Screen.AddProvider.route ||
+                            currentRoute == Screen.AddProviderHelp.route ||
                             currentRoute == Screen.CategoryDetail.route ||
                             currentRoute == Screen.About.route ||
+                            currentRoute == Screen.Support.route ||
                             currentRoute == Screen.Downloads.route ||
                             currentRoute == Screen.BugReport.route ||
                             currentRoute == Screen.WatchHistory.route ||
@@ -337,10 +390,39 @@ fun MainApp() {
                             IconButton(onClick = { navController.navigate("pairing") }) {
                                 Icon(Icons.Outlined.Tv, contentDescription = "Pair with TV", tint = Color.White)
                             }
+                        } else if (currentRoute == Screen.AddProvider.route) {
+                            IconButton(
+                                onClick = { navController.navigate(Screen.AddProviderHelp.route) },
+                                modifier = with(tapTargetScope) {
+                                    Modifier.tapTarget(
+                                        precedence = 0,
+                                        title = TextDefinition(
+                                            text = "Need Help adding providers?",
+                                            textStyle = MaterialTheme.typography.titleLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        ),
+                                        description = TextDefinition(
+                                            text = "Tap here to see step-by-step instructions and copy default provider source links.",
+                                            textStyle = MaterialTheme.typography.bodyMedium,
+                                            color = Color.White.copy(alpha = 0.9f)
+                                        ),
+                                        tapTargetStyle = TapTargetStyle(
+                                            backgroundColor = Color(0xFF26A69A),
+                                            tapTargetHighlightColor = Color.White,
+                                            backgroundAlpha = 0.95f
+                                        )
+                                    )
+                                }
+                            ) {
+                                Icon(Icons.Outlined.Info, contentDescription = "Help", tint = Color.White)
+                            }
                         } else if (currentRoute != Screen.ProviderList.route &&
                             currentRoute != Screen.AddProvider.route &&
+                            currentRoute != Screen.AddProviderHelp.route &&
                             currentRoute != Screen.CategoryDetail.route &&
                             currentRoute != Screen.About.route &&
+                            currentRoute != Screen.Support.route &&
                             currentRoute != Screen.Downloads.route &&
                             currentRoute != Screen.BugReport.route &&
                             currentRoute != Screen.WatchHistory.route &&
@@ -458,8 +540,14 @@ fun MainApp() {
                     onNavigateToDownloads = { navController.navigate(Screen.Downloads.route) },
                     onNavigateToBugReport = { navController.navigate(Screen.BugReport.route) },
                     onNavigateToWatchHistory = { navController.navigate(Screen.WatchHistory.route) },
-                    onNavigateToLegal = { docType -> navController.navigate("legal?docType=$docType") }
+                    onNavigateToLegal = { docType -> navController.navigate("legal?docType=$docType") },
+                    onNavigateToSupport = { navController.navigate(Screen.Support.route) }
                 ) 
+            }
+            composable(Screen.Support.route) {
+                SupportScreen(
+                    onNavigateToBugReport = { navController.navigate(Screen.BugReport.route) }
+                )
             }
             composable(Screen.Downloads.route) {
                 DownloadsScreen(
@@ -575,7 +663,11 @@ fun MainApp() {
                     } else null
                 )
             }
+            composable(Screen.AddProviderHelp.route) {
+                AddProviderHelpScreen()
+            }
         }
+    }
     }
     }
 }

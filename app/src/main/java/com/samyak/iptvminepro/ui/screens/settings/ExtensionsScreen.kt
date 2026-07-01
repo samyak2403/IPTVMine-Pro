@@ -34,6 +34,7 @@ fun ExtensionsScreen(
     val providerRepository = remember { ProviderRepository(context) }
     val extensionRepository = remember { ExtensionRepository.getInstance(context) }
     val runner = remember { VegaProviderRunner(context) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { runner.destroy() } }
     
     var isLoading by remember { mutableStateOf(true) }
     var allExtensions by remember { mutableStateOf<List<VegaProvider>>(emptyList()) }
@@ -154,10 +155,11 @@ fun ExtensionsScreen(
 
             TabRow(selectedTabIndex = selectedTabIndex) {
                 tabs.forEachIndexed { index, title ->
+                    val count = if (index == 0) installedExtensions.size else availableExtensions.size
                     Tab(
                         selected = selectedTabIndex == index,
                         onClick = { selectedTabIndex = index },
-                        text = { Text(title) }
+                        text = { Text(if (count > 0) "$title ($count)" else title) }
                     )
                 }
             }

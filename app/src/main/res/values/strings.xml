@@ -97,4 +97,18 @@
     <string name="btn_submit_bug">Submit Bug Report</string>
     <string name="msg_bug_title_desc_required">Title and description are required</string>
     <string name="msg_bug_category_required">Please select a category</string>
+
+    <!-- Support Screen -->
+    <string name="section_support">Support &amp; Community</string>
+    <string name="setting_support">Contact Support</string>
+    <string name="title_support">Support</string>
+    <string name="support_telegram_title">Telegram Support</string>
+    <string name="support_telegram_desc">Join our official Telegram support channel. Chat with developers, get assistance, and connect with the community.</string>
+    <string name="btn_open_telegram">Open Telegram</string>
+    <string name="support_discord_title">Discord Community</string>
+    <string name="support_discord_desc">Join our official Discord server. Get help, chat with other users, and stay up to date with new releases.</string>
+    <string name="btn_open_discord">Join Discord</string>
+    <string name="support_bug_report_title">Report a Bug</string>
+    <string name="support_bug_report_desc">Encountered an issue or crash? Send a bug report directly to us with screenshots and logs.</string>
+    <string name="btn_open_bug_report">Report Issue</string>
 </resources>

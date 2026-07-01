@@ -53,6 +53,9 @@ import androidx.media3.ui.PlayerView
 import com.samyak.doubletapplayerview.DoubleTapPlayerView
 import com.samyak.doubletapplayerview.youtube.YouTubeOverlay
 import com.samyak.player.R
+import java.io.InputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
 
 @OptIn(UnstableApi::class)
@@ -63,6 +66,17 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var youtubeOverlay: YouTubeOverlay
     private lateinit var progressBar: ProgressBar
     private lateinit var errorTextView: TextView
+
+    // YouTube-style seek bar with image preview
+    private var youtubeTimeBar: com.samyak.iptvminetimebar.YouTubeTimeBar? = null
+    private var youtubeTimeBarPreview: com.samyak.iptvminetimebar.YouTubeTimeBarPreview? = null
+    private val seekThumbnailProvider = SeekThumbnailProvider()
+    private val pixelCopyHandler = Handler(Looper.getMainLooper())
+    private var pixelCopyInFlight = false
+    private var lastPixelCopyMs = 0L
+    private var thumbnailIntervalMs = THUMBNAIL_INTERVAL_MS
+    private var isUserScrubbing = false
+
 
     // Brightness and volume gesture controls
     private lateinit var brightnessControlPanel: LinearLayout
@@ -85,6 +99,8 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var repeatBtn: ImageButton
     private lateinit var prevBtn: ImageButton
     private lateinit var nextBtn: ImageButton
+    private lateinit var nextEpisodeBtn: ImageButton
+    private lateinit var nextEpisodeOverlay: LinearLayout
     private lateinit var videoTitle: TextView
     private lateinit var exoLiveText: TextView
     private lateinit var topController: LinearLayout
@@ -123,10 +139,43 @@ class PlayerActivity : AppCompatActivity() {
     private var trackSelector: DefaultTrackSelector? = null
     private var isDataSavingEnabled = false
 
+    // Next-episode playback state.
+    private var episodeList: ArrayList<EpisodeItem> = arrayListOf()
+    private var currentEpisodeIndex: Int = -1
+    private var providerUrl: String? = null
+    private var scraperValue: String? = null
+    private var isResolvingNextEpisode = false
+    private var streamCandidates: ArrayList<StreamOption> = arrayListOf()
+    private var currentStreamIndex = 0
+    private var triedHeaderWorkaround = false
+    private var requestHeaders: Map<String, String> = emptyMap()
+    private var requestUserAgent: String? = null
+
+    // Cascading format-retry state. Used when ExoPlayer cannot recognize the
+    // container of an extension-less IPTV stream (ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED).
+    // We re-prepare the stream forcing each known MIME type until one plays.
+    private var formatRetryIndex = -1
+    private val formatRetryMimeTypes: List<String?> by lazy {
+        listOf(
+            "application/x-mpegURL",        // HLS - most common for IPTV
+            "video/mp2t",                   // raw MPEG-TS
+            "application/dash+xml",         // DASH
+            "application/vnd.ms-sstr+xml",  // SmoothStreaming
+            "video/mp4",                    // progressive MP4
+            null                            // auto-detect (last resort)
+        )
+    }
+
     companion object {
         private const val TAG = "PlayerActivity"
         private const val INCREMENT_MILLIS = 5000L
         private const val PROGRESS_BAR_UPDATE_INTERVAL_MS = 16
+        private const val NEXT_EPISODE_OVERLAY_THRESHOLD_MS = 60_000L
+        private const val THUMBNAIL_INTERVAL_MS = 10_000L
+        private const val MAX_PREFETCH_FRAMES = 160L
+        private const val PREVIEW_CAPTURE_WIDTH = 320
+        private const val CHROME_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
         private const val SCALE_MODE_FIT = 0
         private const val SCALE_MODE_FILL = 1
@@ -146,7 +195,10 @@ class PlayerActivity : AppCompatActivity() {
             movieLink: String? = null,
             movieImage: String? = null,
             providerUrl: String? = null,
-            scraperValue: String? = null
+            scraperValue: String? = null,
+            episodes: ArrayList<EpisodeItem>? = null,
+            episodeIndex: Int = -1,
+            streamFallbacks: ArrayList<StreamOption>? = null
         ) {
             val intent = Intent(context, PlayerActivity::class.java).apply {
                 putExtra("channel_name", name)
@@ -156,6 +208,13 @@ class PlayerActivity : AppCompatActivity() {
                 putExtra("movie_image", movieImage)
                 putExtra("provider_url", providerUrl)
                 putExtra("scraper_value", scraperValue)
+                if (episodes != null && episodes.isNotEmpty()) {
+                    putExtra("episodes", episodes)
+                    putExtra("episode_index", episodeIndex)
+                }
+                if (streamFallbacks != null && streamFallbacks.isNotEmpty()) {
+                    putExtra("stream_fallbacks", streamFallbacks)
+                }
                 if (headers != null) {
                     val bundle = Bundle()
                     for ((k, v) in headers) {
@@ -190,6 +249,18 @@ class PlayerActivity : AppCompatActivity() {
         channelName = intent?.getStringExtra("channel_name")
         val rawUrl = intent?.getStringExtra("channel_stream_url")
         channelStreamUrl = rawUrl?.let { normalizeUrl(it) }
+
+        // Next-episode playlist + alternate stream mirrors.
+        providerUrl = intent?.getStringExtra("provider_url")
+        scraperValue = intent?.getStringExtra("scraper_value")
+        currentEpisodeIndex = intent?.getIntExtra("episode_index", -1) ?: -1
+        @Suppress("UNCHECKED_CAST", "DEPRECATION")
+        val eps = intent?.getSerializableExtra("episodes") as? ArrayList<EpisodeItem>
+        episodeList = eps ?: arrayListOf()
+        @Suppress("UNCHECKED_CAST", "DEPRECATION")
+        val fallbacks = intent?.getSerializableExtra("stream_fallbacks") as? ArrayList<StreamOption>
+        streamCandidates = fallbacks ?: arrayListOf()
+        currentStreamIndex = 0
 
         // Detect TV mode
         val uiModeManager = getSystemService(Context.UI_MODE_SERVICE) as android.app.UiModeManager
@@ -242,6 +313,8 @@ class PlayerActivity : AppCompatActivity() {
         youtubeOverlay = findViewById(R.id.youtube_overlay)
         progressBar = findViewById(R.id.progressBar)
         errorTextView = findViewById(R.id.errorTextView)
+        nextEpisodeOverlay = findViewById(R.id.nextEpisodeOverlay)
+        nextEpisodeOverlay.setOnClickListener { playNextEpisode() }
 
         // Volume and brightness control overlays
         brightnessControlPanel = findViewById(R.id.brightness_control_panel)
@@ -259,12 +332,16 @@ class PlayerActivity : AppCompatActivity() {
         repeatBtn = playerView.findViewById(R.id.repeatBtn)
         prevBtn = playerView.findViewById(R.id.prevBtn)
         nextBtn = playerView.findViewById(R.id.nextBtn)
+        nextEpisodeBtn = playerView.findViewById(R.id.nextEpisodeBtn)
         videoTitle = playerView.findViewById(R.id.videoTitle)
         exoLiveText = playerView.findViewById(R.id.exo_live_text)
         topController = playerView.findViewById(R.id.topController)
         bottomController = playerView.findViewById(R.id.bottomController)
         audioTrackBtn = playerView.findViewById(R.id.audioTrackBtn)
         subtitleBtn = playerView.findViewById(R.id.subtitleBtn)
+
+        // Enable the scrubber handle on the YouTube-style time bar (hidden by default)
+        setupYouTubeTimeBar()
 
         // Setup PiP button
         setupPipButton()
@@ -281,6 +358,141 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         updateScaleMode()
+    }
+
+    /**
+     * Wires the [com.samyak.iptvminetimebar.YouTubeTimeBar] and its image preview into the player.
+     * The time bar is auto-bound by Media3 via the shared `exo_progress` id; here we enable the
+     * scrubber handle and connect the preview popup that shows a thumbnail + timestamp on seek.
+     */
+    private fun setupYouTubeTimeBar() {
+        youtubeTimeBar = playerView.findViewById(androidx.media3.ui.R.id.exo_progress)
+        youtubeTimeBarPreview = playerView.findViewById(R.id.youtube_preview)
+
+        youtubeTimeBar?.showScrubber()
+
+        val preview = youtubeTimeBarPreview ?: return
+        youtubeTimeBar?.timeBarPreview(preview)
+
+        // Drive seeking explicitly so the bar always controls playback, regardless of how Media3
+        // binds a custom TimeBar. While the user drags we stop pushing playback position to the
+        // bar (see updateProgressBar) so the scrubber follows the finger, and seek on release.
+        youtubeTimeBar?.addListener(object : androidx.media3.ui.TimeBar.OnScrubListener {
+            override fun onScrubStart(timeBar: androidx.media3.ui.TimeBar, position: Long) {
+                isUserScrubbing = true
+                playerView.showController()
+            }
+
+            override fun onScrubMove(timeBar: androidx.media3.ui.TimeBar, position: Long) {
+                isUserScrubbing = true
+                playerView.showController()
+            }
+
+            override fun onScrubStop(
+                timeBar: androidx.media3.ui.TimeBar,
+                position: Long,
+                canceled: Boolean
+            ) {
+                isUserScrubbing = false
+                if (!canceled) {
+                    player?.seekTo(position.coerceAtLeast(0))
+                }
+            }
+        })
+
+        // No chapter data for IPTV/VOD content, so just show the timestamp under the thumbnail.
+        preview.useTitle(false)
+        preview.durationPerFrame(thumbnailIntervalMs)
+        preview.previewListener(object : com.samyak.iptvminetimebar.YouTubeTimeBarPreview.Listener {
+            override fun loadThumbnail(imageView: android.widget.ImageView, position: Long) {
+                seekThumbnailProvider.loadThumbnail(
+                    imageView,
+                    position,
+                    thumbnailIntervalMs
+                ) { iv -> captureCurrentVideoFrame(iv) }
+            }
+        })
+    }
+
+    /**
+     * Once the duration is known, sizes the thumbnail grid so the whole movie is covered by a
+     * bounded number of frames, then prefetches them in the background so scrubbing is instant.
+     */
+    private fun prepareThumbnailGrid() {
+        val p = player ?: return
+        val dur = p.duration
+        if (isLiveStream || dur == C.TIME_UNSET || dur <= 0) return
+
+        thumbnailIntervalMs = (dur / MAX_PREFETCH_FRAMES).coerceAtLeast(THUMBNAIL_INTERVAL_MS)
+        youtubeTimeBarPreview?.durationPerFrame(thumbnailIntervalMs)
+
+        // Prefetching opens a second connection and walks the file, so skip it when the user has
+        // asked to save data; on-demand extraction + the current-frame fallback still work.
+        if (!isDataSavingEnabled) {
+            seekThumbnailProvider.startPrefetch(dur, thumbnailIntervalMs)
+        }
+    }
+
+    /**
+     * Captures the currently rendered video frame and shows it in [imageView]. This guarantees the
+     * seek preview always displays a real image, even for HLS/live sources where per-position frame
+     * extraction isn't possible. Throttled so rapid scrubbing doesn't spam the GPU copy.
+     */
+    private fun captureCurrentVideoFrame(imageView: android.widget.ImageView) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (pixelCopyInFlight || now - lastPixelCopyMs < 150L) return
+
+        val surface = playerView.videoSurfaceView ?: return
+        try {
+            val width = surface.width
+            val height = surface.height
+            if (width <= 0 || height <= 0) return
+
+            // Downscale the capture so we never allocate a full 1080p+ bitmap on every scrub tick
+            // (that churns memory and can OOM). PixelCopy scales the surface into the dest bitmap.
+            val targetWidth = width.coerceAtMost(PREVIEW_CAPTURE_WIDTH)
+            val targetHeight = (height.toLong() * targetWidth / width).toInt().coerceAtLeast(1)
+
+            when (surface) {
+                is android.view.SurfaceView -> {
+                    val holderSurface = surface.holder?.surface
+                    if (holderSurface == null || !holderSurface.isValid) return
+                    val bmp = android.graphics.Bitmap.createBitmap(
+                        targetWidth, targetHeight, android.graphics.Bitmap.Config.ARGB_8888
+                    )
+                    pixelCopyInFlight = true
+                    lastPixelCopyMs = now
+                    android.view.PixelCopy.request(surface, bmp, { result ->
+                        pixelCopyInFlight = false
+                        if (result == android.view.PixelCopy.SUCCESS && !isDestroyed && !isFinishing) {
+                            imageView.setImageBitmap(bmp)
+                        }
+                    }, pixelCopyHandler)
+                }
+                is android.view.TextureView -> {
+                    lastPixelCopyMs = now
+                    surface.getBitmap(targetWidth, targetHeight)?.let { imageView.setImageBitmap(it) }
+                }
+                else -> { /* unsupported surface type */ }
+            }
+        } catch (e: Exception) {
+            pixelCopyInFlight = false
+            Log.d(TAG, "Current-frame capture failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Builds the HTTP header map used for off-screen frame extraction. Mirrors the headers
+     * ExoPlayer plays with (custom request headers + a User-Agent) so the extra connection that
+     * [MediaMetadataRetriever] opens isn't rejected with a 403 by Vega/IPTV hosts.
+     */
+    private fun buildThumbnailHeaders(): Map<String, String> {
+        val map = HashMap<String, String>()
+        map.putAll(requestHeaders)
+        if (!map.keys.any { it.equals("User-Agent", ignoreCase = true) }) {
+            map["User-Agent"] = requestUserAgent ?: CHROME_USER_AGENT
+        }
+        return map
     }
 
     private fun setupPipButton() {
@@ -559,12 +771,16 @@ class PlayerActivity : AppCompatActivity() {
             if (userAgent != null) {
                 httpDataSourceFactory.setUserAgent(userAgent)
             } else {
-                httpDataSourceFactory.setUserAgent("IPTVmine/1.0 (Android)")
+                httpDataSourceFactory.setUserAgent(CHROME_USER_AGENT)
             }
 
             if (headersMap.isNotEmpty()) {
                 httpDataSourceFactory.setDefaultRequestProperties(headersMap)
             }
+
+            // Persist for the background content probe and 403 header retry.
+            requestHeaders = headersMap.toMap()
+            requestUserAgent = userAgent
 
             // Setup track selector with data saving constraints
             trackSelector = DefaultTrackSelector(this).apply {
@@ -578,19 +794,71 @@ class PlayerActivity : AppCompatActivity() {
 
             val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(this, httpDataSourceFactory)
 
+            // Route rtmp:// (and rtmps://) to the RTMP data source, everything else to the
+            // default one, so HTTP, file, content and RTMP live streams all work.
+            val rtmpAwareFactory = RtmpAwareDataSourceFactory(
+                dataSourceFactory,
+                androidx.media3.datasource.rtmp.RtmpDataSource.Factory()
+            )
+
+            // Maximise progressive-container support: constant-bitrate seeking for
+            // MP3/ADTS/AMR, and full MPEG-TS audio stream detection (AC-3/E-AC-3/DTS).
+            val extractorsFactory = androidx.media3.extractor.DefaultExtractorsFactory()
+                .setConstantBitrateSeekingEnabled(true)
+                .setConstantBitrateSeekingAlwaysEnabled(true)
+                .setTsExtractorFlags(
+                    androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS
+                )
+
+            // Buffer tuning for smoother playback on weak/variable connections.
+            val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    30_000,   // min buffer
+                    60_000,   // max buffer
+                    2_500,    // buffer required before playback starts
+                    5_000     // buffer required after a rebuffer
+                )
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build()
+
             player = ExoPlayer.Builder(this)
                 .setTrackSelector(trackSelector!!)
                 .setSeekBackIncrementMs(10000)
                 .setSeekForwardIncrementMs(10000)
                 .setHandleAudioBecomingNoisy(true)
+                .setAudioAttributes(
+                    androidx.media3.common.AudioAttributes.Builder()
+                        .setUsage(C.USAGE_MEDIA)
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                        .build(),
+                    /* handleAudioFocus = */ true
+                )
+                .setLoadControl(loadControl)
                 .setMediaSourceFactory(
-                    DefaultMediaSourceFactory(this)
-                        .setDataSourceFactory(dataSourceFactory)
+                    DefaultMediaSourceFactory(rtmpAwareFactory, extractorsFactory)
                 )
                 .build()
 
             playerView.player = player
             playerView.keepScreenOn = true
+
+            // Style subtitles for better readability over video.
+            try {
+                playerView.subtitleView?.setStyle(
+                    androidx.media3.ui.CaptionStyleCompat(
+                        android.graphics.Color.WHITE,
+                        android.graphics.Color.TRANSPARENT,
+                        android.graphics.Color.TRANSPARENT,
+                        androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                        android.graphics.Color.BLACK,
+                        null
+                    )
+                )
+                playerView.subtitleView?.setApplyEmbeddedStyles(false)
+                playerView.subtitleView?.setApplyEmbeddedFontSizes(false)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error styling subtitles", e)
+            }
             playerView.controllerHideOnTouch = true
             playerView.controllerShowTimeoutMs = 3000
             playerView.setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
@@ -610,6 +878,11 @@ class PlayerActivity : AppCompatActivity() {
 
             val mediaItem = detectAndCreateMediaItem(channelStreamUrl ?: "")
 
+            // Point the seek-preview thumbnail extractor at the current stream, including the
+            // same User-Agent/Referer headers ExoPlayer uses (Vega VOD links reject requests
+            // without them, which is why frame extraction returned nothing before).
+            seekThumbnailProvider.setSource(channelStreamUrl, buildThumbnailHeaders())
+
             // Create and store listener reference for proper cleanup
             playerListener = object : Player.Listener {
                 override fun onPlaybackStateChanged(state: Int) {
@@ -617,6 +890,14 @@ class PlayerActivity : AppCompatActivity() {
                     when (state) {
                         Player.STATE_READY -> {
                             this@PlayerActivity.isPlayerReady = true
+                            // Stream is playing fine, clear any pending retry state
+                            formatRetryIndex = -1
+                            triedHeaderWorkaround = false
+                            // Now that the timeline is known, resolve real live status
+                            // so VOD content keeps its seek bar and only true live
+                            // streams show the LIVE badge.
+                            checkIfLiveStream()
+                            prepareThumbnailGrid()
                             progressBar.visibility = View.GONE
                             playerView.visibility = View.VISIBLE
                             startProgressBarUpdates()
@@ -629,6 +910,7 @@ class PlayerActivity : AppCompatActivity() {
                         }
                         Player.STATE_ENDED -> {
                             updatePlayPauseButton(false)
+                            maybeShowNextEpisodeOverlay()
                         }
                         Player.STATE_IDLE -> {
                             stopProgressBarUpdates()
@@ -648,6 +930,11 @@ class PlayerActivity : AppCompatActivity() {
                     updateAudioTrackButtonVisibility()
                     updateSubtitleButtonVisibility()
                 }
+
+                override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                    // Timeline now reflects whether the stream is live (dynamic) or VOD.
+                    checkIfLiveStream()
+                }
             }
 
             val watchHistoryEnabled = intent?.getBooleanExtra("watch_history_enabled", false) ?: false
@@ -659,14 +946,15 @@ class PlayerActivity : AppCompatActivity() {
 
             player?.apply {
                 addListener(playerListener!!)
-                if (startPosition > 0L) {
-                    setMediaItem(mediaItem, startPosition)
-                } else {
-                    setMediaItem(mediaItem)
-                }
                 setPlayWhenReady(true)
-                prepare()
             }
+
+            // Probe the stream's real content type on a background thread before
+            // preparing. Extension-less IPTV/scraper links often lack a usable
+            // Content-Type, making ExoPlayer fall back to a progressive source and fail.
+            // The probe forces the correct MediaSource (HLS/DASH/TS) and detects dead
+            // links that return an HTML page instead of media.
+            probeAndPrepare(channelStreamUrl ?: "", mediaItem, startPosition)
 
             setupProgressBarHandler()
             checkIfLiveStream()
@@ -727,10 +1015,17 @@ class PlayerActivity : AppCompatActivity() {
             progressBarHandler = Handler(Looper.getMainLooper())
             progressBarRunnable = object : Runnable {
                 override fun run() {
-                    if (player?.isPlaying == true && !isFinishing && !isDestroyed) {
+                    if (!isFinishing && !isDestroyed) {
                         updateProgressBar()
                         if (!isFinishing && !isDestroyed && progressBarHandler != null) {
-                            progressBarHandler?.postDelayed(this, PROGRESS_BAR_UPDATE_INTERVAL_MS.toLong())
+                            // Keep driving the seek bar even while paused/buffering so it always has
+                            // a valid duration and stays seekable (just slower when not playing).
+                            val delay = if (player?.isPlaying == true) {
+                                PROGRESS_BAR_UPDATE_INTERVAL_MS.toLong()
+                            } else {
+                                250L
+                            }
+                            progressBarHandler?.postDelayed(this, delay)
                         }
                     }
                 }
@@ -753,11 +1048,142 @@ class PlayerActivity : AppCompatActivity() {
                     playerView.findViewById<View>(androidx.media3.ui.R.id.exo_position)?.visibility = View.VISIBLE
                     playerView.findViewById<View>(androidx.media3.ui.R.id.exo_duration)?.visibility = View.VISIBLE
                     exoLiveText.visibility = View.GONE
+
+                    // Drive the YouTube time bar directly so it always shows progress and stays
+                    // seekable, even if Media3 didn't auto-bind the custom view. Skip while the
+                    // user is dragging so the scrubber tracks the finger instead of the playhead.
+                    if (!isUserScrubbing) {
+                        youtubeTimeBar?.let { bar ->
+                            val dur = it.duration
+                            if (dur != C.TIME_UNSET && dur > 0) bar.setDuration(dur)
+                            bar.setPosition(it.currentPosition)
+                            bar.setBufferedPosition(it.bufferedPosition)
+                        }
+                    }
                 }
             }
+            maybeShowNextEpisodeOverlay()
         } catch (e: Exception) {
             Log.e(TAG, "Error updating progress bar", e)
         }
+    }
+
+    private fun hasNextEpisode(): Boolean {
+        return StreamResolverHolder.resolver != null &&
+                currentEpisodeIndex in 0 until (episodeList.size - 1)
+    }
+
+    private fun updateNextEpisodeButtonVisibility() {
+        if (::nextEpisodeBtn.isInitialized) {
+            nextEpisodeBtn.visibility = if (hasNextEpisode()) View.VISIBLE else View.GONE
+        }
+    }
+
+    /**
+     * Disney+/Hotstar style: surface the "Next Episode" overlay near the end of a VOD
+     * episode (or once ended), and whenever the controls are visible.
+     */
+    private fun maybeShowNextEpisodeOverlay() {
+        if (!::nextEpisodeOverlay.isInitialized) return
+        if (!hasNextEpisode()) {
+            if (nextEpisodeOverlay.visibility != View.GONE) nextEpisodeOverlay.visibility = View.GONE
+            return
+        }
+        val p = player
+        if (p == null) {
+            nextEpisodeOverlay.visibility = View.GONE
+            return
+        }
+        val duration = p.duration
+        val isVod = duration != C.TIME_UNSET && duration > 0 && !p.isCurrentMediaItemDynamic
+        val remaining = if (isVod) duration - p.currentPosition else Long.MAX_VALUE
+        val nearEnd = isVod && remaining in 1..NEXT_EPISODE_OVERLAY_THRESHOLD_MS
+        val ended = p.playbackState == Player.STATE_ENDED
+        val controllerVisible = try { playerView.isControllerFullyVisible } catch (e: Exception) { false }
+        val show = !isResolvingNextEpisode && (nearEnd || ended || controllerVisible)
+        nextEpisodeOverlay.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
+    private fun playNextEpisode() {
+        if (isResolvingNextEpisode) return
+        if (!hasNextEpisode()) {
+            Toast.makeText(this, "No next episode available", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val resolver = StreamResolverHolder.resolver ?: return
+        val nextIndex = currentEpisodeIndex + 1
+        val nextEpisode = episodeList.getOrNull(nextIndex) ?: return
+
+        isResolvingNextEpisode = true
+        nextEpisodeBtn.isEnabled = false
+        nextEpisodeOverlay.visibility = View.GONE
+        progressBar.visibility = View.VISIBLE
+        errorTextView.visibility = View.GONE
+        Toast.makeText(this, "Loading ${nextEpisode.title}...", Toast.LENGTH_SHORT).show()
+
+        resolver.resolve(
+            providerUrl ?: "",
+            scraperValue ?: "",
+            nextEpisode.link,
+            nextEpisode.type
+        ) { streams, error ->
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                isResolvingNextEpisode = false
+                nextEpisodeBtn.isEnabled = true
+                val first = streams?.firstOrNull()
+                if (first == null || first.url.isBlank()) {
+                    progressBar.visibility = View.GONE
+                    Toast.makeText(this, error ?: "Couldn't load the next episode", Toast.LENGTH_LONG).show()
+                    return@runOnUiThread
+                }
+                streamCandidates = ArrayList(streams)
+                currentStreamIndex = 0
+                loadEpisodeInPlace(nextIndex, nextEpisode.title, first.url, first.headers)
+            }
+        }
+    }
+
+    /**
+     * Switches the current player to a newly resolved episode without recreating the
+     * Activity. Saves the outgoing episode's position, swaps stream + headers, and
+     * rebuilds playback through the existing setup path.
+     */
+    private fun loadEpisodeInPlace(index: Int, title: String, url: String, headers: Map<String, String>?) {
+        releasePlayer()
+        isUserScrubbing = false
+        currentEpisodeIndex = index
+        channelName = title
+        channelStreamUrl = normalizeUrl(url)
+        playbackPosition = 0L
+        isPlayerReady = false
+        formatRetryIndex = -1
+        triedHeaderWorkaround = false
+
+        intent.putExtra("channel_name", title)
+        intent.putExtra("channel_stream_url", url)
+        intent.putExtra("episode_index", index)
+        val baseMovieLink = intent.getStringExtra("movie_link")?.substringBefore('#')
+        if (!baseMovieLink.isNullOrBlank()) {
+            intent.putExtra("movie_link", "$baseMovieLink#${Uri.encode(title)}")
+        }
+        if (headers != null && headers.isNotEmpty()) {
+            val bundle = Bundle()
+            for ((k, v) in headers) bundle.putString(k, v)
+            intent.putExtra("channel_headers", bundle)
+        } else {
+            intent.removeExtra("channel_headers")
+        }
+
+        errorTextView.visibility = View.GONE
+        playerView.visibility = View.VISIBLE
+        progressBar.visibility = View.VISIBLE
+        nextEpisodeOverlay.visibility = View.GONE
+        if (::videoTitle.isInitialized) videoTitle.text = title
+
+        setupPlayer()
+        updateNextEpisodeButtonVisibility()
+        Toast.makeText(this, "Playing $title", Toast.LENGTH_SHORT).show()
     }
 
     private fun updateLiveIndicator() {
@@ -834,6 +1260,7 @@ class PlayerActivity : AppCompatActivity() {
             checkIfLiveStream()
 
             val mediaItem = detectAndCreateMediaItem(url)
+            seekThumbnailProvider.setSource(url, buildThumbnailHeaders())
             player?.apply {
                 clearMediaItems()
                 setMediaItem(mediaItem)
@@ -850,13 +1277,16 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun checkIfLiveStream() {
         try {
-            val url = channelStreamUrl?.lowercase() ?: ""
-            isLiveStream = url.contains("live") || url.contains("24/7") ||
-                    url.contains("stream") || url.contains("m3u8") ||
-                    url.contains("mpd") || url.contains("dash")
+            // Determine live status from ExoPlayer's actual timeline rather than guessing
+            // from URL keywords. A dynamic (growing) window means a genuine live stream;
+            // VOD content (e.g. an episode served over HLS) is not dynamic and must keep
+            // its seek bar. Falls back to false until the timeline is known.
+            isLiveStream = player?.isCurrentMediaItemDynamic ?: false
 
             if (isLiveStream) {
                 exoLiveText.visibility = View.VISIBLE
+            } else {
+                exoLiveText.visibility = View.GONE
             }
             updateProgressBar()
         } catch (e: Exception) {
@@ -935,6 +1365,127 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    private enum class ProbeResult { HLS, DASH, TS, MP4, HTML, UNKNOWN }
+
+    /**
+     * Probes the stream URL on a background thread to determine its real content type,
+     * then prepares the player with the correct MediaSource. Falls back to [fallbackItem]
+     * when the type can't be determined. If the server returns an HTML page (dead/expired
+     * link) it tries the next mirror or shows a clear error.
+     */
+    private fun probeAndPrepare(url: String, fallbackItem: MediaItem, startPosition: Long) {
+        if (!url.startsWith("http://", ignoreCase = true) &&
+            !url.startsWith("https://", ignoreCase = true)) {
+            prepareWithItem(fallbackItem, startPosition)
+            return
+        }
+        Thread {
+            val result = try {
+                probeContent(url)
+            } catch (e: Exception) {
+                Log.w(TAG, "Content probe failed: ${e.message}")
+                ProbeResult.UNKNOWN
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                Log.d(TAG, "Content probe result: $result")
+                if (result == ProbeResult.HTML) {
+                    if (tryNextStreamCandidate()) return@runOnUiThread
+                    showError("This link isn't a playable video. The server returned a web page, so the stream may be expired, geo-blocked, or require sign-in.")
+                    return@runOnUiThread
+                }
+                val mime = when (result) {
+                    ProbeResult.HLS -> "application/x-mpegURL"
+                    ProbeResult.DASH -> "application/dash+xml"
+                    ProbeResult.TS -> "video/mp2t"
+                    ProbeResult.MP4 -> "video/mp4"
+                    else -> null
+                }
+                val item = if (mime != null) {
+                    MediaItem.Builder().setUri(Uri.parse(url)).setMimeType(mime).build()
+                } else {
+                    fallbackItem
+                }
+                prepareWithItem(item, startPosition)
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun prepareWithItem(item: MediaItem, startPosition: Long) {
+        player?.apply {
+            if (startPosition > 0L) setMediaItem(item, startPosition) else setMediaItem(item)
+            setPlayWhenReady(true)
+            prepare()
+        }
+    }
+
+    private fun probeContent(url: String): ProbeResult {
+        var connection: HttpURLConnection? = null
+        try {
+            val conn = URL(url).openConnection() as HttpURLConnection
+            connection = conn
+            conn.instanceFollowRedirects = true
+            conn.connectTimeout = 8000
+            conn.readTimeout = 8000
+            conn.requestMethod = "GET"
+            conn.setRequestProperty("Accept", "*/*")
+            conn.setRequestProperty("Range", "bytes=0-8191")
+            conn.setRequestProperty("User-Agent", requestUserAgent ?: CHROME_USER_AGENT)
+            for ((k, v) in requestHeaders) {
+                try { conn.setRequestProperty(k, v) } catch (_: Exception) {}
+            }
+            conn.connect()
+
+            val status = conn.responseCode
+            val contentType = (conn.contentType ?: "").lowercase()
+            val buf = ByteArray(1024)
+            val read = try {
+                val input = if (status in 200..299) conn.inputStream else conn.errorStream
+                input?.use { readUpTo(it, buf) } ?: 0
+            } catch (e: Exception) { 0 }
+            val head = if (read > 0) String(buf, 0, read, Charsets.ISO_8859_1) else ""
+            val headTrim = head.trimStart()
+            val headLower = headTrim.lowercase()
+
+            when {
+                contentType.contains("mpegurl") || contentType.contains("vnd.apple.mpegurl") -> return ProbeResult.HLS
+                contentType.contains("dash+xml") -> return ProbeResult.DASH
+                contentType.contains("mp2t") -> return ProbeResult.TS
+                contentType.startsWith("video/mp4") || contentType.startsWith("audio/mp4") -> return ProbeResult.MP4
+                (contentType.startsWith("text/html") || contentType.contains("xhtml")) &&
+                    (headLower.startsWith("<!doctype html") || headLower.startsWith("<html") ||
+                     headLower.contains("<head") || headLower.contains("<body")) -> return ProbeResult.HTML
+            }
+
+            if (read > 0) {
+                if (headTrim.startsWith("#EXTM3U")) return ProbeResult.HLS
+                if (headLower.startsWith("<mpd") || headLower.contains("urn:mpeg:dash:schema")) return ProbeResult.DASH
+                if (headLower.startsWith("<!doctype html") || headLower.startsWith("<html")) return ProbeResult.HTML
+                if (buf[0] == 0x47.toByte() && read > 188 && buf[188] == 0x47.toByte()) return ProbeResult.TS
+                if (read > 8 && buf[4] == 'f'.code.toByte() && buf[5] == 't'.code.toByte() &&
+                    buf[6] == 'y'.code.toByte() && buf[7] == 'p'.code.toByte()) return ProbeResult.MP4
+            }
+
+            if (status >= 400 &&
+                (headLower.startsWith("<!doctype html") || headLower.startsWith("<html") || contentType.startsWith("text/"))) {
+                return ProbeResult.HTML
+            }
+            return ProbeResult.UNKNOWN
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    private fun readUpTo(input: InputStream, buf: ByteArray): Int {
+        var total = 0
+        while (total < buf.size) {
+            val r = input.read(buf, total, buf.size - total)
+            if (r == -1) break
+            total += r
+        }
+        return total
+    }
+
     private fun detectAndCreateMediaItem(url: String): MediaItem {
         if (!url.startsWith("http") && !url.startsWith("rtmp")) {
             Log.w(TAG, "Invalid URL scheme: $url")
@@ -973,21 +1524,10 @@ class PlayerActivity : AppCompatActivity() {
             Log.d(TAG, "Setting MIME type: $it")
         }
 
-        isLiveStream = url.contains("live") || url.contains("24x7") ||
-                url.contains("stream") || url.contains("real-time")
-
-        if (isLiveStream) {
-            Log.d(TAG, "Configuring for live streaming")
-            builder.setLiveConfiguration(
-                MediaItem.LiveConfiguration.Builder()
-                    .setMaxPlaybackSpeed(1.02f)
-                    .setTargetOffsetMs(5000)
-                    .setMaxOffsetMs(10000)
-                    .setMinOffsetMs(3000)
-                    .setMinPlaybackSpeed(0.97f)
-                    .build()
-            )
-        }
+        // Do NOT infer live status from URL keywords. ExoPlayer auto-detects live
+        // streams from the HLS/DASH manifest and applies the correct windowing.
+        // Forcing live configuration onto VOD content breaks seeking and hides the
+        // seek bar. Actual live status is resolved later via isCurrentMediaItemDynamic.
 
         return builder.build()
     }
@@ -1050,7 +1590,8 @@ class PlayerActivity : AppCompatActivity() {
         var sourceError = false
 
         try {
-            cleartextError = error.cause?.cause?.message?.contains("Cleartext HTTP traffic") == true
+            cleartextError = error.errorCode == PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED ||
+                error.cause?.cause?.message?.contains("Cleartext HTTP traffic") == true
         } catch (e: Exception) {
             Log.e(TAG, "Error checking for cleartext error", e)
         }
@@ -1065,9 +1606,11 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         try {
-            formatError = error.cause?.message?.let {
-                it.contains("Format") || it.contains("No decoder")
-            } == true
+            formatError = error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ||
+                error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED ||
+                error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ||
+                error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES ||
+                error.cause?.message?.let { it.contains("Format") || it.contains("No decoder") } == true
         } catch (e: Exception) {
             Log.e(TAG, "Error checking for format error", e)
         }
@@ -1079,12 +1622,53 @@ class PlayerActivity : AppCompatActivity() {
             Log.e(TAG, "Error checking for source error", e)
         }
 
+        // Detect the "unrecognized container" case that is common for extension-less
+        // IPTV streams. ExoPlayer defaults to a progressive (extractor) source and none
+        // of the extractors can read an HLS/TS/DASH stream, producing this error.
+        var containerUnsupported = false
+        try {
+            containerUnsupported =
+                error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
+                error.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED ||
+                error.cause?.message?.contains("UnrecognizedInputFormatException") == true ||
+                error.cause?.message?.contains("None of the available extractors") == true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking for container unsupported error", e)
+        }
+
+        // HTTP 403 Forbidden: the host is rejecting the request, usually because it
+        // wants a Referer/Origin or a browser User-Agent. Retry once with those headers
+        // before falling back to other mirrors. Cascading MIME types can't fix this.
+        var forbiddenError = false
+        try {
+            val cause = error.cause
+            val httpCode = if (cause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                cause.responseCode
+            } else -1
+            forbiddenError = error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS &&
+                (httpCode == 403 || httpCode == 401 ||
+                 (httpCode == -1 && (error.cause?.message?.contains("403") == true ||
+                                     error.cause?.message?.contains("401") == true)))
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking for 403", e)
+        }
+
         when {
             cleartextError && channelStreamUrl?.startsWith("http://") == true -> {
                 Log.d(TAG, "Attempting to use HTTPS instead of HTTP")
                 val httpsUrl = tryHttpsUrl(channelStreamUrl ?: "")
                 playStream(httpsUrl)
                 return
+            }
+            forbiddenError -> {
+                if (!triedHeaderWorkaround) {
+                    Log.d(TAG, "403 Forbidden - retrying with Referer/Origin/browser headers")
+                    triedHeaderWorkaround = true
+                    retryWithEnhancedHeaders()
+                    return
+                }
+                if (tryNextStreamCandidate()) return
+                // Fall through to show the error below.
             }
             hlsParsingError -> {
                 if (channelStreamUrl?.lowercase()?.endsWith(".m3u8") == true) {
@@ -1116,12 +1700,18 @@ class PlayerActivity : AppCompatActivity() {
                 tryAlternativeFormat(channelStreamUrl ?: "")
                 return
             }
+            containerUnsupported -> {
+                Log.d(TAG, "Container unsupported, cascading through known stream formats")
+                tryNextFormat()
+                return
+            }
         }
 
         errorTextView.visibility = View.VISIBLE
         playerView.visibility = View.GONE
 
         errorTextView.text = when {
+            forbiddenError -> "This source refused the connection (403). It may be expired or region-locked. Try another quality or provider."
             hlsParsingError -> "Invalid stream format. This stream may not be available."
             cleartextError -> "Insecure connection not allowed. Try using an HTTPS stream or check app settings."
             formatError -> "This media format is not supported on your device."
@@ -1134,49 +1724,135 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    private fun tryAlternativeFormat(streamUrl: String) {
-        val mimeTypesToTry = mutableListOf<String?>().apply {
-            add(supportedFormats["m3u8"])
-            add(supportedFormats["mpd"])
-            add(supportedFormats["ts"])
-            add(supportedFormats["mp4"])
-            add(supportedFormats["webm"])
-            add(supportedFormats["mkv"])
-            add(supportedFormats["ism"])
-            add(supportedFormats["flv"])
-            add(null)
+    /**
+     * Cascades through known streaming container MIME types one at a time.
+     * Each attempt re-prepares the player forcing a specific MIME type, which selects
+     * the correct MediaSource (HLS/DASH/SS/Progressive). If that attempt also fails,
+     * onPlayerError routes back here to try the next format. When all formats are
+     * exhausted a final error is shown.
+     */
+    private fun tryNextFormat() {
+        val streamUrl = channelStreamUrl
+        if (streamUrl.isNullOrBlank()) {
+            showFormatExhaustedError()
+            return
         }
 
-        for ((index, mimeType) in mimeTypesToTry.withIndex()) {
+        formatRetryIndex++
+
+        if (formatRetryIndex >= formatRetryMimeTypes.size) {
+            Log.e(TAG, "Exhausted all format options for stream")
+            showFormatExhaustedError()
+            return
+        }
+
+        val mimeType = formatRetryMimeTypes[formatRetryIndex]
+        Log.d(TAG, "Format retry ${formatRetryIndex + 1}/${formatRetryMimeTypes.size}: ${mimeType ?: "auto-detect"}")
+
+        try {
             val builder = MediaItem.Builder().setUri(Uri.parse(streamUrl))
             mimeType?.let { builder.setMimeType(it) }
 
-            try {
-                Log.d(TAG, "Trying format ${mimeType ?: "auto-detect"} (attempt ${index + 1})")
-                val mediaItem = builder.build()
-                player?.apply {
-                    clearMediaItems()
-                    setMediaItem(mediaItem)
-                    prepare()
-                    play()
-                }
+            errorTextView.visibility = View.GONE
+            playerView.visibility = View.VISIBLE
+            progressBar.visibility = View.VISIBLE
 
-                Handler(Looper.getMainLooper()).postDelayed({
-                    if (player?.isPlaying == true) {
-                        Log.d(TAG, "Successfully playing with format ${mimeType ?: "auto-detect"}")
-                    } else if (index < mimeTypesToTry.size - 1) {
-                        Log.d(TAG, "Playback failed with ${mimeType ?: "auto-detect"}, trying next format")
-                    }
-                }, 2000)
-                return
-            } catch (e: Exception) {
-                Log.e(TAG, "Error with format ${mimeType ?: "auto-detect"}: ${e.message}")
+            player?.apply {
+                clearMediaItems()
+                setMediaItem(builder.build())
+                prepare()
+                playWhenReady = true
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error preparing format ${mimeType ?: "auto-detect"}: ${e.message}", e)
+            // Advance to the next format immediately if this one threw synchronously
+            tryNextFormat()
         }
+    }
 
+    private fun showFormatExhaustedError() {
+        formatRetryIndex = -1
+        // Before giving up, try the next mirror/quality for this item, if any.
+        if (tryNextStreamCandidate()) return
         errorTextView.visibility = View.VISIBLE
         playerView.visibility = View.GONE
-        errorTextView.text = "Unable to play this stream. Format not supported."
+        progressBar.visibility = View.GONE
+        errorTextView.text = "Unable to play this stream. The source may be expired or unsupported. Try another quality or provider."
+    }
+
+    /** Falls back to the next stream mirror/quality for the current item. */
+    private fun tryNextStreamCandidate(): Boolean {
+        if (currentStreamIndex + 1 >= streamCandidates.size) return false
+        currentStreamIndex++
+        triedHeaderWorkaround = false // give the new mirror its own header retry
+        val next = streamCandidates[currentStreamIndex]
+        Log.d(TAG, "Falling back to stream ${currentStreamIndex + 1}/${streamCandidates.size}")
+        Toast.makeText(this, "Trying another source...", Toast.LENGTH_SHORT).show()
+        applyStreamAndReload(next.url, next.headers)
+        return true
+    }
+
+    /**
+     * Retries the current stream after a 403 by adding a Referer/Origin (derived from the
+     * stream host) and a browser User-Agent, which many CDNs require.
+     */
+    private fun retryWithEnhancedHeaders() {
+        val url = channelStreamUrl
+        if (url.isNullOrBlank()) {
+            showError("Stream blocked by the server (403).")
+            return
+        }
+        val enhanced = HashMap<String, String>()
+        intent.getBundleExtra("channel_headers")?.let { b ->
+            for (k in b.keySet()) b.getString(k)?.let { enhanced[k] = it }
+        }
+        try {
+            val uri = Uri.parse(url)
+            val scheme = uri.scheme ?: "https"
+            val host = uri.host
+            if (host != null) {
+                val origin = "$scheme://$host"
+                if (enhanced.keys.none { it.equals("Referer", ignoreCase = true) }) {
+                    enhanced["Referer"] = "$origin/"
+                }
+                if (enhanced.keys.none { it.equals("Origin", ignoreCase = true) }) {
+                    enhanced["Origin"] = origin
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error building enhanced headers", e)
+        }
+        if (enhanced.keys.none { it.equals("User-Agent", ignoreCase = true) }) {
+            enhanced["User-Agent"] = CHROME_USER_AGENT
+        }
+        applyStreamAndReload(url, enhanced)
+    }
+
+    /** Swaps the player to a different stream URL (mirror/quality) without recreating it. */
+    private fun applyStreamAndReload(url: String, headers: Map<String, String>?) {
+        releasePlayer()
+        isUserScrubbing = false
+        channelStreamUrl = normalizeUrl(url)
+        formatRetryIndex = -1
+        playbackPosition = 0L
+        isPlayerReady = false
+        intent.putExtra("channel_stream_url", url)
+        if (headers != null && headers.isNotEmpty()) {
+            val bundle = Bundle()
+            for ((k, v) in headers) bundle.putString(k, v)
+            intent.putExtra("channel_headers", bundle)
+        } else {
+            intent.removeExtra("channel_headers")
+        }
+        errorTextView.visibility = View.GONE
+        playerView.visibility = View.VISIBLE
+        progressBar.visibility = View.VISIBLE
+        setupPlayer()
+    }
+
+    private fun tryAlternativeFormat(streamUrl: String) {
+        // Delegate to the cascading format retry which handles failures sequentially.
+        tryNextFormat()
     }
 
     private fun setupBackButton() {
@@ -1198,6 +1874,28 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
         }
+        // Long-press to change playback speed.
+        playPauseBtn.setOnLongClickListener {
+            showPlaybackSpeedDialog()
+            true
+        }
+    }
+
+    private fun showPlaybackSpeedDialog() {
+        val p = player ?: return
+        val speeds = floatArrayOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+        val labels = speeds.map { if (it == 1.0f) "Normal (1x)" else "${it}x" }.toTypedArray()
+        val current = p.playbackParameters.speed
+        val checked = speeds.indexOfFirst { kotlin.math.abs(it - current) < 0.01f }.let { if (it < 0) 3 else it }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Playback Speed")
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                player?.setPlaybackSpeed(speeds[which])
+                Toast.makeText(this, "Speed: ${labels[which]}", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun setupNavigationButtons() {
@@ -1214,6 +1912,9 @@ class PlayerActivity : AppCompatActivity() {
                 it.seekTo(newPosition)
             }
         }
+
+        nextEpisodeBtn.setOnClickListener { playNextEpisode() }
+        updateNextEpisodeButtonVisibility()
     }
 
     private fun setupRepeatButton() {
@@ -1460,7 +2161,14 @@ class PlayerActivity : AppCompatActivity() {
                 addAction(ACTION_PIP_PLAY)
                 addAction(ACTION_PIP_PAUSE)
             }
-            registerReceiver(pipReceiver, filter, RECEIVER_NOT_EXPORTED)
+            // ContextCompat applies RECEIVER_NOT_EXPORTED only on API 33+ and registers
+            // correctly on Android 12 (where that flag isn't a valid registerReceiver arg).
+            androidx.core.content.ContextCompat.registerReceiver(
+                this,
+                pipReceiver,
+                filter,
+                androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+            )
         }
     }
 
@@ -1686,6 +2394,7 @@ class PlayerActivity : AppCompatActivity() {
         try {
             stopProgressBarUpdates()
             releasePlayer()
+            seekThumbnailProvider.release()
             hidePanelsHandler.removeCallbacksAndMessages(null)
             progressBarHandler?.removeCallbacksAndMessages(null)
             progressBarHandler = null
