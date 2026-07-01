@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.samyak.iptvminepro.model.VegaPost
+import com.samyak.iptvminepro.ui.components.GridShimmerPlaceholder
 import com.samyak.iptvminepro.ui.components.MovieCard
 import com.samyak.iptvminepro.ui.viewmodel.CategoryMoviesViewModel
 
@@ -167,6 +168,13 @@ fun CategoryMoviesScreen(
                             fontSize = 16.sp
                         )
                     }
+                } else if (movies.isEmpty() && isLoading) {
+                    // Initial load: show shimmer skeleton grid instead of a plain spinner
+                    GridShimmerPlaceholder(
+                        modifier = Modifier.fillMaxSize(),
+                        columns = 3,
+                        rows = 5
+                    )
                 } else {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(3),
@@ -199,13 +207,6 @@ fun CategoryMoviesScreen(
                             }
                         }
                     }
-                }
-
-                if (isLoading && movies.isEmpty()) {
-                    CircularProgressIndicator(
-                        color = Color(0xFF26A69A),
-                        modifier = Modifier.align(Alignment.Center)
-                    )
                 }
             }
         }

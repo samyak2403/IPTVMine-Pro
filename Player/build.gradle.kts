@@ -41,6 +41,7 @@ dependencies {
     implementation(libs.androidx.media3.datasource.rtmp)
     implementation(libs.androidx.media3.datasource.okhttp)
     implementation(project(":doubletapplayerview"))
+    implementation(project(":iptvminetimebar"))
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)

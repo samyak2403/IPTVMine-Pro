@@ -67,6 +67,17 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var progressBar: ProgressBar
     private lateinit var errorTextView: TextView
 
+    // YouTube-style seek bar with image preview
+    private var youtubeTimeBar: com.samyak.iptvminetimebar.YouTubeTimeBar? = null
+    private var youtubeTimeBarPreview: com.samyak.iptvminetimebar.YouTubeTimeBarPreview? = null
+    private val seekThumbnailProvider = SeekThumbnailProvider()
+    private val pixelCopyHandler = Handler(Looper.getMainLooper())
+    private var pixelCopyInFlight = false
+    private var lastPixelCopyMs = 0L
+    private var thumbnailIntervalMs = THUMBNAIL_INTERVAL_MS
+    private var isUserScrubbing = false
+
+
     // Brightness and volume gesture controls
     private lateinit var brightnessControlPanel: LinearLayout
     private lateinit var brightnessProgressBar: ProgressBar
@@ -160,6 +171,9 @@ class PlayerActivity : AppCompatActivity() {
         private const val INCREMENT_MILLIS = 5000L
         private const val PROGRESS_BAR_UPDATE_INTERVAL_MS = 16
         private const val NEXT_EPISODE_OVERLAY_THRESHOLD_MS = 60_000L
+        private const val THUMBNAIL_INTERVAL_MS = 10_000L
+        private const val MAX_PREFETCH_FRAMES = 160L
+        private const val PREVIEW_CAPTURE_WIDTH = 320
         private const val CHROME_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
@@ -326,6 +340,9 @@ class PlayerActivity : AppCompatActivity() {
         audioTrackBtn = playerView.findViewById(R.id.audioTrackBtn)
         subtitleBtn = playerView.findViewById(R.id.subtitleBtn)
 
+        // Enable the scrubber handle on the YouTube-style time bar (hidden by default)
+        setupYouTubeTimeBar()
+
         // Setup PiP button
         setupPipButton()
 
@@ -341,6 +358,141 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         updateScaleMode()
+    }
+
+    /**
+     * Wires the [com.samyak.iptvminetimebar.YouTubeTimeBar] and its image preview into the player.
+     * The time bar is auto-bound by Media3 via the shared `exo_progress` id; here we enable the
+     * scrubber handle and connect the preview popup that shows a thumbnail + timestamp on seek.
+     */
+    private fun setupYouTubeTimeBar() {
+        youtubeTimeBar = playerView.findViewById(androidx.media3.ui.R.id.exo_progress)
+        youtubeTimeBarPreview = playerView.findViewById(R.id.youtube_preview)
+
+        youtubeTimeBar?.showScrubber()
+
+        val preview = youtubeTimeBarPreview ?: return
+        youtubeTimeBar?.timeBarPreview(preview)
+
+        // Drive seeking explicitly so the bar always controls playback, regardless of how Media3
+        // binds a custom TimeBar. While the user drags we stop pushing playback position to the
+        // bar (see updateProgressBar) so the scrubber follows the finger, and seek on release.
+        youtubeTimeBar?.addListener(object : androidx.media3.ui.TimeBar.OnScrubListener {
+            override fun onScrubStart(timeBar: androidx.media3.ui.TimeBar, position: Long) {
+                isUserScrubbing = true
+                playerView.showController()
+            }
+
+            override fun onScrubMove(timeBar: androidx.media3.ui.TimeBar, position: Long) {
+                isUserScrubbing = true
+                playerView.showController()
+            }
+
+            override fun onScrubStop(
+                timeBar: androidx.media3.ui.TimeBar,
+                position: Long,
+                canceled: Boolean
+            ) {
+                isUserScrubbing = false
+                if (!canceled) {
+                    player?.seekTo(position.coerceAtLeast(0))
+                }
+            }
+        })
+
+        // No chapter data for IPTV/VOD content, so just show the timestamp under the thumbnail.
+        preview.useTitle(false)
+        preview.durationPerFrame(thumbnailIntervalMs)
+        preview.previewListener(object : com.samyak.iptvminetimebar.YouTubeTimeBarPreview.Listener {
+            override fun loadThumbnail(imageView: android.widget.ImageView, position: Long) {
+                seekThumbnailProvider.loadThumbnail(
+                    imageView,
+                    position,
+                    thumbnailIntervalMs
+                ) { iv -> captureCurrentVideoFrame(iv) }
+            }
+        })
+    }
+
+    /**
+     * Once the duration is known, sizes the thumbnail grid so the whole movie is covered by a
+     * bounded number of frames, then prefetches them in the background so scrubbing is instant.
+     */
+    private fun prepareThumbnailGrid() {
+        val p = player ?: return
+        val dur = p.duration
+        if (isLiveStream || dur == C.TIME_UNSET || dur <= 0) return
+
+        thumbnailIntervalMs = (dur / MAX_PREFETCH_FRAMES).coerceAtLeast(THUMBNAIL_INTERVAL_MS)
+        youtubeTimeBarPreview?.durationPerFrame(thumbnailIntervalMs)
+
+        // Prefetching opens a second connection and walks the file, so skip it when the user has
+        // asked to save data; on-demand extraction + the current-frame fallback still work.
+        if (!isDataSavingEnabled) {
+            seekThumbnailProvider.startPrefetch(dur, thumbnailIntervalMs)
+        }
+    }
+
+    /**
+     * Captures the currently rendered video frame and shows it in [imageView]. This guarantees the
+     * seek preview always displays a real image, even for HLS/live sources where per-position frame
+     * extraction isn't possible. Throttled so rapid scrubbing doesn't spam the GPU copy.
+     */
+    private fun captureCurrentVideoFrame(imageView: android.widget.ImageView) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (pixelCopyInFlight || now - lastPixelCopyMs < 150L) return
+
+        val surface = playerView.videoSurfaceView ?: return
+        try {
+            val width = surface.width
+            val height = surface.height
+            if (width <= 0 || height <= 0) return
+
+            // Downscale the capture so we never allocate a full 1080p+ bitmap on every scrub tick
+            // (that churns memory and can OOM). PixelCopy scales the surface into the dest bitmap.
+            val targetWidth = width.coerceAtMost(PREVIEW_CAPTURE_WIDTH)
+            val targetHeight = (height.toLong() * targetWidth / width).toInt().coerceAtLeast(1)
+
+            when (surface) {
+                is android.view.SurfaceView -> {
+                    val holderSurface = surface.holder?.surface
+                    if (holderSurface == null || !holderSurface.isValid) return
+                    val bmp = android.graphics.Bitmap.createBitmap(
+                        targetWidth, targetHeight, android.graphics.Bitmap.Config.ARGB_8888
+                    )
+                    pixelCopyInFlight = true
+                    lastPixelCopyMs = now
+                    android.view.PixelCopy.request(surface, bmp, { result ->
+                        pixelCopyInFlight = false
+                        if (result == android.view.PixelCopy.SUCCESS && !isDestroyed && !isFinishing) {
+                            imageView.setImageBitmap(bmp)
+                        }
+                    }, pixelCopyHandler)
+                }
+                is android.view.TextureView -> {
+                    lastPixelCopyMs = now
+                    surface.getBitmap(targetWidth, targetHeight)?.let { imageView.setImageBitmap(it) }
+                }
+                else -> { /* unsupported surface type */ }
+            }
+        } catch (e: Exception) {
+            pixelCopyInFlight = false
+            Log.d(TAG, "Current-frame capture failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Builds the HTTP header map used for off-screen frame extraction. Mirrors the headers
+     * ExoPlayer plays with (custom request headers + a User-Agent) so the extra connection that
+     * [MediaMetadataRetriever] opens isn't rejected with a 403 by Vega/IPTV hosts.
+     */
+    private fun buildThumbnailHeaders(): Map<String, String> {
+        val map = HashMap<String, String>()
+        map.putAll(requestHeaders)
+        if (!map.keys.any { it.equals("User-Agent", ignoreCase = true) }) {
+            map["User-Agent"] = requestUserAgent ?: CHROME_USER_AGENT
+        }
+        return map
     }
 
     private fun setupPipButton() {
@@ -726,6 +878,11 @@ class PlayerActivity : AppCompatActivity() {
 
             val mediaItem = detectAndCreateMediaItem(channelStreamUrl ?: "")
 
+            // Point the seek-preview thumbnail extractor at the current stream, including the
+            // same User-Agent/Referer headers ExoPlayer uses (Vega VOD links reject requests
+            // without them, which is why frame extraction returned nothing before).
+            seekThumbnailProvider.setSource(channelStreamUrl, buildThumbnailHeaders())
+
             // Create and store listener reference for proper cleanup
             playerListener = object : Player.Listener {
                 override fun onPlaybackStateChanged(state: Int) {
@@ -740,6 +897,7 @@ class PlayerActivity : AppCompatActivity() {
                             // so VOD content keeps its seek bar and only true live
                             // streams show the LIVE badge.
                             checkIfLiveStream()
+                            prepareThumbnailGrid()
                             progressBar.visibility = View.GONE
                             playerView.visibility = View.VISIBLE
                             startProgressBarUpdates()
@@ -857,10 +1015,17 @@ class PlayerActivity : AppCompatActivity() {
             progressBarHandler = Handler(Looper.getMainLooper())
             progressBarRunnable = object : Runnable {
                 override fun run() {
-                    if (player?.isPlaying == true && !isFinishing && !isDestroyed) {
+                    if (!isFinishing && !isDestroyed) {
                         updateProgressBar()
                         if (!isFinishing && !isDestroyed && progressBarHandler != null) {
-                            progressBarHandler?.postDelayed(this, PROGRESS_BAR_UPDATE_INTERVAL_MS.toLong())
+                            // Keep driving the seek bar even while paused/buffering so it always has
+                            // a valid duration and stays seekable (just slower when not playing).
+                            val delay = if (player?.isPlaying == true) {
+                                PROGRESS_BAR_UPDATE_INTERVAL_MS.toLong()
+                            } else {
+                                250L
+                            }
+                            progressBarHandler?.postDelayed(this, delay)
                         }
                     }
                 }
@@ -883,6 +1048,18 @@ class PlayerActivity : AppCompatActivity() {
                     playerView.findViewById<View>(androidx.media3.ui.R.id.exo_position)?.visibility = View.VISIBLE
                     playerView.findViewById<View>(androidx.media3.ui.R.id.exo_duration)?.visibility = View.VISIBLE
                     exoLiveText.visibility = View.GONE
+
+                    // Drive the YouTube time bar directly so it always shows progress and stays
+                    // seekable, even if Media3 didn't auto-bind the custom view. Skip while the
+                    // user is dragging so the scrubber tracks the finger instead of the playhead.
+                    if (!isUserScrubbing) {
+                        youtubeTimeBar?.let { bar ->
+                            val dur = it.duration
+                            if (dur != C.TIME_UNSET && dur > 0) bar.setDuration(dur)
+                            bar.setPosition(it.currentPosition)
+                            bar.setBufferedPosition(it.bufferedPosition)
+                        }
+                    }
                 }
             }
             maybeShowNextEpisodeOverlay()
@@ -974,6 +1151,7 @@ class PlayerActivity : AppCompatActivity() {
      */
     private fun loadEpisodeInPlace(index: Int, title: String, url: String, headers: Map<String, String>?) {
         releasePlayer()
+        isUserScrubbing = false
         currentEpisodeIndex = index
         channelName = title
         channelStreamUrl = normalizeUrl(url)
@@ -1082,6 +1260,7 @@ class PlayerActivity : AppCompatActivity() {
             checkIfLiveStream()
 
             val mediaItem = detectAndCreateMediaItem(url)
+            seekThumbnailProvider.setSource(url, buildThumbnailHeaders())
             player?.apply {
                 clearMediaItems()
                 setMediaItem(mediaItem)
@@ -1652,6 +1831,7 @@ class PlayerActivity : AppCompatActivity() {
     /** Swaps the player to a different stream URL (mirror/quality) without recreating it. */
     private fun applyStreamAndReload(url: String, headers: Map<String, String>?) {
         releasePlayer()
+        isUserScrubbing = false
         channelStreamUrl = normalizeUrl(url)
         formatRetryIndex = -1
         playbackPosition = 0L
@@ -2214,6 +2394,7 @@ class PlayerActivity : AppCompatActivity() {
         try {
             stopProgressBarUpdates()
             releasePlayer()
+            seekThumbnailProvider.release()
             hidePanelsHandler.removeCallbacksAndMessages(null)
             progressBarHandler?.removeCallbacksAndMessages(null)
             progressBarHandler = null

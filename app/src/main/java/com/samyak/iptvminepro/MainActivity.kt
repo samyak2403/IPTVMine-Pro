@@ -70,6 +70,7 @@ import com.samyak.iptvminepro.ui.screens.tv.CategoryDetailScreen
 import com.samyak.iptvminepro.ui.screens.settings.AboutScreen
 import com.samyak.iptvminepro.ui.screens.settings.BugReportScreen
 import com.samyak.iptvminepro.ui.screens.settings.ExtensionsScreen
+import com.samyak.iptvminepro.ui.screens.settings.SupportScreen
 import com.samyak.iptvminepro.ui.screens.movies.MovieDetailScreen
 import com.samyak.iptvminepro.ui.screens.movies.CategoryMoviesScreen
 import com.samyak.iptvminepro.ui.screens.movies.MovieSearchScreen
@@ -157,6 +158,7 @@ sealed class Screen(val route: String, val label: String, val icon: @Composable 
     object BugReport : Screen("bug_report", "Report Bug", { })
     object WatchHistory : Screen("watch_history", "Watch History", { })
     object Legal : Screen("legal?docType={docType}", "Legal Information", { })
+    object Support : Screen("support", "Support", { })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -222,6 +224,7 @@ fun MainApp() {
                 currentRoute != Screen.CategoryDetail.route &&
                 currentRoute != Screen.MovieDetail.route &&
                 currentRoute != Screen.About.route &&
+                currentRoute != Screen.Support.route &&
                 currentRoute != Screen.CategoryMovies.route &&
                 currentRoute != Screen.Extensions.route &&
                 currentRoute != Screen.MovieSearch.route &&
@@ -327,6 +330,7 @@ fun MainApp() {
                             Screen.AddProvider.route -> "Add Provider"
                             Screen.AddProviderHelp.route -> "Add Provider Sources"
                             Screen.About.route -> "About App"
+                            Screen.Support.route -> "Support"
                             "pairing" -> "TV Pairing"
                             Screen.CategoryDetail.route -> categoryName ?: "Category"
                             Screen.Downloads.route -> "Downloads"
@@ -351,6 +355,7 @@ fun MainApp() {
                             currentRoute == Screen.AddProviderHelp.route ||
                             currentRoute == Screen.CategoryDetail.route ||
                             currentRoute == Screen.About.route ||
+                            currentRoute == Screen.Support.route ||
                             currentRoute == Screen.Downloads.route ||
                             currentRoute == Screen.BugReport.route ||
                             currentRoute == Screen.WatchHistory.route ||
@@ -417,6 +422,7 @@ fun MainApp() {
                             currentRoute != Screen.AddProviderHelp.route &&
                             currentRoute != Screen.CategoryDetail.route &&
                             currentRoute != Screen.About.route &&
+                            currentRoute != Screen.Support.route &&
                             currentRoute != Screen.Downloads.route &&
                             currentRoute != Screen.BugReport.route &&
                             currentRoute != Screen.WatchHistory.route &&
@@ -534,8 +540,14 @@ fun MainApp() {
                     onNavigateToDownloads = { navController.navigate(Screen.Downloads.route) },
                     onNavigateToBugReport = { navController.navigate(Screen.BugReport.route) },
                     onNavigateToWatchHistory = { navController.navigate(Screen.WatchHistory.route) },
-                    onNavigateToLegal = { docType -> navController.navigate("legal?docType=$docType") }
+                    onNavigateToLegal = { docType -> navController.navigate("legal?docType=$docType") },
+                    onNavigateToSupport = { navController.navigate(Screen.Support.route) }
                 ) 
+            }
+            composable(Screen.Support.route) {
+                SupportScreen(
+                    onNavigateToBugReport = { navController.navigate(Screen.BugReport.route) }
+                )
             }
             composable(Screen.Downloads.route) {
                 DownloadsScreen(

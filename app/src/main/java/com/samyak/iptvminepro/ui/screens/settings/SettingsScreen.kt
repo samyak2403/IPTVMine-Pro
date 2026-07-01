@@ -44,7 +44,8 @@ fun SettingsScreen(
     onNavigateToDownloads: () -> Unit,
     onNavigateToBugReport: () -> Unit,
     onNavigateToWatchHistory: () -> Unit,
-    onNavigateToLegal: (String) -> Unit
+    onNavigateToLegal: (String) -> Unit,
+    onNavigateToSupport: () -> Unit
 ) {
     val scrollState = rememberScrollState()
     val context = LocalContext.current
@@ -96,6 +97,13 @@ fun SettingsScreen(
             title = stringResource(id = R.string.setting_report_bug),
             icon = Icons.Filled.BugReport,
             onClick = onNavigateToBugReport
+        )
+
+        SettingsSectionTitle(title = stringResource(id = R.string.section_support))
+        SettingsItem(
+            title = stringResource(id = R.string.setting_support),
+            icon = Icons.Filled.HelpOutline,
+            onClick = onNavigateToSupport
         )
 
 

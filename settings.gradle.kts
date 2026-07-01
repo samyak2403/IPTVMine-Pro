@@ -25,3 +25,5 @@ include(":app")
 include(":Player")
 include(":doubletapplayerview")
 include(":television")
+include(":iptvminetimebar")
+

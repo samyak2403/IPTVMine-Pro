@@ -300,22 +300,30 @@
         app:layout_constraintTop_toBottomOf="@id/watermarkText"
         android:layout_marginTop="8dp" />
 
-    <androidx.media3.ui.DefaultTimeBar
+    <com.samyak.iptvminetimebar.YouTubeTimeBarPreview
+        android:id="@+id/youtube_preview"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        app:layout_constraintBottom_toTopOf="@id/exo_progress"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <com.samyak.iptvminetimebar.YouTubeTimeBar
         android:id="@id/exo_progress"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="5dp"
         android:layout_marginBottom="40dp"
-        app:buffered_color="#80FFFFFF"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHorizontal_bias="0.444"
         app:layout_constraintStart_toStartOf="parent"
-        app:played_color="@color/white"
-        app:scrubber_color="@color/white"
-        app:scrubber_disabled_size="10dp"
-        app:scrubber_enabled_size="15dp"
-        app:unplayed_color="#80FFFFFF" />
+        app:yt_buffered_color="#80FFFFFF"
+        app:yt_played_color="@color/white"
+        app:yt_scrubber_color="@color/white"
+        app:yt_scrubber_size_dragged="20dp"
+        app:yt_scrubber_size_enabled="15dp"
+        app:yt_unplayed_color="#80FFFFFF" />
 
     <LinearLayout
         android:layout_width="match_parent"
