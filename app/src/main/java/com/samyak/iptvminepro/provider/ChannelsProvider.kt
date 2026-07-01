@@ -17,6 +17,7 @@ import org.json.JSONObject
 import org.json.JSONArray
 import com.samyak.iptvminepro.notification.NotificationHelper
 import com.samyak.iptvminepro.model.Provider
+import com.samyak.iptvminepro.provider.ChannelsProvider.Companion.DEFAULT_LOGO_URL
 
 class ChannelsProvider(application: Application) : AndroidViewModel(application) {
 
@@ -52,17 +53,6 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
     // Fetch cooldown: prevent repeated network requests
     private var lastFetchTimestamp = 0L
     private var lastFetchedUrlsHash = 0
-    private companion object FetchConfig {
-        private const val FETCH_COOLDOWN_MS = 5 * 60 * 1000L // 5 minutes
-        private const val MAX_RESPONSE_SIZE = 10 * 1024 * 1024L // 10 MB
-        private val VIDEO_EXTENSIONS = setOf(
-            ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm",
-            ".mpg", ".mpeg", ".3gp", ".ogv", ".rm", ".rmvb"
-        )
-        private val BLOCKED_CONTENT_TYPES = setOf(
-            "video/", "audio/", "image/", "application/octet-stream"
-        )
-    }
 
     fun showNewMatchNotification(channel: Channel) {
         notificationCount++
@@ -100,6 +90,15 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
         private const val DEFAULT_LOGO_URL = ""
         private const val CONNECT_TIMEOUT = 30000
         private const val READ_TIMEOUT = 30000
+        private const val FETCH_COOLDOWN_MS = 5 * 60 * 1000L // 5 minutes
+        private const val MAX_RESPONSE_SIZE = 10 * 1024 * 1024L // 10 MB
+        private val VIDEO_EXTENSIONS = setOf(
+            ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm",
+            ".mpg", ".mpeg", ".3gp", ".ogv", ".rm", ".rmvb"
+        )
+        private val BLOCKED_CONTENT_TYPES = setOf(
+            "video/", "audio/", "image/", "application/octet-stream"
+        )
     }
 
     fun getSourceUrls(): List<String> = synchronized(sourceUrls) {
