@@ -1,0 +1,17 @@
+IPTVmine Pro — Release Notes
+Version 1.0.7 (versionCode 7)
+
+Fixes
+- Fixed "Failed to fetch channels — response too large" error. Large IPTV M3U
+  playlists (tens of MB of text) were being rejected by a 10MB size cap. The
+  cap has been raised to 100MB so large channel lists now load correctly.
+  Applied to both the app provider (ChannelsProvider) and the Television
+  module loader (ChannelsLoader).
+
+Improvements
+- Cleaned up the "Add Provider" help screen:
+  - Removed the "Step 3: Enter Source Identifier" (vega-org) section.
+  - Removed the sample community playlist link and its copy button from the
+    "IPTV M3U Playlist Source" card.
+  - Removed the vega-org mention from the intro text.
+  - Updated the step image to the new m3u_step_2 illustration.
