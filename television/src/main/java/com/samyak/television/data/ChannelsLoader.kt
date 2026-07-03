@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 object ChannelsLoader {
     private const val TAG = "ChannelsLoader"
     private const val DEFAULT_LOGO_URL = ""
-    private const val MAX_RESPONSE_SIZE = 10L * 1024 * 1024 // 10 MB
+    private const val MAX_RESPONSE_SIZE = 100L * 1024 * 1024 // 100 MB — large IPTV M3U playlists can be tens of MB of text
 
     private val VIDEO_EXTENSIONS = setOf(
         ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm",

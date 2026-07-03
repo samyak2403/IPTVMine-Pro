@@ -139,7 +139,7 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
         private const val CONNECT_TIMEOUT = 30000
         private const val READ_TIMEOUT = 30000
         private const val FETCH_COOLDOWN_MS = 5 * 60 * 1000L // 5 minutes
-        private const val MAX_RESPONSE_SIZE = 10 * 1024 * 1024L // 10 MB
+        private const val MAX_RESPONSE_SIZE = 100 * 1024 * 1024L // 100 MB — large IPTV M3U playlists can be tens of MB of text
         // Per-source exponential backoff bounds (used to stop hammering failing URLs)
         private const val BASE_BACKOFF_MS = 60 * 1000L // 1 minute
         private const val MAX_BACKOFF_MS = 60 * 60 * 1000L // 1 hour cap

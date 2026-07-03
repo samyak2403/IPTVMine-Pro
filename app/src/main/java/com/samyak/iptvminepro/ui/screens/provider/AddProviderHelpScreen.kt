@@ -59,7 +59,7 @@ fun AddProviderHelpScreen() {
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "You can create your own provider by following the provider authoring guide below, or use official/community providers such as vega-org.",
+                    text = "You can create your own provider by following the provider authoring guide below.",
                     fontSize = 14.sp,
                     lineHeight = 20.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -127,82 +127,13 @@ fun AddProviderHelpScreen() {
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
                 Image(
-                    painter = painterResource(id = R.drawable.step_2),
+                    painter = painterResource(id = R.drawable.m3u_step_2),
                     contentDescription = "Step 2: Click the plus button",
                     contentScale = ContentScale.FillWidth,
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
                 )
-            }
-        }
-
-        // Step 3 Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-            ),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Text(
-                    text = "Step 3: Enter Source Identifier",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "To add Zenda-X providers, enter vega-org and press Confirm.",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-                
-                // Copy Box Row
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "vega-org",
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    TextButton(
-                        onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clip = ClipData.newPlainText("provider_source", "vega-org")
-                            clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Copy text",
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Copy",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
             }
         }
 
@@ -225,54 +156,19 @@ fun AddProviderHelpScreen() {
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "To add an IPTV or M3U playlist, enter a provider title and a valid playlist URL (e.g. ending in .m3u or .m3u8). You can copy the sample community playlist below:",
+                    text = "To add an IPTV or M3U playlist, enter a provider title and a valid playlist URL (e.g. ending in .m3u or .m3u8).",
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
-                
-                // Copy Box Row
-                Row(
+                Image(
+                    painter = painterResource(id = R.drawable.m3u_step_2),
+                    contentDescription = "Enter a provider title and M3U playlist URL",
+                    contentScale = ContentScale.FillWidth,
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "https://iptv-org.github.io/iptv/index.m3u",
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f).padding(end = 8.dp)
-                    )
-                    TextButton(
-                        onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clip = ClipData.newPlainText("m3u_playlist", "https://iptv-org.github.io/iptv/index.m3u")
-                            clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "Copied playlist URL to clipboard", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Copy text",
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Copy",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
+                )
             }
         }
 

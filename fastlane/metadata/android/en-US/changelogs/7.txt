@@ -1,0 +1,2 @@
+- Increased response limit to 100MB to support parsing large IPTV/M3U playlist files
+- Improved layout and instructions on the provider help screen
