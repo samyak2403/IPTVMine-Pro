@@ -1,0 +1,2 @@
+- Added MIT License file for open-source compliance
+- Updated baseline profiles to optimize application startup performance

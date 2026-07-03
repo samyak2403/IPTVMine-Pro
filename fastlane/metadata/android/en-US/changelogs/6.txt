@@ -1,0 +1,7 @@
+- Added support for RTMP and HLS streams with custom player timebar
+- Implemented direct video support, HLS master playlist processing, and dynamic multiple URL inputs
+- Added fetch cooldown and error tracking with automatic backoff for scrapers
+- Added TV episodes playlist, next episode autoplay, and Leanback UI improvements
+- Improved download reliability with retry mechanism and notification permission requests
+- Added provider help screen and extension count display in settings
+- Resolved memory leak by destroying WebView scrapers on screen dispose
