@@ -1,4 +1,23 @@
 IPTVmine Pro — Release Notes
+Version 1.0.9 (versionCode 9)
+
+New
+- Added a Donate screen so you can support the app's development. Open it from
+  Settings > Donate > Support the Developer. It offers two options:
+  - Buy Me a Coffee: opens buymeacoffee.com/mr_samyakkamble.
+  - UPI (India): pay directly to samyakkamble01430-4@oksbi via any UPI app, or
+    copy the UPI ID to the clipboard with one tap.
+
+Fixes
+- UPI payment now works reliably on Android 11 and above. Added the required
+  package-visibility declaration so installed UPI apps are detected, with a
+  clear fallback message when no UPI app is available.
+- Fixed the Buy Me a Coffee link text being unreadable in dark mode.
+- Added navigation-bar padding so the Copy UPI ID button is no longer hidden
+  behind the system gesture bar on some devices.
+
+
+IPTVmine Pro — Release Notes
 Version 1.0.7 (versionCode 7)
 
 Fixes
