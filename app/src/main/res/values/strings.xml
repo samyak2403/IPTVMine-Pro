@@ -111,4 +111,18 @@
     <string name="support_bug_report_title">Report a Bug</string>
     <string name="support_bug_report_desc">Encountered an issue or crash? Send a bug report directly to us with screenshots and logs.</string>
     <string name="btn_open_bug_report">Report Issue</string>
+
+    <!-- Donate Screen -->
+    <string name="section_donate">Donate</string>
+    <string name="setting_donate">Support the Developer</string>
+    <string name="donate_header_title">Support Development</string>
+    <string name="donate_header_desc">IPTV Mine Pro is built and maintained with love. If you enjoy the app, consider supporting its development. Every contribution helps keep the project alive.</string>
+    <string name="donate_bmc_title">Buy Me a Coffee</string>
+    <string name="donate_bmc_desc">Show your support with a one-time contribution through Buy Me a Coffee.</string>
+    <string name="btn_open_bmc">Buy me a coffee</string>
+    <string name="donate_upi_title">UPI (India)</string>
+    <string name="donate_upi_desc">Prefer UPI? Pay directly to the UPI ID below using any UPI app.</string>
+    <string name="btn_pay_upi">Pay via UPI</string>
+    <string name="btn_copy_upi">Copy UPI ID</string>
+    <string name="donate_upi_copied">UPI ID copied to clipboard</string>
 </resources>
