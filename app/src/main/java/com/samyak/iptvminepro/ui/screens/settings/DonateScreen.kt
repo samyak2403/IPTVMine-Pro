@@ -44,6 +44,7 @@ fun DonateScreen() {
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .verticalScroll(scrollState)
+            .navigationBarsPadding()
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -90,7 +91,7 @@ fun DonateScreen() {
         DonateOptionCard(
             title = stringResource(id = R.string.donate_bmc_title),
             subtitle = "buymeacoffee.com/mr_samyakkamble",
-            subtitleColor = Color(0xFF000000),
+            subtitleColor = Color(0xFFF4511E),
             description = stringResource(id = R.string.donate_bmc_desc),
             leadingIcon = {
                 Icon(
@@ -267,9 +268,14 @@ private fun payViaUpi(context: Context) {
         "upi://pay?pa=$UPI_ID&pn=Samyak%20Kamble&cu=INR"
     )
     val intent = Intent(Intent.ACTION_VIEW, upiUri)
-    try {
-        context.startActivity(Intent.createChooser(intent, "Pay via"))
-    } catch (e: Exception) {
+    // resolveActivity works because <queries> declares the upi scheme
+    if (intent.resolveActivity(context.packageManager) != null) {
+        try {
+            context.startActivity(Intent.createChooser(intent, "Pay via"))
+        } catch (e: Exception) {
+            Toast.makeText(context, "No UPI app found. Copy the UPI ID instead.", Toast.LENGTH_LONG).show()
+        }
+    } else {
         Toast.makeText(context, "No UPI app found. Copy the UPI ID instead.", Toast.LENGTH_LONG).show()
     }
 }
