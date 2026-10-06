@@ -35,6 +35,12 @@
     <string name="desc_error">Error</string>
     <string name="desc_no_channels">No channels found</string>
     <string name="label_no_categories">No categories found</string>
+    <string name="tab_movies">Movies</string>
+    <string name="tab_live_tv">Live TV</string>
+    <string name="title_categories">Categories</string>
+    <string name="label_no_movie_categories">No movie categories found</string>
+    <string name="desc_movie_providers_empty">Please add a Movie provider in Settings to browse movie categories.</string>
+    <string name="desc_extensions_empty">Please install an extension from Settings to browse movie categories.</string>
     <string name="item_count_single">1 item</string>
     <string name="item_count_plural">%1$d items</string>
     <string name="msg_no_channels">No channels found</string>
@@ -60,6 +66,9 @@
 
     <!-- Settings -->
     <string name="section_content">Content</string>
+    <string name="section_network">Network</string>
+    <string name="setting_dns_over_https">DNS over HTTPS</string>
+    <string name="desc_dns_over_https">Encrypt DNS queries with a secure resolver</string>
     <string name="setting_manage_providers">Manage Providers</string>
     <string name="setting_extensions">Extensions</string>
     <string name="title_extensions">Extensions</string>

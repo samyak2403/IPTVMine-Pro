@@ -132,6 +132,8 @@ fun MovieDetailScreen(
             } else {
                 meta = resolvedMeta
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             error = e.message ?: "Failed to load details"
             android.util.Log.e("MovieDetailScreen", "Error getting meta", e)
@@ -146,6 +148,8 @@ fun MovieDetailScreen(
             try {
                 val eps = runner.getEpisodes(providerUrl, scraperValue, epLink)
                 episodesMap = episodesMap + (epLink to eps)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Toast.makeText(context, "Failed to load episodes: ${e.message}", Toast.LENGTH_SHORT).show()
             } finally {
@@ -193,6 +197,8 @@ fun MovieDetailScreen(
                         streamFallbacks = fallbacks
                     )
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
             } finally {
@@ -220,6 +226,8 @@ fun MovieDetailScreen(
                     selectedItemTitle = title
                     streamsToDownload = streams
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
             } finally {
@@ -260,6 +268,8 @@ fun MovieDetailScreen(
                             streamFallbacks = fallbacks
                         )
                     }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
                 } finally {
@@ -330,6 +340,8 @@ fun MovieDetailScreen(
                                 } else {
                                     meta = resolvedMeta
                                 }
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
                             } catch (e: Exception) {
                                 error = e.message ?: "Failed to load details"
                             } finally {
@@ -749,6 +761,8 @@ fun MovieDetailScreen(
                                                                                                         selectedItemTitle = "${vegaLink.title} - ${episodeLink.title}"
                                                                                                         streamsToDownload = streams
                                                                                                     }
+                                                                                                } catch (e: kotlinx.coroutines.CancellationException) {
+                                                                                                    throw e
                                                                                                 } catch (e: Exception) {
                                                                                                     Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
                                                                                                 } finally {
@@ -936,6 +950,10 @@ fun MovieDetailScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
+                                        val selected = stream
+                                        val allStreams = streamsToSelect ?: listOf(selected)
+                                        val reordered = listOf(selected) + allStreams.filter { it != selected }
+                                        val fallbacks = ArrayList(reordered.map { StreamOption(it.link, HashMap(it.headers ?: emptyMap())) })
                                         streamsToSelect = null
                                         val mLink = if (meta?.type?.lowercase() == "series") {
                                             "$link#${android.net.Uri.encode(selectedItemTitle)}"
@@ -951,7 +969,8 @@ fun MovieDetailScreen(
                                             movieLink = mLink,
                                             movieImage = meta?.image ?: "",
                                             providerUrl = providerUrl,
-                                            scraperValue = scraperValue
+                                            scraperValue = scraperValue,
+                                            streamFallbacks = fallbacks
                                         )
                                     },
                                 colors = CardDefaults.cardColors(

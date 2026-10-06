@@ -121,6 +121,8 @@ class CategoryMoviesViewModel(
                     _movies.value = if (isNextPage) _movies.value + newMovies else newMovies
                     page++
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("CategoryMoviesViewModel", "Error loading movies", e)
                 if (!isNextPage) {

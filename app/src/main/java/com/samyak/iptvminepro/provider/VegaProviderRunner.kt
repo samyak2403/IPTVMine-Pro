@@ -63,51 +63,7 @@ class VegaProviderRunner(private val context: Context) {
         }
     }
 
-    private val dohDns = object : Dns {
-        override fun lookup(hostname: String): List<java.net.InetAddress> {
-            if (hostname == "8.8.8.8" || hostname == "8.8.4.4" || hostname == "dns.google") {
-                return Dns.SYSTEM.lookup(hostname)
-            }
-            
-            try {
-                val url = "https://8.8.8.8/resolve?name=$hostname&type=A"
-                val request = Request.Builder()
-                    .url(url)
-                    .header("Accept", "application/json")
-                    .build()
-                
-                val dnsClient = OkHttpClient.Builder()
-                    .connectTimeout(5, TimeUnit.SECONDS)
-                    .readTimeout(5, TimeUnit.SECONDS)
-                    .build()
-                
-                dnsClient.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val body = response.body?.string() ?: ""
-                        val json = JSONObject(body)
-                        if (json.has("Answer")) {
-                            val answer = json.getJSONArray("Answer")
-                            val list = mutableListOf<java.net.InetAddress>()
-                            for (i in 0 until answer.length()) {
-                                val obj = answer.getJSONObject(i)
-                                val type = obj.optInt("type", 1)
-                                if (type == 1) { // Type A
-                                    val data = obj.getString("data")
-                                    list.addAll(java.net.InetAddress.getAllByName(data))
-                                }
-                            }
-                            if (list.isNotEmpty()) {
-                                return list
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "DoH lookup failed for $hostname: ${e.message}")
-            }
-            return Dns.SYSTEM.lookup(hostname)
-        }
-    }
+    private val appDns: Dns = com.samyak.iptvminepro.network.DnsPreferenceManager.getDns(context)
 
     private val httpClient = OkHttpClient.Builder()
         .protocols(listOf(Protocol.HTTP_1_1))
@@ -117,7 +73,7 @@ class VegaProviderRunner(private val context: Context) {
         .followRedirects(true)
         .followSslRedirects(true)
         .cookieJar(cookieJar)
-        .dns(dohDns)
+        .dns(appDns)
         .addInterceptor { chain ->
             // Retry interceptor: retry up to 2 times on failure
             var lastException: Exception? = null
@@ -156,6 +112,8 @@ class VegaProviderRunner(private val context: Context) {
         private const val TAG = "VegaProviderRunner"
         private const val CHROME_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        const val DEFAULT_VEGA_REPO = "https://raw.githubusercontent.com/vega-org/vega-providers/refs/heads/main"
+        const val FALLBACK_VEGA_REPO = "https://raw.githubusercontent.com/himanshu8443/vega-providers/refs/heads/main"
     }
 
     // Dynamic base URLs mapping - fetched from modflix.json
@@ -167,57 +125,76 @@ class VegaProviderRunner(private val context: Context) {
         if (baseUrlsFetched) return
         synchronized(baseUrlsLock) {
             if (baseUrlsFetched) return
-            try {
-                val request = Request.Builder()
-                    .url("https://himanshu8443.github.io/providers/modflix.json")
-                    .build()
-                httpClient.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val body = response.body?.string() ?: "{}"
-                        val json = JSONObject(body)
-                        for (key in json.keys()) {
-                            val obj = json.getJSONObject(key)
-                            val url = obj.optString("url", "")
-                            if (url.isNotEmpty()) {
-                                baseUrls[key] = url
+            // Try multiple known sources for base URLs
+            val modflixSources = listOf(
+                "https://raw.githubusercontent.com/himanshu8443/vega-providers/refs/heads/main/modflix.json",
+                "https://himanshu8443.github.io/providers/modflix.json"
+            )
+            var loaded = false
+            for (source in modflixSources) {
+                try {
+                    val request = Request.Builder().url(source).build()
+                    httpClient.newCall(request).execute().use { response ->
+                        if (response.isSuccessful) {
+                            val body = response.body?.string() ?: "{}"
+                            val json = JSONObject(body)
+                            for (key in json.keys()) {
+                                try {
+                                    val obj = json.getJSONObject(key)
+                                    val url = obj.optString("url", "")
+                                    if (url.isNotEmpty()) baseUrls[key] = url
+                                } catch (_: Exception) { /* skip malformed entries */ }
                             }
+                            if (baseUrls.isNotEmpty()) {
+                                loaded = true
+                                Log.d(TAG, "Loaded ${baseUrls.size} base URLs from $source")
+                            }
+                        } else {
+                            Log.w(TAG, "modflix source returned ${response.code}: $source")
                         }
-                        baseUrlsFetched = true
-                        Log.d(TAG, "Loaded ${baseUrls.size} base URLs from modflix.json")
                     }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to fetch modflix from $source: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to fetch modflix.json: ${e.message}")
-                // Fallback hardcoded URLs
-                baseUrls.putAll(mapOf(
-                    "Vega" to "https://vegamovies.mq",
-                    "Moviesmod" to "https://moviesmod.farm",
-                    "Animeflix" to "https://ww3.animeflix.ltd",
-                    "Topmovies" to "https://moviesleech.bar",
-                    "UhdMovies" to "https://uhdmovies.food",
-                    "lux" to "https://rogmovies.club",
-                    "drive" to "https://new3.moviesdrives.my/",
-                    "multi" to "https://multimovies.fyi",
-                    "extra" to "https://extramovies.ist",
-                    "hdhub" to "https://new1.hdhub4u.limo",
-                    "kat" to "https://new1.katmoviehd.cymru",
-                    "autoEmbed" to "https://autoembed.cc",
-                    "tokyoinsider" to "https://www.tokyoinsider.com",
-                    "primewire" to "https://primewire.si",
-                    "rive" to "https://www.rivestream.app",
-                    "kissKh" to "https://kisskh.do",
-                    "showbox" to "https://www.showbox.media",
-                    "protonMovies" to "https://m.protonmovies.space",
-                    "filmyfly" to "https://new2.filmyfiy.org",
-                    "4khdhub" to "https://4khdhub.link",
-                    "moviezwap" to "https://www.moviezwap.onl/",
-                    "movieBox" to "https://api6.aoneroom.com",
-                    "1cinevood" to "https://1cinevood.in",
-                    "zeefliz" to "https://zeefliz.beer",
-                    "movies4u" to "https://movies4u.ee"
-                ))
-                baseUrlsFetched = true
+                if (loaded) break
             }
+            if (!loaded) {
+                Log.w(TAG, "All modflix sources failed, using hardcoded fallback URLs")
+            }
+            // Always merge hardcoded defaults so missing keys are covered
+            val hardcodedDefaults = mapOf(
+                "Vega" to "https://vegamovies.mq",
+                "Moviesmod" to "https://moviesmod.farm",
+                "Animeflix" to "https://ww3.animeflix.ltd",
+                "Topmovies" to "https://moviesleech.bar",
+                "UhdMovies" to "https://uhdmovies.food",
+                "lux" to "https://rogmovies.club",
+                "drive" to "https://new3.moviesdrives.my/",
+                "multi" to "https://multimovies.fyi",
+                "extra" to "https://extramovies.ist",
+                "hdhub" to "https://new1.hdhub4u.limo",
+                "kat" to "https://new1.katmoviehd.cymru",
+                // Updated: autoembed.cc is frequently down; autoembed.me is the stable mirror
+                "autoEmbed" to "https://autoembed.me",
+                "tokyoinsider" to "https://www.tokyoinsider.com",
+                "primewire" to "https://primewire.si",
+                "rive" to "https://www.rivestream.app",
+                "kissKh" to "https://kisskh.do",
+                "showbox" to "https://www.showbox.media",
+                "protonMovies" to "https://m.protonmovies.space",
+                "filmyfly" to "https://new2.filmyfiy.org",
+                "4khdhub" to "https://4khdhub.link",
+                "moviezwap" to "https://www.moviezwap.onl/",
+                "movieBox" to "https://api6.aoneroom.com",
+                "1cinevood" to "https://1cinevood.in",
+                "zeefliz" to "https://zeefliz.beer",
+                "movies4u" to "https://movies4u.ee"
+            )
+            // Only fill in keys that weren't resolved dynamically
+            for ((k, v) in hardcodedDefaults) {
+                if (!baseUrls.containsKey(k)) baseUrls[k] = v
+            }
+            baseUrlsFetched = true
         }
     }
 
@@ -232,6 +209,8 @@ class VegaProviderRunner(private val context: Context) {
         if (webViewReady.isCompleted) {
             webViewReady = CompletableDeferred()
         }
+        isCompatInjected = false
+        loadedScrapers.clear()
 
         // Safely destroy old webView if exists to avoid memory and execution leaks
         webView?.let { oldWebView ->
@@ -256,8 +235,13 @@ class VegaProviderRunner(private val context: Context) {
         webViewInstance.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 Log.d(TAG, "Headless WebView loaded: $url")
+                isCompatInjected = true
                 // Signal that the WebView is ready for JS evaluation
                 webViewReady.complete(Unit)
+            }
+
+            override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                return true
             }
 
             @Suppress("DeprecatedCallableMember")
@@ -290,12 +274,14 @@ class VegaProviderRunner(private val context: Context) {
             }
         }
         
-        // Load a minimal page to initialize JS environment
+        // Load page with pre-injected compatibility layer so providerContext is available immediately
         val initHtml = """
+            <!DOCTYPE html>
             <html>
             <head>
                 <script>
-                    console.log("Headless JS environment ready");
+                    ${getCompatJs()}
+                    console.log("Headless JS environment ready with providerContext");
                 </script>
             </head>
             <body></body>
@@ -349,9 +335,9 @@ class VegaProviderRunner(private val context: Context) {
             }
             
             try {
-                return withTimeout(45_000) { deferred.await() }
+                return withTimeout(90_000) { deferred.await() }
             } catch (e: TimeoutCancellationException) {
-                Log.e(TAG, "JS evaluation timed out after 45s on attempt $attempt")
+                Log.e(TAG, "JS evaluation timed out after 90s on attempt $attempt")
                 deferred.cancel()
                 lastException = Exception("JS evaluation timed out")
                 if (attempt < 3) {
@@ -385,28 +371,42 @@ class VegaProviderRunner(private val context: Context) {
     }
 
     fun resolveRepoUrl(input: String): String {
-        val trimmed = input.trim().removeSuffix("/")
-        if (trimmed.isBlank()) return ""
+        var trimmed = input.trim().removeSuffix("/")
+        if (trimmed.isBlank() || trimmed.equals("vega", ignoreCase = true) || trimmed.equals("@vega", ignoreCase = true) ||
+            trimmed.equals("vega-org", ignoreCase = true) || trimmed.equals("@vega-org", ignoreCase = true)) {
+            return DEFAULT_VEGA_REPO
+        }
+
+        if (!trimmed.startsWith("http://", ignoreCase = true) && !trimmed.startsWith("https://", ignoreCase = true)) {
+            if (trimmed.startsWith("github.com/", ignoreCase = true) || trimmed.startsWith("raw.githubusercontent.com/", ignoreCase = true)) {
+                trimmed = "https://$trimmed"
+            }
+        }
 
         if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
             val urlLower = trimmed.lowercase()
-            if (urlLower.startsWith("https://github.com/")) {
-                val parts = trimmed.substring("https://github.com/".length).split("/")
+            if (urlLower.startsWith("https://github.com/") || urlLower.startsWith("http://github.com/")) {
+                val prefixLength = if (urlLower.startsWith("https://")) "https://github.com/".length else "http://github.com/".length
+                val parts = trimmed.substring(prefixLength).split("/")
                 if (parts.size >= 2) {
-                    val author = parts[0]
+                    var author = parts[0]
+                    if (author.equals("vega", ignoreCase = true)) {
+                        author = "vega-org"
+                    }
                     val repo = parts[1]
                     val branch = if (parts.size >= 4 && parts[2] == "tree") parts[3] else "main"
                     return "https://raw.githubusercontent.com/$author/$repo/refs/heads/$branch"
                 }
-            } else if (urlLower.startsWith("https://raw.githubusercontent.com/")) {
-                return trimmed
+            } else if (urlLower.startsWith("https://raw.githubusercontent.com/") || urlLower.startsWith("http://raw.githubusercontent.com/")) {
+                return trimmed.replace("raw.githubusercontent.com/vega/vega-providers", "raw.githubusercontent.com/vega-org/vega-providers")
             }
             return trimmed
         }
 
-        // Treat as author (e.g. "@vega-org" or "vega-org")
+        // Treat as author (e.g. "@vega-org" or "vega-org" or "@himanshu8443")
         val author = trimmed.removePrefix("@")
-        return "https://raw.githubusercontent.com/$author/vega-providers/refs/heads/main"
+        val cleanAuthor = if (author.equals("vega", ignoreCase = true)) "vega-org" else author
+        return "https://raw.githubusercontent.com/$cleanAuthor/vega-providers/refs/heads/main"
     }
 
     private fun cleanTypeScript(tsCode: String): String {
@@ -479,10 +479,8 @@ class VegaProviderRunner(private val context: Context) {
 
     private var isCompatInjected = false
 
-    private suspend fun injectCompatibilityLayer() {
-        if (isCompatInjected) return
-
-        val compatJs = """
+    private fun getCompatJs(): String {
+        return """
             // Helper parsing and query functions for cheerio polyfill
             function splitByComma(str) {
                 const parts = [];
@@ -730,7 +728,16 @@ class VegaProviderRunner(private val context: Context) {
                     const responseObj = JSON.parse(responseStr);
                     const bodyText = responseObj.body || '';
                     
-                    const responseHeaders = new Headers(responseObj.headers || {});
+                    const responseHeaders = new Headers();
+                    if (responseObj.headers) {
+                        for (const [k, v] of Object.entries(responseObj.headers)) {
+                            if (Array.isArray(v)) {
+                                v.forEach(item => responseHeaders.append(k, item));
+                            } else if (v !== null && v !== undefined) {
+                                responseHeaders.set(k, String(v));
+                            }
+                        }
+                    }
                     
                     return {
                         ok: responseObj.status >= 200 && responseObj.status < 300,
@@ -760,27 +767,59 @@ class VegaProviderRunner(private val context: Context) {
                 getBaseUrl: async function(name) {
                     return window.AndroidBridge.getBaseUrl(name);
                 },
+                kvStore: {
+                    get: async function(key) {
+                        try {
+                            const val = window.AndroidBridge.kvGet(key);
+                            if (val === null || val === undefined || val === '') return null;
+                            try { return JSON.parse(val); } catch(e) { return val; }
+                        } catch(e) { return null; }
+                    },
+                    set: async function(key, val) {
+                        try {
+                            const str = (typeof val === 'string') ? val : JSON.stringify(val);
+                            window.AndroidBridge.kvSet(key, str);
+                        } catch(e) {}
+                    },
+                    delete: async function(key) {
+                        try { window.AndroidBridge.kvDelete(key); } catch(e) {}
+                    },
+                    remove: async function(key) {
+                        try { window.AndroidBridge.kvDelete(key); } catch(e) {}
+                    },
+                    clear: async function() {
+                        try { window.AndroidBridge.kvClear(); } catch(e) {}
+                    }
+                },
                 axios: async function(configOrUrl, config) {
                     let url = "";
                     let method = "GET";
                     let headers = {};
                     let data = null;
+                    let cfg = {};
                     if (typeof configOrUrl === 'string') {
                         url = configOrUrl;
                         if (config) {
+                            cfg = config;
                             method = config.method || "GET";
                             headers = config.headers || {};
                             data = config.data || null;
                         }
-                    } else {
-                        url = configOrUrl.url;
+                    } else if (configOrUrl) {
+                        cfg = configOrUrl;
+                        url = configOrUrl.url || "";
                         method = configOrUrl.method || "GET";
                         headers = configOrUrl.headers || {};
                         data = configOrUrl.data || null;
                     }
 
                     try {
-                        const responseStr = await window.AndroidBridge.httpFetch(url, method, JSON.stringify(headers), data ? (typeof data === 'string' ? data : JSON.stringify(data)) : null);
+                        const responseStr = await window.AndroidBridge.httpFetch(
+                            url, 
+                            method, 
+                            JSON.stringify(headers), 
+                            data ? (typeof data === 'string' ? data : JSON.stringify(data)) : null
+                        );
                         const parsedRes = JSON.parse(responseStr);
                         
                         // Try to parse body as JSON if possible, otherwise return as string
@@ -791,17 +830,30 @@ class VegaProviderRunner(private val context: Context) {
                             // body is not JSON, keep as string
                         }
                         
-                        if (parsedRes.status < 200 || parsedRes.status >= 300) {
-                            throw new Error('Request failed with status code ' + parsedRes.status + ': ' + (typeof responseData === 'string' ? responseData.substring(0, 100) : ''));
+                        const validateStatus = (cfg && cfg.validateStatus) || (status => status >= 200 && status < 300);
+                        if (!validateStatus(parsedRes.status)) {
+                            const err = new Error('Request failed with status code ' + parsedRes.status + ': ' + (typeof responseData === 'string' ? responseData.substring(0, 100) : ''));
+                            err.response = {
+                                data: responseData,
+                                status: parsedRes.status,
+                                headers: parsedRes.headers || {}
+                            };
+                            throw err;
                         }
                         
                         return {
                             data: responseData,
                             status: parsedRes.status,
-                            headers: parsedRes.headers
+                            headers: parsedRes.headers || {},
+                            config: cfg
                         };
                     } catch (e) {
-                        console.error("axios fetch failed: ", e);
+                        // Downgrade 404/stream errors to warnings — they are expected for unavailable content
+                        if (e && e.response && (e.response.status === 404 || e.response.status === 403)) {
+                            console.warn("axios fetch failed (" + (e.response && e.response.status) + "):", e.message || e);
+                        } else {
+                            console.error("axios fetch failed: ", e);
+                        }
                         throw e;
                     }
                 },
@@ -883,6 +935,11 @@ class VegaProviderRunner(private val context: Context) {
             window.providerContext.providerValue = '';
             window.providerContext.axios.get = (url, config) => window.providerContext.axios(url, { ...config, method: 'GET' });
             window.providerContext.axios.post = (url, data, config) => window.providerContext.axios(url, { ...config, method: 'POST', data });
+            window.providerContext.axios.put = (url, data, config) => window.providerContext.axios(url, { ...config, method: 'PUT', data });
+            window.providerContext.axios.delete = (url, config) => window.providerContext.axios(url, { ...config, method: 'DELETE' });
+            window.providerContext.axios.head = (url, config) => window.providerContext.axios(url, { ...config, method: 'HEAD' });
+            window.providerContext.axios.patch = (url, data, config) => window.providerContext.axios(url, { ...config, method: 'PATCH', data });
+            window.providerContext.axios.request = (config) => window.providerContext.axios(config);
 
             function createMockNode(el) {
                 if (!el) return null;
@@ -1245,7 +1302,22 @@ class VegaProviderRunner(private val context: Context) {
                 return wrapped;
             }
         """.trimIndent()
-        
+    }
+
+    private suspend fun injectCompatibilityLayer() {
+        if (isCompatInjected) {
+            try {
+                val check = evalJsAsync("""
+                    const exists = (typeof window.providerContext !== 'undefined' && !!window.providerContext && !!window.providerContext.axios);
+                    window.AndroidBridge.onResult('__CALLBACK_ID__', exists ? '1' : '0');
+                """.trimIndent())
+                if (check == "1") return
+            } catch (e: Exception) {
+                // Check failed, re-inject below
+            }
+        }
+
+        val compatJs = getCompatJs()
         evalJsAsync(compatJs + "\nwindow.AndroidBridge.onResult('__CALLBACK_ID__', 'ok');")
         isCompatInjected = true
     }
@@ -1253,26 +1325,60 @@ class VegaProviderRunner(private val context: Context) {
     private val loadedScrapers = mutableSetOf<String>()
 
     suspend fun loadScraper(repoUrl: String, providerValue: String) {
+        val resolvedRepo = resolveRepoUrl(repoUrl).ifBlank { DEFAULT_VEGA_REPO }
         // Skip if already loaded
-        if (loadedScrapers.contains("${repoUrl}::${providerValue}")) {
-            // Still update providerValue on context
-            evalJsDirect("window.providerContext.providerValue = '$providerValue';")
+        if (loadedScrapers.contains("${resolvedRepo}::${providerValue}")) {
+            // Still update providerValue on context safely
+            evalJsDirect("""
+                if (typeof window.providerContext === 'undefined') { window.providerContext = {}; }
+                window.providerContext.providerValue = '$providerValue';
+            """.trimIndent())
             return
         }
         
-        val resolvedRepo = resolveRepoUrl(repoUrl)
-        
         injectCompatibilityLayer()
         
-        // Set the providerValue on the context so scrapers can access it
-        evalJsDirect("window.providerContext.providerValue = '$providerValue';")
+        // Set the providerValue on the context so scrapers can access it safely
+        evalJsDirect("""
+            if (typeof window.providerContext === 'undefined') { window.providerContext = {}; }
+            window.providerContext.providerValue = '$providerValue';
+        """.trimIndent())
+        
+        // Priority order of repositories to attempt fetching scraper modules
+        val reposToTry = linkedSetOf(
+            resolvedRepo,
+            DEFAULT_VEGA_REPO,
+            FALLBACK_VEGA_REPO
+        )
         
         // Load provider scraper files from dist
         val modules = listOf("catalog", "posts", "meta", "stream", "episodes")
         for (module in modules) {
+            var js: String? = null
+            var lastErr: Exception? = null
+            for (repo in reposToTry) {
+                try {
+                    val fileUrl = "$repo/dist/$providerValue/$module.js"
+                    val content = fetchFile(fileUrl)
+                    if (content.isNotBlank()) {
+                        js = content
+                        break
+                    }
+                } catch (e: Exception) {
+                    lastErr = e
+                }
+            }
+
+            if (js == null) {
+                if (lastErr?.message?.contains("code 404") == true) {
+                    Log.d(TAG, "Module $module not found for $providerValue (optional)")
+                } else {
+                    Log.w(TAG, "Failed to load module $module for $providerValue: ${lastErr?.message}")
+                }
+                continue
+            }
+
             try {
-                val fileUrl = "$resolvedRepo/dist/$providerValue/$module.js"
-                var js = fetchFile(fileUrl)
                 if (providerValue.equals("vega", ignoreCase = true) && module == "stream") {
                     js = patchVegaStreamJs(js)
                 }
@@ -1284,6 +1390,15 @@ class VegaProviderRunner(private val context: Context) {
                 }
                 if ((providerValue.equals("hdhub", ignoreCase = true) || providerValue.equals("hdhub4u", ignoreCase = true)) && module == "stream") {
                     js = patchHdhubStreamJs(js)
+                }
+                if (providerValue.contains("netflixMirror", ignoreCase = true) || providerValue.contains("netmirror", ignoreCase = true)) {
+                    js = patchNetmirrorJs(js)
+                }
+                if (providerValue.contains("torrentio", ignoreCase = true) ||
+                    providerValue.contains("everything", ignoreCase = true) ||
+                    js.contains("CINEMETA_BASE_URL", ignoreCase = true) ||
+                    js.contains("cinemeta", ignoreCase = true)) {
+                    js = patchCinemetaMetaJs(js)
                 }
                 val base64Js = android.util.Base64.encodeToString(js.toByteArray(), android.util.Base64.NO_WRAP)
                 val wrapper = """
@@ -1311,42 +1426,54 @@ class VegaProviderRunner(private val context: Context) {
                 evalJsAsync(wrapper)
                 Log.d(TAG, "Loaded module: $providerValue/$module")
             } catch (e: Exception) {
-                if (e.message?.contains("code 404") == true) {
-                    Log.d(TAG, "Module $module not found for $providerValue (optional)")
-                } else {
-                    Log.w(TAG, "Failed to load module $module: ${e.message}")
-                }
+                Log.w(TAG, "Failed to evaluate module $module: ${e.message}")
             }
         }
-        loadedScrapers.add("${repoUrl}::${providerValue}")
+        loadedScrapers.add("${resolvedRepo}::${providerValue}")
     }
 
     suspend fun fetchManifest(repoUrl: String): List<VegaProvider> {
-        val resolvedRepo = resolveRepoUrl(repoUrl)
-        val url = "$resolvedRepo/manifest.json"
-        val request = Request.Builder().url(url).build()
-        
-        val jsonText = withContext(Dispatchers.IO) {
-            httpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) throw Exception("Failed to fetch manifest: code ${response.code}")
-                response.body?.string() ?: "[]"
+        val resolvedRepo = resolveRepoUrl(repoUrl).ifBlank { DEFAULT_VEGA_REPO }
+        val reposToTry = linkedSetOf(
+            resolvedRepo,
+            DEFAULT_VEGA_REPO,
+            FALLBACK_VEGA_REPO
+        )
+
+        var lastException: Exception? = null
+        for (repo in reposToTry) {
+            try {
+                val url = "$repo/manifest.json"
+                val request = Request.Builder().url(url).build()
+                val jsonText = withContext(Dispatchers.IO) {
+                    httpClient.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) throw Exception("Failed to fetch manifest from $url: code ${response.code}")
+                        response.body?.string() ?: "[]"
+                    }
+                }
+                val arr = JSONArray(jsonText)
+                val list = mutableListOf<VegaProvider>()
+                for (i in 0 until arr.length()) {
+                    val item = arr.getJSONObject(i)
+                    list.add(VegaProvider(
+                        display_name = item.optString("display_name", ""),
+                        value = item.optString("value", ""),
+                        version = item.optString("version", ""),
+                        icon = item.optString("icon", ""),
+                        type = item.optString("type", "global"),
+                        disabled = item.optBoolean("disabled", false)
+                    ))
+                }
+                if (list.isNotEmpty()) {
+                    Log.d(TAG, "Successfully fetched ${list.size} providers from $repo")
+                    return list
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to fetch manifest from $repo: ${e.message}")
+                lastException = e
             }
         }
-        
-        val arr = JSONArray(jsonText)
-        val list = mutableListOf<VegaProvider>()
-        for (i in 0 until arr.length()) {
-            val item = arr.getJSONObject(i)
-            list.add(VegaProvider(
-                display_name = item.optString("display_name", ""),
-                value = item.optString("value", ""),
-                version = item.optString("version", ""),
-                icon = item.optString("icon", ""),
-                type = item.optString("type", "global"),
-                disabled = item.optBoolean("disabled", false)
-            ))
-        }
-        return list
+        throw lastException ?: Exception("Failed to fetch manifest from all sources")
     }
 
     suspend fun getCatalog(repoUrl: String, providerValue: String): Pair<List<VegaCatalog>, List<VegaCatalog>> {
@@ -1384,7 +1511,14 @@ class VegaProviderRunner(private val context: Context) {
         val safeFilter = filter.replace("'", "\\'")
         val jsCode = """
             try {
-                const mod = window.vegaModules['$providerValue']['posts'];
+                if (!window.providerContext) {
+                    window.providerContext = {};
+                }
+                const mod = (window.vegaModules && window.vegaModules['$providerValue']) ? window.vegaModules['$providerValue']['posts'] : null;
+                if (!mod) {
+                    window.AndroidBridge.onResult('__CALLBACK_ID__', '[]');
+                    return;
+                }
                 let fn = null;
                 if (typeof mod === 'function') {
                     fn = mod;
@@ -1400,6 +1534,10 @@ class VegaProviderRunner(private val context: Context) {
                     } else {
                         fn = mod;
                     }
+                }
+                if (typeof fn !== 'function') {
+                    window.AndroidBridge.onResult('__CALLBACK_ID__', '[]');
+                    return;
                 }
                 const res = await fn({ filter: '$safeFilter', page: $page, provider: '$providerValue', providerValue: '$providerValue', providerContext: window.providerContext });
                 window.AndroidBridge.onResult('__CALLBACK_ID__', JSON.stringify(res || []));
@@ -1428,7 +1566,10 @@ class VegaProviderRunner(private val context: Context) {
         val safeQuery = query.replace("'", "\\'").replace("\\", "\\\\")
         val jsCode = """
             try {
-                const mod = (window.vegaModules['$providerValue'] || {})['posts'];
+                if (!window.providerContext) {
+                    window.providerContext = {};
+                }
+                const mod = (window.vegaModules && window.vegaModules['$providerValue']) ? window.vegaModules['$providerValue']['posts'] : null;
                 let fn = null;
                 if (mod) {
                     if (typeof mod.getSearchPosts === 'function') {
@@ -1440,7 +1581,7 @@ class VegaProviderRunner(private val context: Context) {
                     }
                 }
                 if (fn) {
-                    const res = await fn({ searchQuery: '$safeQuery', page: $page, providerValue: '$providerValue', signal: null, providerContext: window.providerContext });
+                    const res = await fn({ searchQuery: '$safeQuery', page: $page, providerValue: '$providerValue', signal: null, providerContext: (window.providerContext || {}) });
                     window.AndroidBridge.onResult('__CALLBACK_ID__', JSON.stringify(res || []));
                 } else {
                     window.AndroidBridge.onResult('__CALLBACK_ID__', '[]');
@@ -1470,7 +1611,10 @@ class VegaProviderRunner(private val context: Context) {
         val safeLink = link.replace("'", "\\'").replace("\\", "\\\\")
         val jsCode = """
             try {
-                const mod = window.vegaModules['$providerValue']['meta'];
+                if (!window.providerContext) {
+                    window.providerContext = {};
+                }
+                const mod = (window.vegaModules && window.vegaModules['$providerValue']) ? window.vegaModules['$providerValue']['meta'] : null;
                 let fn = null;
                 if (typeof mod === 'function') {
                     fn = mod;
@@ -1487,7 +1631,11 @@ class VegaProviderRunner(private val context: Context) {
                         fn = mod;
                     }
                 }
-                const res = await fn({ link: '$safeLink', provider: '$providerValue', providerValue: '$providerValue', providerContext: window.providerContext });
+                if (!fn) {
+                    window.AndroidBridge.onResult('__CALLBACK_ID__', '{}');
+                    return;
+                }
+                const res = await fn({ link: '$safeLink', provider: '$providerValue', providerValue: '$providerValue', providerContext: (window.providerContext || {}) });
                 window.AndroidBridge.onResult('__CALLBACK_ID__', JSON.stringify(res || {}));
             } catch(e) {
                 console.error("Error in getMeta:", e);
@@ -1495,7 +1643,43 @@ class VegaProviderRunner(private val context: Context) {
             }
         """.trimIndent()
         
-        val jsonStr = evalJsAsync(jsCode)
+        val jsonStr = try {
+            evalJsAsync(jsCode)
+        } catch (e: Exception) {
+            val imdbMatch = Regex("tt\\d+").find(link)
+            if (imdbMatch != null && (providerValue.contains("torrentio", ignoreCase = true) || providerValue.contains("everything", ignoreCase = true))) {
+                Log.w(TAG, "getMeta failed for $providerValue, providing fallback VegaMeta: ${e.message}")
+                val imdbId = imdbMatch.value
+                val isSeries = link.contains("series", ignoreCase = true)
+                val type = if (isSeries) "series" else "movie"
+                val payload = JSONObject().apply {
+                    put("title", imdbId)
+                    put("imdbId", imdbId)
+                    put("type", type)
+                }.toString()
+                return VegaMeta(
+                    title = imdbId,
+                    synopsis = "Metadata unavailable from Cinemeta. Streams may still be available.",
+                    image = "",
+                    imdbId = imdbId,
+                    type = type,
+                    linkList = listOf(
+                        VegaLink(
+                            title = if (isSeries) "Episodes" else "Movie",
+                            episodesLink = null,
+                            directLinks = listOf(
+                                VegaDirectLink(
+                                    title = imdbId,
+                                    link = payload,
+                                    type = type
+                                )
+                            )
+                        )
+                    )
+                )
+            }
+            throw e
+        }
         val obj = JSONObject(jsonStr)
         
         val linkList = mutableListOf<VegaLink>()
@@ -1541,7 +1725,10 @@ class VegaProviderRunner(private val context: Context) {
         val safeType = type.replace("'", "\\'")
         val jsCode = """
             try {
-                const mod = (window.vegaModules['$providerValue'] || {})['stream'];
+                if (!window.providerContext) {
+                    window.providerContext = {};
+                }
+                const mod = (window.vegaModules && window.vegaModules['$providerValue']) ? window.vegaModules['$providerValue']['stream'] : null;
                 if (!mod) { window.AndroidBridge.onResult('__CALLBACK_ID__', '[]'); return; }
                 let fn = null;
                 if (typeof mod === 'function') {
@@ -1556,7 +1743,7 @@ class VegaProviderRunner(private val context: Context) {
                     }
                 }
                 if (!fn) { window.AndroidBridge.onResult('__CALLBACK_ID__', '[]'); return; }
-                const res = await fn({ link: '$safeLink', type: '$safeType', signal: null, providerContext: window.providerContext });
+                const res = await fn({ link: '$safeLink', type: '$safeType', signal: null, providerContext: (window.providerContext || {}) });
                 window.AndroidBridge.onResult('__CALLBACK_ID__', JSON.stringify(res || []));
             } catch(e) {
                 console.error("Error in getStream:", e);
@@ -1592,7 +1779,10 @@ class VegaProviderRunner(private val context: Context) {
         val safeUrl = url.replace("'", "\\'").replace("\\", "\\\\")
         val jsCode = """
             try {
-                const mod = (window.vegaModules['$providerValue'] || {})['episodes'];
+                if (!window.providerContext) {
+                    window.providerContext = {};
+                }
+                const mod = (window.vegaModules && window.vegaModules['$providerValue']) ? window.vegaModules['$providerValue']['episodes'] : null;
                 if (mod) {
                     let fn = null;
                     if (typeof mod === 'function') {
@@ -1607,7 +1797,7 @@ class VegaProviderRunner(private val context: Context) {
                         }
                     }
                     if (fn) {
-                        const res = await fn({ url: '$safeUrl', providerContext: window.providerContext });
+                        const res = await fn({ url: '$safeUrl', providerContext: (window.providerContext || {}) });
                         window.AndroidBridge.onResult('__CALLBACK_ID__', JSON.stringify(res || []));
                     } else {
                         window.AndroidBridge.onResult('__CALLBACK_ID__', '[]');
@@ -1751,31 +1941,68 @@ class VegaProviderRunner(private val context: Context) {
         }
 
         @JavascriptInterface
+        fun kvGet(key: String): String? {
+            val prefs = context.getSharedPreferences("vega_kv_store", Context.MODE_PRIVATE)
+            return prefs.getString(key, null)
+        }
+
+        @JavascriptInterface
+        fun kvSet(key: String, value: String) {
+            val prefs = context.getSharedPreferences("vega_kv_store", Context.MODE_PRIVATE)
+            prefs.edit().putString(key, value).apply()
+        }
+
+        @JavascriptInterface
+        fun kvDelete(key: String) {
+            val prefs = context.getSharedPreferences("vega_kv_store", Context.MODE_PRIVATE)
+            prefs.edit().remove(key).apply()
+        }
+
+        @JavascriptInterface
+        fun kvClear() {
+            val prefs = context.getSharedPreferences("vega_kv_store", Context.MODE_PRIVATE)
+            prefs.edit().clear().apply()
+        }
+
+        @JavascriptInterface
         fun httpFetch(url: String, method: String, headersJson: String, bodyData: String?): String {
             val requestBuilder = Request.Builder().url(url)
+            var contentTypeStr: String? = null
             
             try {
                 val headers = JSONObject(headersJson)
                 for (key in headers.keys()) {
-                    requestBuilder.header(key, headers.getString(key))
+                    val value = headers.getString(key)
+                    if (key.equals("content-type", ignoreCase = true)) {
+                        contentTypeStr = value
+                    }
+                    requestBuilder.header(key, value)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to parse headers JSON", e)
             }
 
+            val finalMediaType = (contentTypeStr ?: "application/json; charset=utf-8").toMediaTypeOrNull()
+
             when {
                 method.equals("POST", ignoreCase = true) -> {
-                    val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
-                    val requestBody = (bodyData ?: "").toRequestBody(mediaType)
+                    val requestBody = (bodyData ?: "").toRequestBody(finalMediaType)
                     requestBuilder.post(requestBody)
                 }
                 method.equals("PUT", ignoreCase = true) -> {
-                    val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
-                    val requestBody = (bodyData ?: "").toRequestBody(mediaType)
+                    val requestBody = (bodyData ?: "").toRequestBody(finalMediaType)
                     requestBuilder.put(requestBody)
                 }
+                method.equals("PATCH", ignoreCase = true) -> {
+                    val requestBody = (bodyData ?: "").toRequestBody(finalMediaType)
+                    requestBuilder.patch(requestBody)
+                }
                 method.equals("DELETE", ignoreCase = true) -> {
-                    requestBuilder.delete()
+                    if (bodyData != null) {
+                        requestBuilder.delete(bodyData.toRequestBody(finalMediaType))
+                    } else {
+                        requestBuilder.delete()
+                    }
                 }
                 method.equals("HEAD", ignoreCase = true) -> {
                     requestBuilder.head()
@@ -1789,8 +2016,22 @@ class VegaProviderRunner(private val context: Context) {
                 httpClient.newCall(requestBuilder.build()).execute().use { response ->
                     val responseBody = response.body?.string() ?: ""
                     val responseHeaders = JSONObject()
+                    
                     for (name in response.headers.names()) {
-                        responseHeaders.put(name, response.header(name))
+                        val lowerName = name.lowercase()
+                        val values = response.headers.values(name)
+                        if (lowerName == "set-cookie") {
+                            val cookieArr = JSONArray()
+                            for (v in values) {
+                                cookieArr.put(v)
+                            }
+                            responseHeaders.put("set-cookie", cookieArr)
+                            responseHeaders.put("Set-Cookie", cookieArr)
+                        } else {
+                            val singleVal = response.header(name)
+                            responseHeaders.put(lowerName, singleVal)
+                            responseHeaders.put(name, singleVal)
+                        }
                     }
                     
                     val result = JSONObject()
@@ -1887,4 +2128,95 @@ class VegaProviderRunner(private val context: Context) {
         patched = patched.replace(target, replacement)
         return patched
     }
+
+    private fun patchNetmirrorJs(js: String): String {
+        var patched = js
+        // Reduce verify polling from 45s to 15s so it never freezes the app if verification is slow
+        patched = patched.replace(Regex("Date\\.now\\(\\)\\s*-\\s*startTime\\s*<\\s*45e3"), "Date.now() - startTime < 15e3")
+        return patched
+    }
+
+    private fun patchCinemetaMetaJs(js: String): String {
+        var patched = js
+
+        // 1. Normalize Cinemeta meta object:
+        // Cinemeta returns { meta: { id: "tt...", name: "..." } } where id contains the IMDb ID, but imdb_id is undefined.
+        // Scrapers like Torrentio and Everything do `if (!meta.name || meta.imdb_id !== imdbId)` which throws "Cinemeta returned invalid metadata".
+        val metaAssign = "const meta=null==(_a=response.data)?void 0:_a.meta;"
+        val metaReplacement = """
+            let meta=null==(_a=response.data)?void 0:_a.meta;
+            if(meta){
+                if(!meta.imdb_id&&meta.id) meta.imdb_id=meta.id;
+                if(!meta.id&&meta.imdb_id) meta.id=meta.imdb_id;
+                if(!meta.name&&meta.title) meta.name=meta.title;
+                if(!meta.name) meta.name=imdbId;
+                if(!meta.imdb_id) meta.imdb_id=imdbId;
+            }
+        """.trimIndent()
+        patched = patched.replace(metaAssign, metaReplacement)
+
+        // 2. Prevent false negatives in the validation check
+        patched = patched.replace(
+            "meta.imdb_id!==imdbId",
+            "((meta.imdb_id||meta.id||'')!==imdbId && meta.imdb_id!==imdbId && false)"
+        )
+
+        // 3. Relax cache check to accept either imdb_id or id
+        patched = patched.replace(
+            "cached.imdb_id===imdbId",
+            "(cached.imdb_id===imdbId||cached.id===imdbId)"
+        )
+
+        // 4. Auto-fallback between movie and series in getCinemetaMeta if primary 404s/fails
+        patched = patched.replace(
+            "const url=`${'$'}{CINEMETA_BASE_URL}/${'$'}{\"series\"===type?\"series\":\"movie\"}/${'$'}{imdbId}.json`,",
+            "const primaryType=(\"series\"===type?\"series\":\"movie\"), altType=(\"series\"===type?\"movie\":\"series\"), url=`${'$'}{CINEMETA_BASE_URL}/${'$'}{primaryType}/${'$'}{imdbId}.json`,"
+        )
+        patched = patched.replace(
+            "request=providerContext.axios.get(url).then(response=>{",
+            "request=providerContext.axios.get(url).catch(err=>{ return providerContext.axios.get(`${'$'}{CINEMETA_BASE_URL}/${'$'}{altType}/${'$'}{imdbId}.json`); }).then(response=>{"
+        )
+
+        // 5. Auto-detect series when Cinemeta returns a series payload or contains video episodes
+        patched = patched.replace(
+            "if(\"series\"===type){",
+            "const effectiveIsSeries = (\"series\" === type || (meta && (meta.type === \"series\" || (Array.isArray(meta.videos) && meta.videos.length > 0)))); if(effectiveIsSeries){"
+        )
+
+        // 6. Graceful fallback on getMeta failure instead of throwing unhandled error to UI
+        val fallbackBlock = """
+            catch(err){
+                console.warn("Cinemeta metadata failed, using fallback:", (err && err.message) || err);
+                try {
+                    const fbMatches = link.match(/tt\d+/);
+                    const fbId = (fbMatches && fbMatches[0]) || link;
+                    const fbType = (/\bseries\b/i.test(link) || (err && err.message && /\bseries\b/i.test(err.message))) ? "series" : "movie";
+                    return {
+                        title: fbId,
+                        synopsis: "Metadata could not be loaded from Cinemeta. Streams may still be available.",
+                        image: "",
+                        poster: "",
+                        imdbId: fbId,
+                        type: fbType,
+                        linkList: [{
+                            title: fbType === "series" ? "Episodes" : "Movie",
+                            directLinks: [{
+                                title: fbId,
+                                type: fbType,
+                                link: JSON.stringify({ title: fbId, imdbId: fbId, type: fbType })
+                            }]
+                        }]
+                    };
+                } catch(fallbackErr) {
+                    throw err;
+                }
+            }
+        """.trimIndent()
+
+        patched = patched.replace("catch(err){throwProviderError(\"Torrentio\",\"metadata\",err)}", fallbackBlock)
+        patched = patched.replace("catch(err){throwProviderError(\"Everything\",\"metadata\",err)}", fallbackBlock)
+
+        return patched
+    }
 }
+

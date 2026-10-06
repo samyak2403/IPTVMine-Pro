@@ -134,7 +134,7 @@
 
     <!-- Disney+/Hotstar style "Next Episode" overlay. Lives outside the auto-hiding
          controller so it can pop up near the end of an episode and stay visible. -->
-    <LinearLayout
+    <RelativeLayout
         android:id="@+id/nextEpisodeOverlay"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -142,32 +142,52 @@
         android:layout_alignParentBottom="true"
         android:layout_marginRight="28dp"
         android:layout_marginBottom="56dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="@drawable/next_episode_bg"
-        android:paddingStart="18dp"
-        android:paddingEnd="22dp"
-        android:paddingTop="11dp"
-        android:paddingBottom="11dp"
         android:clickable="true"
         android:focusable="true"
         android:elevation="12dp"
         android:visibility="gone">
 
-        <ImageView
-            android:layout_width="22dp"
-            android:layout_height="22dp"
-            android:layout_marginEnd="10dp"
-            android:src="@drawable/next_episode_icon"
-            android:contentDescription="@string/next_episode_btn"
-            app:tint="#111111" />
+        <ProgressBar
+            android:id="@+id/nextEpisodeFillProgress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_alignStart="@id/nextEpisodeContent"
+            android:layout_alignTop="@id/nextEpisodeContent"
+            android:layout_alignEnd="@id/nextEpisodeContent"
+            android:layout_alignBottom="@id/nextEpisodeContent"
+            android:indeterminate="false"
+            android:max="1000"
+            android:progress="0"
+            android:progressDrawable="@drawable/next_episode_fill_progress" />
 
-        <TextView
+        <LinearLayout
+            android:id="@+id/nextEpisodeContent"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/next_episode_btn"
-            android:textColor="#111111"
-            android:textSize="15sp"
-            android:textStyle="bold" />
-    </LinearLayout>
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="18dp"
+            android:paddingEnd="22dp"
+            android:paddingTop="11dp"
+            android:paddingBottom="11dp">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_marginEnd="10dp"
+                android:src="@drawable/next_episode_icon"
+                android:contentDescription="@string/next_episode_btn"
+                app:tint="#111111" />
+
+            <TextView
+                android:id="@+id/nextEpisodeText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/next_episode_btn"
+                android:textColor="#111111"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </RelativeLayout>
 </RelativeLayout>

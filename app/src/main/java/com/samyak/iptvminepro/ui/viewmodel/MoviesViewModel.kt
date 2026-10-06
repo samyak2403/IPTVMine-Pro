@@ -26,10 +26,10 @@ class MoviesViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // ── Providers ──────────────────────────────────────────────────────────────
-    val vegaProvidersList: List<Provider> =
-        repository.getProviders().filter { it.isActive && it.safeType == ProviderType.VEGA }
+    val vegaProvidersList: List<Provider>
+        get() = repository.getProviders().filter { it.isActive && it.safeType == ProviderType.VEGA }
 
-    private val _selectedProvider = MutableStateFlow<Provider?>(vegaProvidersList.firstOrNull())
+    private val _selectedProvider = MutableStateFlow<Provider?>(repository.getProviders().firstOrNull { it.isActive && it.safeType == ProviderType.VEGA })
     val selectedProvider: StateFlow<Provider?> = _selectedProvider.asStateFlow()
 
     // ── Scrapers ───────────────────────────────────────────────────────────────
@@ -95,6 +95,21 @@ class MoviesViewModel(application: Application) : AndroidViewModel(application) 
     // ── Public actions ─────────────────────────────────────────────────────────
 
     /**
+     * Refreshes providers from repo and triggers init if categories or scrapers haven't been loaded yet.
+     */
+    fun refreshProvidersAndInit() {
+        val activeProviders = vegaProvidersList
+        if (_selectedProvider.value == null && activeProviders.isNotEmpty()) {
+            _selectedProvider.value = activeProviders.firstOrNull()
+            dataLoaded = false
+        }
+        if (_categories.value.isEmpty()) {
+            dataLoaded = false
+        }
+        initIfNeeded()
+    }
+
+    /**
      * Called from the Composable. Triggers the first load only once.
      * Safe to call on every recomposition / back-navigation.
      *
@@ -104,7 +119,11 @@ class MoviesViewModel(application: Application) : AndroidViewModel(application) 
      *  2. [Secondary] Load already in-flight / completed → skip duplicate call.
      */
     fun initIfNeeded(initialCategoryTitle: String? = null) {
-        if (_movies.value.isNotEmpty()) return  // Primary: cached data → no API call on back-nav
+        val activeProviders = vegaProvidersList
+        if (_selectedProvider.value == null && activeProviders.isNotEmpty()) {
+            _selectedProvider.value = activeProviders.firstOrNull()
+        }
+        if (_movies.value.isNotEmpty() && _categories.value.isNotEmpty()) return  // Primary: cached data → no API call on back-nav
         if (dataLoaded) return                   // Secondary: load already triggered
         dataLoaded = true
         val installed = extensionRepo.installedExtensionsFlow.value
@@ -176,6 +195,8 @@ class MoviesViewModel(application: Application) : AndroidViewModel(application) 
                     _movies.value = if (isNextPage) _movies.value + newMovies else newMovies
                     _page.value++
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("MoviesViewModel", "Error loading movies", e)
                 _error.value = e.message
@@ -218,6 +239,8 @@ class MoviesViewModel(application: Application) : AndroidViewModel(application) 
                 _selectedScraper.value = filteredScrapers.firstOrNull()
                 loadCatalogAndMovies(initialCategoryTitle)
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e("MoviesViewModel", "Error loading scrapers", e)
             _scrapers.value = emptyList()
@@ -259,6 +282,8 @@ class MoviesViewModel(application: Application) : AndroidViewModel(application) 
                     _movies.value = newMovies
                     _page.value = 2
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("MoviesViewModel", "Error loading catalog/movies: ${e.message}", e)
                 _categories.value = emptyList()

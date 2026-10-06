@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.*
@@ -30,7 +31,6 @@ fun ExtensionsScreen(
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val providerRepository = remember { ProviderRepository(context) }
     val extensionRepository = remember { ExtensionRepository.getInstance(context) }
     val runner = remember { VegaProviderRunner(context) }
@@ -47,6 +47,7 @@ fun ExtensionsScreen(
     
     var showSuccessDialog by remember { mutableStateOf(false) }
     var successExtensionName by remember { mutableStateOf("") }
+    var reloadTrigger by remember { mutableIntStateOf(0) }
 
     // Collect reactive flow of installed extensions
     val installedExtensionsState by extensionRepository.installedExtensionsFlow.collectAsState()
@@ -60,32 +61,44 @@ fun ExtensionsScreen(
 
     // Load sources
     LaunchedEffect(Unit) {
-        vegaProviders = providerRepository.getProviders().filter { it.safeType == ProviderType.VEGA }
-        selectedSource = vegaProviders.firstOrNull()
+        val providers = providerRepository.getProviders().filter { it.safeType == ProviderType.VEGA }
+        if (providers.isEmpty()) {
+            val defaultVega = Provider(
+                title = "Vega",
+                url = VegaProviderRunner.DEFAULT_VEGA_REPO,
+                type = ProviderType.VEGA,
+                isActive = true
+            )
+            providerRepository.addProvider(defaultVega)
+            vegaProviders = listOf(defaultVega)
+            selectedSource = defaultVega
+        } else {
+            vegaProviders = providers
+            selectedSource = providers.firstOrNull()
+        }
     }
 
-    // Load extensions when source changes
-    LaunchedEffect(selectedSource) {
-        if (selectedSource != null) {
-            scope.launch {
-                isLoading = true
-                val manifestList = mutableListOf<VegaProvider>()
-                try {
-                    val manifest = runner.fetchManifest(selectedSource!!.url)
-                    manifestList.addAll(manifest)
-                } catch (e: Exception) {
-                    android.util.Log.e("ExtensionsScreen", "Failed to fetch manifest", e)
-                }
-                val distinctManifest = manifestList.distinctBy { it.value }
-                allExtensions = distinctManifest
-                
-                val installedCount = distinctManifest.count { it.value in installedExtensionsState }
-                val availableCount = distinctManifest.count { it.value !in installedExtensionsState && !it.disabled }
-                if (installedCount == 0 && availableCount > 0) {
-                    selectedTabIndex = 1 // Switch to available tab if none are installed
-                }
-                isLoading = false
+    // Load extensions when source changes or user requests reload
+    LaunchedEffect(selectedSource, reloadTrigger) {
+        val source = selectedSource
+        if (source != null) {
+            isLoading = true
+            val manifestList = mutableListOf<VegaProvider>()
+            try {
+                val manifest = runner.fetchManifest(source.url)
+                manifestList.addAll(manifest)
+            } catch (e: Exception) {
+                android.util.Log.e("ExtensionsScreen", "Failed to fetch manifest", e)
             }
+            val distinctManifest = manifestList.distinctBy { it.value }
+            allExtensions = distinctManifest
+            
+            val installedCount = distinctManifest.count { it.value in installedExtensionsState }
+            val availableCount = distinctManifest.count { it.value !in installedExtensionsState && !it.disabled }
+            if (installedCount == 0 && availableCount > 0) {
+                selectedTabIndex = 1 // Switch to available tab if none are installed
+            }
+            isLoading = false
         } else {
             allExtensions = emptyList()
             isLoading = false
@@ -101,6 +114,14 @@ fun ExtensionsScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(id = R.string.desc_back)
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { reloadTrigger++ }) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh Extensions"
                         )
                     }
                 },
@@ -173,11 +194,22 @@ fun ExtensionsScreen(
                 
                 if (currentData.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = if (selectedTabIndex == 0) "No extensions installed" else "No extensions available",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.padding(24.dp)
+                        ) {
+                            Text(
+                                text = if (selectedTabIndex == 0) "No extensions installed" else "No extensions available",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (allExtensions.isEmpty()) {
+                                Button(onClick = { reloadTrigger++ }) {
+                                    Text("Retry Loading Extensions")
+                                }
+                            }
+                        }
                     }
                 } else {
                     LazyColumn(

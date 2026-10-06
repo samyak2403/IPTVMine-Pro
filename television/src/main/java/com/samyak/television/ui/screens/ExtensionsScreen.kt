@@ -29,7 +29,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun ExtensionsScreen() {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val providerRepository = remember { ProviderRepository(context) }
     val extensionRepository = remember { ExtensionRepository.getInstance(context) }
     val runner = remember { VegaProviderRunner(context) }
@@ -43,8 +42,21 @@ fun ExtensionsScreen() {
 
     // Load sources
     LaunchedEffect(Unit) {
-        vegaProviders = providerRepository.getProviders().filter { it.safeType == ProviderType.VEGA }
-        selectedSource = vegaProviders.firstOrNull()
+        val providers = providerRepository.getProviders().filter { it.safeType == ProviderType.VEGA }
+        if (providers.isEmpty()) {
+            val defaultVega = Provider(
+                title = "Vega",
+                url = VegaProviderRunner.DEFAULT_VEGA_REPO,
+                type = ProviderType.VEGA,
+                isActive = true
+            )
+            providerRepository.addProvider(defaultVega)
+            vegaProviders = listOf(defaultVega)
+            selectedSource = defaultVega
+        } else {
+            vegaProviders = providers
+            selectedSource = providers.firstOrNull()
+        }
     }
 
     // Load extensions when selected source changes
@@ -52,16 +64,14 @@ fun ExtensionsScreen() {
         val source = selectedSource
         if (source != null) {
             isLoading = true
-            scope.launch {
-                try {
-                    val manifest = runner.fetchManifest(source.url)
-                    allExtensions = manifest.distinctBy { it.value }
-                } catch (e: Exception) {
-                    Toast.makeText(context, "Failed to load extensions: ${e.message}", Toast.LENGTH_LONG).show()
-                    allExtensions = emptyList()
-                } finally {
-                    isLoading = false
-                }
+            try {
+                val manifest = runner.fetchManifest(source.url)
+                allExtensions = manifest.distinctBy { it.value }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Failed to load extensions: ${e.message}", Toast.LENGTH_LONG).show()
+                allExtensions = emptyList()
+            } finally {
+                isLoading = false
             }
         } else {
             allExtensions = emptyList()

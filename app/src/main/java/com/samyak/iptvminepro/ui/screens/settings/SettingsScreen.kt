@@ -35,6 +35,8 @@ import android.widget.Toast
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
+import com.samyak.iptvminepro.network.DnsPreferenceManager
+import com.samyak.iptvminepro.network.DnsMode
 
 @Composable
 fun SettingsScreen(
@@ -46,15 +48,15 @@ fun SettingsScreen(
     onNavigateToWatchHistory: () -> Unit,
     onNavigateToLegal: (String) -> Unit,
     onNavigateToSupport: () -> Unit,
-    onNavigateToDonate: () -> Unit
+    onNavigateToDonate: () -> Unit,
+    onNavigateToDnsSettings: () -> Unit
 ) {
     val scrollState = rememberScrollState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val providerRepo = remember { ProviderRepository(context) }
     val hasActiveVegaProvider = providerRepo.getProviders().any { it.isActive && it.safeType == ProviderType.VEGA }
-
-
+    val currentDnsMode = DnsPreferenceManager.getMode(context)
 
     Column(
         modifier = Modifier
@@ -87,6 +89,14 @@ fun SettingsScreen(
                 onClick = onNavigateToExtensions
             )
         }
+
+        SettingsSectionTitle(title = stringResource(id = R.string.section_network))
+        SettingsItem(
+            title = stringResource(id = R.string.setting_dns_over_https),
+            icon = Icons.Filled.VpnLock,
+            subtitle = "${currentDnsMode.title} • ${stringResource(id = R.string.desc_dns_over_https)}",
+            onClick = onNavigateToDnsSettings
+        )
 
         SettingsSectionTitle(title = stringResource(id = R.string.section_about))
         SettingsItem(
@@ -148,7 +158,12 @@ fun SettingsSectionTitle(title: String) {
 }
 
 @Composable
-fun SettingsItem(title: String, icon: ImageVector, onClick: () -> Unit) {
+fun SettingsItem(
+    title: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    subtitle: String? = null
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -171,12 +186,23 @@ fun SettingsItem(title: String, icon: ImageVector, onClick: () -> Unit) {
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.width(16.dp))
-            Text(
-                text = title,
-                fontSize = 16.sp,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f)
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (!subtitle.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
+            }
             Icon(
                 imageVector = Icons.Filled.ChevronRight,
                 contentDescription = stringResource(id = R.string.desc_navigate),

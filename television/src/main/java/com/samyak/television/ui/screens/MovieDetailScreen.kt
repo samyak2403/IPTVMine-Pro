@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.ui.res.painterResource
 import com.samyak.television.R
+import com.samyak.player.StreamOption
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -147,6 +148,7 @@ fun MovieDetailScreen(
                     Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
                 } else {
                     val selectedStream = streams[0]
+                    val fallbacks = ArrayList(streams.map { StreamOption(it.link, HashMap(it.headers ?: emptyMap())) })
                     Toast.makeText(context, "Playing: ${selectedStream.server} - ${selectedStream.quality}", Toast.LENGTH_SHORT).show()
                     val mLink = if (meta?.type?.lowercase() == "series") {
                         "$link#${android.net.Uri.encode(title)}"
@@ -162,7 +164,8 @@ fun MovieDetailScreen(
                         movieLink = mLink,
                         movieImage = meta?.image ?: "",
                         providerUrl = providerUrl,
-                        scraperValue = scraperValue
+                        scraperValue = scraperValue,
+                        streamFallbacks = fallbacks
                     )
                 }
             } catch (e: Exception) {
@@ -460,6 +463,10 @@ fun MovieDetailScreen(
                             itemsIndexed(streams) { index, stream ->
                                 Surface(
                                     onClick = {
+                                        val selected = stream
+                                        val remaining = streams.filter { it != selected }
+                                        val ordered = listOf(selected) + remaining
+                                        val fallbacks = ArrayList(ordered.map { StreamOption(it.link, HashMap(it.headers ?: emptyMap())) })
                                         streamsToSelect = null
                                         com.samyak.player.PlayerActivity.start(
                                             context = context,
@@ -470,7 +477,8 @@ fun MovieDetailScreen(
                                             movieLink = link,
                                             movieImage = movieMeta.image,
                                             providerUrl = providerUrl,
-                                            scraperValue = scraperValue
+                                            scraperValue = scraperValue,
+                                            streamFallbacks = fallbacks
                                         )
                                     },
                                     colors = ClickableSurfaceDefaults.colors(
@@ -648,7 +656,8 @@ fun MovieDetailScreen(
                                                                                         movieLink = "$link#${android.net.Uri.encode(epTitle)}",
                                                                                         movieImage = movieMeta.image,
                                                                                         providerUrl = providerUrl,
-                                                                                        scraperValue = scraperValue
+                                                                                        scraperValue = scraperValue,
+                                                                                        streamFallbacks = ArrayList(streams.map { StreamOption(it.link, HashMap(it.headers ?: emptyMap())) })
                                                                                     )
                                                                                 }
                                                                             } catch (e: Exception) {

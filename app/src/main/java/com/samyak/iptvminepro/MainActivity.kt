@@ -52,12 +52,20 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.background
 import android.content.Intent
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -73,6 +81,7 @@ import com.samyak.iptvminepro.ui.screens.settings.BugReportScreen
 import com.samyak.iptvminepro.ui.screens.settings.ExtensionsScreen
 import com.samyak.iptvminepro.ui.screens.settings.SupportScreen
 import com.samyak.iptvminepro.ui.screens.settings.DonateScreen
+import com.samyak.iptvminepro.ui.screens.settings.DnsSettingsScreen
 import com.samyak.iptvminepro.ui.screens.movies.MovieDetailScreen
 import com.samyak.iptvminepro.ui.screens.movies.CategoryMoviesScreen
 import com.samyak.iptvminepro.ui.screens.movies.MovieSearchScreen
@@ -91,6 +100,7 @@ import com.samyak.iptvminepro.ui.screens.settings.PairingScreen
 import com.samyak.iptvminepro.ui.theme.IPTVMineProTheme
 import com.samyak.iptvminepro.ui.viewmodel.MoviesViewModel
 import com.samyak.iptvminepro.ui.viewmodel.HomeViewModel
+import com.samyak.iptvminepro.ui.viewmodel.MovieSearchViewModel
 
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Tv
@@ -163,6 +173,7 @@ sealed class Screen(val route: String, val label: String, val icon: @Composable 
     object Legal : Screen("legal?docType={docType}", "Legal Information", { })
     object Support : Screen("support", "Support", { })
     object Donate : Screen("donate", "Donate", { })
+    object DnsSettings : Screen("dns_settings", "DNS over HTTPS", { })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -175,6 +186,28 @@ fun MainApp() {
     val sharedPrefs = remember(context) { context.getSharedPreferences("app_settings", Context.MODE_PRIVATE) }
     var firstTimeHelp by remember { mutableStateOf(sharedPrefs.getBoolean("first_time_add_provider_help", true)) }
     val showHelpTapTarget = firstTimeHelp && currentRoute == Screen.AddProvider.route
+
+    var tvSearchQuery by rememberSaveable { mutableStateOf("") }
+    var isTvSearchActive by rememberSaveable { mutableStateOf(false) }
+    val tvSearchFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(currentRoute) {
+        if (currentRoute != Screen.Television.route) {
+            isTvSearchActive = false
+            tvSearchQuery = ""
+        }
+    }
+
+    LaunchedEffect(isTvSearchActive) {
+        if (isTvSearchActive) {
+            tvSearchFocusRequester.requestFocus()
+        }
+    }
+
+    BackHandler(enabled = isTvSearchActive && currentRoute == Screen.Television.route) {
+        isTvSearchActive = false
+        tvSearchQuery = ""
+    }
 
     // Hoist resource string so it isn't queried via LocalContext inside the click lambda
     val msgStillOffline = stringResource(id = R.string.msg_still_offline)
@@ -192,6 +225,7 @@ fun MainApp() {
     // Activity-scoped: survives ALL navigation including back from MovieDetail
     val moviesViewModel: MoviesViewModel = viewModel()
     val homeViewModel: HomeViewModel = viewModel()
+    val movieSearchViewModel: MovieSearchViewModel = viewModel()
     val startDestination = if (repository.getProviders().isEmpty()) Screen.AddProvider.route else Screen.Home.route
 
     val isConnected by remember(context) {
@@ -241,7 +275,8 @@ fun MainApp() {
                 currentRoute != Screen.WatchHistory.route &&
                 currentRoute != Screen.Legal.route &&
                 currentRoute != "pairing" &&
-                currentRoute != Screen.VideoList.route
+                currentRoute != Screen.VideoList.route &&
+                currentRoute != Screen.DnsSettings.route
             ) {
                 Box(
                     modifier = Modifier
@@ -334,34 +369,85 @@ fun MainApp() {
             ) {
                 TopAppBar(
                     title = {
-                        val title = when (currentRoute) {
-                            Screen.Television.route -> "Television"
-                            Screen.ProviderList.route -> "Manage Providers"
-                            Screen.AddProvider.route -> "Add Provider"
-                            Screen.AddProviderHelp.route -> "Add Provider Sources"
-                            Screen.About.route -> "About App"
-                            Screen.Support.route -> "Support"
-                            Screen.Donate.route -> "Donate"
-                            "pairing" -> "TV Pairing"
-                            Screen.CategoryDetail.route -> categoryName ?: "Category"
-                            Screen.Downloads.route -> "Downloads"
-                            Screen.BugReport.route -> "Report Bug"
-                            Screen.WatchHistory.route -> "Watch History"
-                            Screen.Legal.route -> {
-                                val docType = navBackStackEntry?.arguments?.getString("docType") ?: "privacy"
-                                when (docType) {
-                                    "privacy" -> "Privacy Policy"
-                                    "terms" -> "Terms & Conditions"
-                                    "disclaimer" -> "Disclaimer"
-                                    else -> "Legal Information"
+                        if (currentRoute == Screen.Television.route && isTvSearchActive) {
+                            TextField(
+                                value = tvSearchQuery,
+                                onValueChange = { tvSearchQuery = it },
+                                placeholder = {
+                                    Text(
+                                        text = "Search TV Channels...",
+                                        color = Color.White.copy(alpha = 0.7f),
+                                        fontSize = 16.sp
+                                    )
+                                },
+                                singleLine = true,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    disabledContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    cursorColor = Color.White
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(tvSearchFocusRequester)
+                            )
+                        } else {
+                            val title = when (currentRoute) {
+                                Screen.Television.route -> "Television"
+                                Screen.ProviderList.route -> "Manage Providers"
+                                Screen.AddProvider.route -> "Add Provider"
+                                Screen.AddProviderHelp.route -> "Add Provider Sources"
+                                Screen.About.route -> "About App"
+                                Screen.Support.route -> "Support"
+                                Screen.Donate.route -> "Donate"
+                                Screen.DnsSettings.route -> "DNS over HTTPS"
+                                "pairing" -> "TV Pairing"
+                                Screen.CategoryDetail.route -> categoryName ?: "Category"
+                                Screen.Downloads.route -> "Downloads"
+                                Screen.BugReport.route -> "Report Bug"
+                                Screen.WatchHistory.route -> "Watch History"
+                                Screen.Category.route -> "Categories"
+                                Screen.Legal.route -> {
+                                    val docType = navBackStackEntry?.arguments?.getString("docType") ?: "privacy"
+                                    when (docType) {
+                                        "privacy" -> "Privacy Policy"
+                                        "terms" -> "Terms & Conditions"
+                                        "disclaimer" -> "Disclaimer"
+                                        else -> "Legal Information"
+                                    }
                                 }
+                                else -> "IPTV Mine Pro"
                             }
-                            else -> "IPTV Mine Pro"
+                            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                         }
-                        Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                     },
                     navigationIcon = {
-                        if (currentRoute == Screen.ProviderList.route ||
+                        if (currentRoute == Screen.Television.route && isTvSearchActive) {
+                            FilledIconButton(
+                                onClick = { 
+                                    isTvSearchActive = false
+                                    tvSearchQuery = ""
+                                },
+                                modifier = Modifier
+                                    .padding(start = 12.dp)
+                                    .size(40.dp),
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = Color.White.copy(alpha = 0.2f),
+                                    contentColor = Color.White
+                                ),
+                                shape = CircleShape
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Close Search",
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        } else if (currentRoute == Screen.ProviderList.route ||
                             currentRoute == Screen.AddProvider.route ||
                             currentRoute == Screen.AddProviderHelp.route ||
                             currentRoute == Screen.CategoryDetail.route ||
@@ -372,6 +458,7 @@ fun MainApp() {
                             currentRoute == Screen.BugReport.route ||
                             currentRoute == Screen.WatchHistory.route ||
                             currentRoute == Screen.Legal.route ||
+                            currentRoute == Screen.DnsSettings.route ||
                             currentRoute == "pairing"
                         ) {
                             FilledIconButton(
@@ -429,6 +516,18 @@ fun MainApp() {
                             ) {
                                 Icon(Icons.Outlined.Info, contentDescription = "Help", tint = Color.White)
                             }
+                        } else if (currentRoute == Screen.Television.route) {
+                            if (isTvSearchActive) {
+                                if (tvSearchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { tvSearchQuery = "" }) {
+                                        Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color.White)
+                                    }
+                                }
+                            } else {
+                                IconButton(onClick = { isTvSearchActive = true }) {
+                                    Icon(painterResource(id = R.drawable.ic_search), contentDescription = "Search TV Channels", tint = Color.White)
+                                }
+                            }
                         } else if (currentRoute != Screen.ProviderList.route &&
                             currentRoute != Screen.AddProvider.route &&
                             currentRoute != Screen.AddProviderHelp.route &&
@@ -440,12 +539,12 @@ fun MainApp() {
                             currentRoute != Screen.BugReport.route &&
                             currentRoute != Screen.WatchHistory.route &&
                             currentRoute != Screen.Legal.route &&
-                            currentRoute != Screen.Television.route
+                            currentRoute != Screen.DnsSettings.route
                         ) {
                             IconButton(onClick = { 
                                 navController.navigate(Screen.MovieSearch.route)
                             }) {
-                                Icon(painterResource(id = R.drawable.ic_search), contentDescription = "Search")
+                                Icon(painterResource(id = R.drawable.ic_search), contentDescription = "Search", tint = Color.White)
                             }
                         }
                     },
@@ -498,6 +597,7 @@ fun MainApp() {
                 val context = androidx.compose.ui.platform.LocalContext.current
                 TelevisionScreen(
                     viewModel = channelsViewModel,
+                    searchQuery = tvSearchQuery,
                     onChannelClick = { channel ->
                         if (channel.streamUrl.isEmpty()) {
                             android.widget.Toast.makeText(context, "This match is not live yet!", android.widget.Toast.LENGTH_SHORT).show()
@@ -529,10 +629,18 @@ fun MainApp() {
             }
             composable(Screen.Category.route) {
                 CategoryScreen(
-                    viewModel = channelsViewModel,
-                    onCategoryClick = { category ->
+                    channelsViewModel = channelsViewModel,
+                    moviesViewModel = moviesViewModel,
+                    onTvCategoryClick = { category ->
                         val encodedCategory = android.net.Uri.encode(category)
                         navController.navigate("category_detail/$encodedCategory")
+                    },
+                    onMovieCategoryClick = { catalog, provider, scraper ->
+                        val encodedTitle = android.net.Uri.encode(catalog.title)
+                        val encodedFilter = android.net.Uri.encode(catalog.filter)
+                        val encodedProviderUrl = android.net.Uri.encode(provider.url)
+                        val scraperValue = scraper.value
+                        navController.navigate("category_movies?categoryName=$encodedTitle&categoryFilter=$encodedFilter&providerUrl=$encodedProviderUrl&scraperValue=$scraperValue")
                     }
                 )
             }
@@ -556,8 +664,14 @@ fun MainApp() {
                     onNavigateToWatchHistory = { navController.navigate(Screen.WatchHistory.route) },
                     onNavigateToLegal = { docType -> navController.navigate("legal?docType=$docType") },
                     onNavigateToSupport = { navController.navigate(Screen.Support.route) },
-                    onNavigateToDonate = { navController.navigate(Screen.Donate.route) }
+                    onNavigateToDonate = { navController.navigate(Screen.Donate.route) },
+                    onNavigateToDnsSettings = { navController.navigate(Screen.DnsSettings.route) }
                 ) 
+            }
+            composable(Screen.DnsSettings.route) {
+                DnsSettingsScreen(
+                    onBack = { navController.popBackStack() }
+                )
             }
             composable(Screen.Support.route) {
                 SupportScreen(
@@ -640,6 +754,7 @@ fun MainApp() {
             composable(Screen.MovieSearch.route) {
                 MovieSearchScreen(
                     navController = navController,
+                    viewModel = movieSearchViewModel,
                     onMovieClick = { post, scraper, provider ->
                         val encodedLink = android.net.Uri.encode(post.link)
                         val encodedProviderUrl = android.net.Uri.encode(provider.url)

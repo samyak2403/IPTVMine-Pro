@@ -44,8 +44,12 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.util.Util
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import com.samyak.player.dns.DnsPreferenceManager
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -66,6 +70,16 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var youtubeOverlay: YouTubeOverlay
     private lateinit var progressBar: ProgressBar
     private lateinit var errorTextView: TextView
+
+    private val playerOkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .dns(DnsPreferenceManager.getDns(applicationContext))
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+    }
 
     // YouTube-style seek bar with image preview
     private var youtubeTimeBar: com.samyak.iptvminetimebar.YouTubeTimeBar? = null
@@ -100,7 +114,10 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var prevBtn: ImageButton
     private lateinit var nextBtn: ImageButton
     private lateinit var nextEpisodeBtn: ImageButton
-    private lateinit var nextEpisodeOverlay: LinearLayout
+    private lateinit var nextEpisodeOverlay: View
+    private lateinit var nextEpisodeFillProgress: ProgressBar
+    private lateinit var nextEpisodeText: TextView
+    private var hasAutoPlayedNextEpisode = false
     private lateinit var videoTitle: TextView
     private lateinit var exoLiveText: TextView
     private lateinit var topController: LinearLayout
@@ -170,7 +187,7 @@ class PlayerActivity : AppCompatActivity() {
         private const val TAG = "PlayerActivity"
         private const val INCREMENT_MILLIS = 5000L
         private const val PROGRESS_BAR_UPDATE_INTERVAL_MS = 16
-        private const val NEXT_EPISODE_OVERLAY_THRESHOLD_MS = 60_000L
+        private const val NEXT_EPISODE_OVERLAY_THRESHOLD_MS = 10_000L
         private const val THUMBNAIL_INTERVAL_MS = 10_000L
         private const val MAX_PREFETCH_FRAMES = 160L
         private const val PREVIEW_CAPTURE_WIDTH = 320
@@ -260,6 +277,13 @@ class PlayerActivity : AppCompatActivity() {
         @Suppress("UNCHECKED_CAST", "DEPRECATION")
         val fallbacks = intent?.getSerializableExtra("stream_fallbacks") as? ArrayList<StreamOption>
         streamCandidates = fallbacks ?: arrayListOf()
+        if (streamCandidates.isEmpty() && !channelStreamUrl.isNullOrBlank()) {
+            val headersMap = HashMap<String, String>()
+            intent?.getBundleExtra("channel_headers")?.let { b ->
+                for (k in b.keySet()) b.getString(k)?.let { headersMap[k] = it }
+            }
+            streamCandidates.add(StreamOption(channelStreamUrl!!, headersMap))
+        }
         currentStreamIndex = 0
 
         // Detect TV mode
@@ -314,6 +338,8 @@ class PlayerActivity : AppCompatActivity() {
         progressBar = findViewById(R.id.progressBar)
         errorTextView = findViewById(R.id.errorTextView)
         nextEpisodeOverlay = findViewById(R.id.nextEpisodeOverlay)
+        nextEpisodeFillProgress = findViewById(R.id.nextEpisodeFillProgress)
+        nextEpisodeText = findViewById(R.id.nextEpisodeText)
         nextEpisodeOverlay.setOnClickListener { playNextEpisode() }
 
         // Volume and brightness control overlays
@@ -763,10 +789,7 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
 
-            val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-                .setConnectTimeoutMs(15000)
-                .setReadTimeoutMs(15000)
-                .setAllowCrossProtocolRedirects(true)
+            val httpDataSourceFactory = OkHttpDataSource.Factory(playerOkHttpClient)
 
             if (userAgent != null) {
                 httpDataSourceFactory.setUserAgent(userAgent)
@@ -1080,8 +1103,8 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     /**
-     * Disney+/Hotstar style: surface the "Next Episode" overlay near the end of a VOD
-     * episode (or once ended), and whenever the controls are visible.
+     * Disney+/Hotstar style: surface the "Next Episode" overlay during the last 10 seconds of a VOD
+     * episode (or once ended) with a countdown filling progress effect and auto-play.
      */
     private fun maybeShowNextEpisodeOverlay() {
         if (!::nextEpisodeOverlay.isInitialized) return
@@ -1099,9 +1122,46 @@ class PlayerActivity : AppCompatActivity() {
         val remaining = if (isVod) duration - p.currentPosition else Long.MAX_VALUE
         val nearEnd = isVod && remaining in 1..NEXT_EPISODE_OVERLAY_THRESHOLD_MS
         val ended = p.playbackState == Player.STATE_ENDED
-        val controllerVisible = try { playerView.isControllerFullyVisible } catch (e: Exception) { false }
-        val show = !isResolvingNextEpisode && (nearEnd || ended || controllerVisible)
-        nextEpisodeOverlay.visibility = if (show) View.VISIBLE else View.GONE
+        // Strictly show only during the last 10 seconds (nearEnd) or when playback has ended.
+        // Never show while buffering/fetching or during regular playback!
+        val show = !isResolvingNextEpisode && (nearEnd || ended) && p.playbackState != Player.STATE_BUFFERING
+
+        if (show) {
+            if (nextEpisodeOverlay.visibility != View.VISIBLE) {
+                nextEpisodeOverlay.visibility = View.VISIBLE
+            }
+            if (::nextEpisodeFillProgress.isInitialized && ::nextEpisodeText.isInitialized) {
+                if (nearEnd) {
+                    val elapsedInWindow = (NEXT_EPISODE_OVERLAY_THRESHOLD_MS - remaining).coerceAtLeast(0L)
+                    val progressRatio = (elapsedInWindow.toFloat() / NEXT_EPISODE_OVERLAY_THRESHOLD_MS).coerceIn(0f, 1f)
+                    nextEpisodeFillProgress.progress = (progressRatio * 1000).toInt()
+
+                    val secondsLeft = ((remaining + 999L) / 1000L).coerceIn(1L, 10L)
+                    nextEpisodeText.text = "${getString(R.string.next_episode_btn)} (${secondsLeft}s)"
+
+                    // Trigger automatic next episode playback when the 10s countdown completes
+                    if (remaining <= 350L && !hasAutoPlayedNextEpisode && p.isPlaying) {
+                        hasAutoPlayedNextEpisode = true
+                        playNextEpisode()
+                    }
+                } else if (ended) {
+                    nextEpisodeFillProgress.progress = 1000
+                    nextEpisodeText.text = getString(R.string.next_episode_btn)
+                    if (!hasAutoPlayedNextEpisode && !isResolvingNextEpisode) {
+                        hasAutoPlayedNextEpisode = true
+                        playNextEpisode()
+                    }
+                }
+            }
+        } else {
+            if (nextEpisodeOverlay.visibility != View.GONE) {
+                nextEpisodeOverlay.visibility = View.GONE
+            }
+            // Reset autoplay flag if playback is outside the 10s window (e.g. user seeked backward)
+            if (!nearEnd && !ended) {
+                hasAutoPlayedNextEpisode = false
+            }
+        }
     }
 
     private fun playNextEpisode() {
@@ -1115,6 +1175,7 @@ class PlayerActivity : AppCompatActivity() {
         val nextEpisode = episodeList.getOrNull(nextIndex) ?: return
 
         isResolvingNextEpisode = true
+        hasAutoPlayedNextEpisode = true
         nextEpisodeBtn.isEnabled = false
         nextEpisodeOverlay.visibility = View.GONE
         progressBar.visibility = View.VISIBLE
@@ -1152,6 +1213,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun loadEpisodeInPlace(index: Int, title: String, url: String, headers: Map<String, String>?) {
         releasePlayer()
         isUserScrubbing = false
+        hasAutoPlayedNextEpisode = false
         currentEpisodeIndex = index
         channelName = title
         channelStreamUrl = normalizeUrl(url)
@@ -1380,10 +1442,12 @@ class PlayerActivity : AppCompatActivity() {
             return
         }
         Thread {
+            var probeException: Exception? = null
             val result = try {
                 probeContent(url)
             } catch (e: Exception) {
                 Log.w(TAG, "Content probe failed: ${e.message}")
+                probeException = e
                 ProbeResult.UNKNOWN
             }
             runOnUiThread {
@@ -1394,6 +1458,18 @@ class PlayerActivity : AppCompatActivity() {
                     showError("This link isn't a playable video. The server returned a web page, so the stream may be expired, geo-blocked, or require sign-in.")
                     return@runOnUiThread
                 }
+
+                // If host is completely unreachable during probe, try next candidate immediately
+                val isHostUnreachable = probeException is java.net.UnknownHostException ||
+                    probeException is java.net.ConnectException ||
+                    probeException?.message?.contains("Unable to resolve host", ignoreCase = true) == true ||
+                    probeException?.message?.contains("Failed to connect", ignoreCase = true) == true
+
+                if (isHostUnreachable) {
+                    Log.w(TAG, "Host unreachable during probe (${probeException?.message}), trying next candidate...")
+                    if (tryNextStreamCandidate()) return@runOnUiThread
+                }
+
                 val mime = when (result) {
                     ProbeResult.HLS -> "application/x-mpegURL"
                     ProbeResult.DASH -> "application/dash+xml"
@@ -1420,28 +1496,25 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun probeContent(url: String): ProbeResult {
-        var connection: HttpURLConnection? = null
-        try {
-            val conn = URL(url).openConnection() as HttpURLConnection
-            connection = conn
-            conn.instanceFollowRedirects = true
-            conn.connectTimeout = 8000
-            conn.readTimeout = 8000
-            conn.requestMethod = "GET"
-            conn.setRequestProperty("Accept", "*/*")
-            conn.setRequestProperty("Range", "bytes=0-8191")
-            conn.setRequestProperty("User-Agent", requestUserAgent ?: CHROME_USER_AGENT)
-            for ((k, v) in requestHeaders) {
-                try { conn.setRequestProperty(k, v) } catch (_: Exception) {}
-            }
-            conn.connect()
+        if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
+            return ProbeResult.UNKNOWN
+        }
+        val reqBuilder = Request.Builder()
+            .url(url)
+            .header("Accept", "*/*")
+            .header("Range", "bytes=0-8191")
+            .header("User-Agent", requestUserAgent ?: CHROME_USER_AGENT)
 
-            val status = conn.responseCode
-            val contentType = (conn.contentType ?: "").lowercase()
+        for ((k, v) in requestHeaders) {
+            try { reqBuilder.header(k, v) } catch (_: Exception) {}
+        }
+
+        playerOkHttpClient.newCall(reqBuilder.build()).execute().use { response ->
+            val status = response.code
+            val contentType = (response.header("Content-Type") ?: "").lowercase()
             val buf = ByteArray(1024)
             val read = try {
-                val input = if (status in 200..299) conn.inputStream else conn.errorStream
-                input?.use { readUpTo(it, buf) } ?: 0
+                response.body?.byteStream()?.use { readUpTo(it, buf) } ?: 0
             } catch (e: Exception) { 0 }
             val head = if (read > 0) String(buf, 0, read, Charsets.ISO_8859_1) else ""
             val headTrim = head.trimStart()
@@ -1471,8 +1544,6 @@ class PlayerActivity : AppCompatActivity() {
                 return ProbeResult.HTML
             }
             return ProbeResult.UNKNOWN
-        } finally {
-            connection?.disconnect()
         }
     }
 
@@ -1653,6 +1724,25 @@ class PlayerActivity : AppCompatActivity() {
             Log.e(TAG, "Error checking for 403", e)
         }
 
+        val isNetworkOrHostError = error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
+                error.cause is java.net.UnknownHostException ||
+                error.cause is java.net.ConnectException ||
+                error.cause is java.net.SocketTimeoutException ||
+                error.cause is java.net.NoRouteToHostException ||
+                error.cause?.message?.contains("Unable to resolve host", ignoreCase = true) == true
+
+        val isHttpServerError = error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS &&
+                run {
+                    val code = (error.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.responseCode ?: -1
+                    code in listOf(404, 410, 500, 502, 503, 520, 521, 522, 523, 524)
+                }
+
+        if (isNetworkOrHostError || isHttpServerError) {
+            Log.w(TAG, "Stream failed with network/server error (${error.errorCodeName}: ${error.cause?.message}). Attempting next candidate...")
+            if (tryNextStreamCandidate()) return
+        }
+
         when {
             cleartextError && channelStreamUrl?.startsWith("http://") == true -> {
                 Log.d(TAG, "Attempting to use HTTPS instead of HTTP")
@@ -1695,7 +1785,7 @@ class PlayerActivity : AppCompatActivity() {
                     return
                 }
             }
-            formatError || sourceError -> {
+            formatError -> {
                 Log.d(TAG, "Format/source error, trying alternative format")
                 tryAlternativeFormat(channelStreamUrl ?: "")
                 return
@@ -1705,7 +1795,16 @@ class PlayerActivity : AppCompatActivity() {
                 tryNextFormat()
                 return
             }
+            sourceError -> {
+                if (tryNextStreamCandidate()) return
+                tryAlternativeFormat(channelStreamUrl ?: "")
+                return
+            }
         }
+
+        val isUnknownHost = error.cause is java.net.UnknownHostException ||
+            error.cause?.message?.contains("UnknownHostException", ignoreCase = true) == true ||
+            error.cause?.message?.contains("Unable to resolve host", ignoreCase = true) == true
 
         errorTextView.visibility = View.VISIBLE
         playerView.visibility = View.GONE
@@ -1715,9 +1814,10 @@ class PlayerActivity : AppCompatActivity() {
             hlsParsingError -> "Invalid stream format. This stream may not be available."
             cleartextError -> "Insecure connection not allowed. Try using an HTTPS stream or check app settings."
             formatError -> "This media format is not supported on your device."
+            isUnknownHost -> "Unable to reach stream server (host not found). The stream domain may be expired, offline, or blocked."
             error.errorCodeName == "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED" ||
             error.errorCodeName == "ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT" ->
-                "Network error. Please check your connection."
+                "Network connection failed. The server is unreachable or timed out. Please try another source or check DNS settings."
             error.errorCodeName == "ERROR_CODE_AUDIO_TRACK_INIT_FAILED" ->
                 "Audio format not supported by your device."
             else -> "Playback error: ${error.errorCodeName}"
