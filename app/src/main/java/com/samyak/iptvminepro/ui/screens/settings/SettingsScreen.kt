@@ -37,6 +37,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
 import com.samyak.iptvminepro.network.DnsPreferenceManager
 import com.samyak.iptvminepro.network.DnsMode
+import com.samyak.iptvminepro.ui.theme.ThemePreferenceManager
 
 @Composable
 fun SettingsScreen(
@@ -89,6 +90,18 @@ fun SettingsScreen(
                 onClick = onNavigateToExtensions
             )
         }
+
+        SettingsSectionTitle(title = stringResource(id = R.string.section_appearance))
+        val isBlackTheme by ThemePreferenceManager.observeBlackTheme(context)
+        SettingsSwitchItem(
+            title = stringResource(id = R.string.setting_material_black_theme),
+            subtitle = stringResource(id = R.string.desc_material_black_theme),
+            icon = Icons.Filled.DarkMode,
+            checked = isBlackTheme,
+            onCheckedChange = { checked ->
+                ThemePreferenceManager.setBlackTheme(context, checked)
+            }
+        )
 
         SettingsSectionTitle(title = stringResource(id = R.string.section_network))
         SettingsItem(
@@ -207,6 +220,68 @@ fun SettingsItem(
                 imageVector = Icons.Filled.ChevronRight,
                 contentDescription = stringResource(id = R.string.desc_navigate),
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            )
+        }
+    }
+}
+
+@Composable
+fun SettingsSwitchItem(
+    title: String,
+    icon: ImageVector,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    subtitle: String? = null
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onCheckedChange(!checked) }
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (!subtitle.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = MaterialTheme.colorScheme.primary,
+                    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
             )
         }
     }

@@ -134,4 +134,8 @@
     <string name="btn_pay_upi">Pay via UPI</string>
     <string name="btn_copy_upi">Copy UPI ID</string>
     <string name="donate_upi_copied">UPI ID copied to clipboard</string>
+    <!-- Appearance -->
+    <string name="section_appearance">Appearance</string>
+    <string name="setting_material_black_theme">Material Black Theme</string>
+    <string name="desc_material_black_theme">Pure AMOLED black background across all screens</string>
 </resources>

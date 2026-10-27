@@ -37,6 +37,7 @@ import com.samyak.iptvminepro.model.Provider
 import com.samyak.iptvminepro.model.VegaPost
 import com.samyak.iptvminepro.model.VegaProvider
 import com.samyak.iptvminepro.ui.components.MovieCard
+import com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme
 import com.samyak.iptvminepro.ui.viewmodel.MovieSearchViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,6 +47,7 @@ fun MovieSearchScreen(
     viewModel: MovieSearchViewModel = viewModel(),
     onMovieClick: (VegaPost, VegaProvider, Provider) -> Unit
 ) {
+    val isBlackTheme = LocalIsBlackTheme.current
     val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -136,10 +138,10 @@ fun MovieSearchScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = if (isBlackTheme) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primary,
+                    titleContentColor = if (isBlackTheme) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimary,
+                    navigationIconContentColor = if (isBlackTheme) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = if (isBlackTheme) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimary
                 )
             )
         },

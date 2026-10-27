@@ -1,5 +1,6 @@
 package com.samyak.iptvminepro.ui.screens.provider
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -51,7 +52,7 @@ fun ProviderListScreen(
         )
     } else {
         Scaffold(
-            containerColor = Color(0xFFF5F7FA), // Premium light background
+            containerColor = MaterialTheme.colorScheme.background,
             floatingActionButton = {
                 FloatingActionButton(onClick = onAddProvider, containerColor = MaterialTheme.colorScheme.primary) {
                     Icon(Icons.Filled.Add, contentDescription = stringResource(id = R.string.desc_add_provider), tint = MaterialTheme.colorScheme.onPrimary)
@@ -147,11 +148,15 @@ fun ProviderListScreen(
                         } else {
                             stringResource(id = R.string.total_channels_count, channelCount)
                         }
+                        val isBlackTheme = com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme.current
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 6.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isBlackTheme) Color(0xFF121212) else Color.White
+                            ),
+                            border = if (isBlackTheme) BorderStroke(1.dp, Color(0xFF242424)) else null,
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                             shape = RoundedCornerShape(12.dp)
                         ) {
@@ -189,7 +194,7 @@ fun ProviderListScreen(
                                                   fontWeight = FontWeight.Bold,
                                                   fontSize = 16.sp
                                               ),
-                                              color = Color(0xFF1F2937), // Slate Dark
+                                              color = MaterialTheme.colorScheme.onSurface,
                                               modifier = Modifier.weight(1f, fill = false),
                                               maxLines = 1,
                                               overflow = TextOverflow.Ellipsis
@@ -197,12 +202,20 @@ fun ProviderListScreen(
                                           Spacer(modifier = Modifier.width(8.dp))
                                           // Provider Type Badge
                                           Surface(
-                                              color = if (provider.safeType == com.samyak.iptvminepro.model.ProviderType.IPTV) Color(0xFFE0F7FA) else Color(0xFFEDE7F6),
+                                              color = if (isBlackTheme) {
+                                                  if (provider.safeType == com.samyak.iptvminepro.model.ProviderType.IPTV) Color(0xFF003737) else Color(0xFF2C1654)
+                                              } else {
+                                                  if (provider.safeType == com.samyak.iptvminepro.model.ProviderType.IPTV) Color(0xFFE0F7FA) else Color(0xFFEDE7F6)
+                                              },
                                               shape = RoundedCornerShape(8.dp)
                                           ) {
                                               Text(
                                                   text = provider.safeType.name,
-                                                  color = if (provider.safeType == com.samyak.iptvminepro.model.ProviderType.IPTV) Color(0xFF006064) else Color(0xFF512DA8),
+                                                  color = if (isBlackTheme) {
+                                                      if (provider.safeType == com.samyak.iptvminepro.model.ProviderType.IPTV) Color(0xFF80DEEA) else Color(0xFFD1C4E9)
+                                                  } else {
+                                                      if (provider.safeType == com.samyak.iptvminepro.model.ProviderType.IPTV) Color(0xFF006064) else Color(0xFF512DA8)
+                                                  },
                                                   style = MaterialTheme.typography.labelSmall,
                                                   modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                                   fontWeight = FontWeight.Bold
@@ -210,12 +223,12 @@ fun ProviderListScreen(
                                           }
                                           Spacer(modifier = Modifier.width(4.dp))
                                           Surface(
-                                              color = Color(0xFFE0F2F1), // Light teal background
+                                              color = if (isBlackTheme) Color(0xFF004D40) else Color(0xFFE0F2F1),
                                               shape = RoundedCornerShape(8.dp)
                                           ) {
                                               Text(
                                                   text = statusText,
-                                                  color = Color(0xFF00796B), // Dark teal text
+                                                  color = if (isBlackTheme) Color(0xFF80CBC4) else Color(0xFF00796B),
                                                   style = MaterialTheme.typography.labelSmall,
                                                   modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                                   fontWeight = FontWeight.Bold
@@ -226,7 +239,7 @@ fun ProviderListScreen(
                                     Text(
                                         text = provider.url,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Color(0xFF6B7280), // Slate Muted
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         lineHeight = 15.sp
                                     )
                                 }

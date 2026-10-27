@@ -267,10 +267,12 @@ fun ExtensionItem(
     isInstalled: Boolean,
     onAction: (Boolean) -> Unit
 ) {
+    val isBlackTheme = com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = if (isBlackTheme) Color(0xFF121212) else Color.White),
+        border = if (isBlackTheme) BorderStroke(1.dp, Color(0xFF242424)) else null,
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
@@ -282,8 +284,8 @@ fun ExtensionItem(
             // Extension Logo
             Surface(
                 shape = RoundedCornerShape(10.dp),
-                color = Color(0xFFF8FAFC),
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                color = if (isBlackTheme) Color(0xFF1E1E1E) else Color(0xFFF8FAFC),
+                border = BorderStroke(1.dp, if (isBlackTheme) Color(0xFF2E2E2E) else Color(0xFFE2E8F0)),
                 modifier = Modifier.size(48.dp)
             ) {
                 val iconUrl = remember(extension.icon) {

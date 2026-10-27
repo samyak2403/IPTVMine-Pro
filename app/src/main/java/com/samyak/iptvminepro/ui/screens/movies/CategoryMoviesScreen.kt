@@ -30,6 +30,7 @@ import androidx.navigation.NavController
 import com.samyak.iptvminepro.model.VegaPost
 import com.samyak.iptvminepro.ui.components.GridShimmerPlaceholder
 import com.samyak.iptvminepro.ui.components.MovieCard
+import com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme
 import com.samyak.iptvminepro.ui.viewmodel.CategoryMoviesViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,6 +43,7 @@ fun CategoryMoviesScreen(
     navController: NavController,
     onMovieClick: (VegaPost) -> Unit
 ) {
+    val isBlackTheme = LocalIsBlackTheme.current
     val context = LocalContext.current
 
     // ViewModel scoped to this NavBackStackEntry — survives back-nav from MovieDetail
@@ -146,10 +148,10 @@ fun CategoryMoviesScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = if (isBlackTheme) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primary,
+                    titleContentColor = if (isBlackTheme) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimary,
+                    navigationIconContentColor = if (isBlackTheme) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = if (isBlackTheme) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimary
                 )
             )
         },
@@ -158,13 +160,13 @@ fun CategoryMoviesScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .background(Color.White)
+                    .background(MaterialTheme.colorScheme.background)
             ) {
                 if (movies.isEmpty() && !isLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
                             text = "No movies or shows found",
-                            color = Color(0xFF6B7280),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 16.sp
                         )
                     }

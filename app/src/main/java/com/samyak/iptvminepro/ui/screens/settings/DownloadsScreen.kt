@@ -59,11 +59,11 @@ fun DownloadsScreen(navController: NavController) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF5F5F7)) // Premium light grey background
+            .background(MaterialTheme.colorScheme.background)
     ) {
         TabRow(
             selectedTabIndex = selectedTab,
-            containerColor = Color.White,
+            containerColor = MaterialTheme.colorScheme.surface,
             contentColor = Color(0xFF26A69A),
             indicator = { tabPositions ->
                 TabRowDefaults.SecondaryIndicator(
@@ -186,9 +186,11 @@ fun DownloadingItem(
     onCancel: () -> Unit,
     onRetry: () -> Unit
 ) {
+    val isBlackTheme = com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme.current
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = if (isBlackTheme) Color(0xFF121212) else Color.White),
+        border = if (isBlackTheme) androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF242424)) else null,
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -205,7 +207,7 @@ fun DownloadingItem(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = task.title,
-                        color = Color(0xFF1C1C1E),
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
                         maxLines = 2,
@@ -287,7 +289,7 @@ fun DownloadingItem(
                         }
                         Text(
                             text = "$pct%",
-                            color = Color(0xFF1C1C1E),
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -306,9 +308,11 @@ fun DownloadedItem(
 ) {
     var showConfirmDelete by remember { mutableStateOf(false) }
 
+    val isBlackTheme = com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme.current
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = if (isBlackTheme) Color(0xFF121212) else Color.White),
+        border = if (isBlackTheme) androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF242424)) else null,
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -322,7 +326,7 @@ fun DownloadedItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = task.title,
-                    color = Color(0xFF1C1C1E),
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
                     maxLines = 2,

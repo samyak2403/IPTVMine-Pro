@@ -42,11 +42,20 @@ fun rememberShimmerBrush(): Brush {
         ),
         label = "shimmerTranslate"
     )
-    val shimmerColors = listOf(
-        Color(0xFFE2E2E2),
-        Color(0xFFF6F6F6),
-        Color(0xFFE2E2E2)
-    )
+    val isBlackTheme = com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme.current
+    val shimmerColors = if (isBlackTheme) {
+        listOf(
+            Color(0xFF121212),
+            Color(0xFF242424),
+            Color(0xFF121212)
+        )
+    } else {
+        listOf(
+            Color(0xFFE2E2E2),
+            Color(0xFFF6F6F6),
+            Color(0xFFE2E2E2)
+        )
+    }
     return Brush.linearGradient(
         colors = shimmerColors,
         start = Offset(translate - 400f, translate - 400f),

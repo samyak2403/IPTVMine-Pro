@@ -42,6 +42,7 @@ import com.samyak.iptvminepro.provider.VegaStreamFallbackEngine
 import com.samyak.player.PlayerActivity
 import com.samyak.player.EpisodeItem
 import com.samyak.player.StreamOption
+import com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -377,6 +378,8 @@ fun MovieDetailScreen(
     }
 
 
+    val isBlackTheme = LocalIsBlackTheme.current
+
     // Force white status bar icons so they're visible over the dark movie backdrop
     val view = LocalView.current
     if (!view.isInEditMode) {
@@ -386,18 +389,18 @@ fun MovieDetailScreen(
         }
     }
 
-    // Restore dark icons when leaving this screen
-    DisposableEffect(Unit) {
+    // Restore icons appropriately when leaving this screen
+    DisposableEffect(isBlackTheme) {
         onDispose {
             val window = (view.context as Activity).window
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = true
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isBlackTheme
         }
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F0E13))
+            .background(if (isBlackTheme) Color(0xFF000000) else Color(0xFF0F0E13))
     ) {
         if (isLoading) {
             CircularProgressIndicator(

@@ -3,6 +3,7 @@ package com.samyak.iptvminepro.ui.screens.settings
 import android.net.wifi.WifiManager
 import android.content.Context
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,12 +64,12 @@ fun PairingScreen(
     }
 
     Scaffold(
-        containerColor = Color(0xFFF8FAFC)
+        containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFFF8FAFC))
+                .background(MaterialTheme.colorScheme.background)
                 .padding(paddingValues)
                 .padding(24.dp),
             contentAlignment = Alignment.TopCenter
@@ -135,7 +136,7 @@ fun PairingScreen(
                         Text(
                             text = "Active providers have been shared with:\n$pairedTvDevice",
                             fontSize = 15.sp,
-                            color = Color(0xFF475569),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                             lineHeight = 20.sp
                         )
@@ -148,6 +149,7 @@ fun PairingScreen(
                         }
                     }
                 } else {
+                    val isBlackTheme = com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme.current
                     // Pairing Code Display State
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -157,12 +159,12 @@ fun PairingScreen(
                             text = "Mobile App Provider Mode",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF0F172A)
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             text = "Enter the 7-digit code below on your TV app.",
                             fontSize = 14.sp,
-                            color = Color(0xFF64748B),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
                     }
@@ -170,7 +172,8 @@ fun PairingScreen(
                     // Large 7-digit code box
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        colors = CardDefaults.cardColors(containerColor = if (isBlackTheme) Color(0xFF121212) else Color.White),
+                        border = if (isBlackTheme) BorderStroke(1.dp, Color(0xFF242424)) else null,
                         shape = RoundedCornerShape(16.dp),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
@@ -209,13 +212,13 @@ fun PairingScreen(
                                     modifier = Modifier.size(18.dp),
                                     color = Color(0xFF26A69A),
                                     strokeWidth = 2.dp,
-                                    trackColor = Color(0xFFE2E8F0)
+                                    trackColor = if (isBlackTheme) Color(0xFF242424) else Color(0xFFE2E8F0)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = "Code rotates in ${secondsRemaining}s",
                                     fontSize = 13.sp,
-                                    color = Color(0xFF475569),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontWeight = FontWeight.Medium
                                 )
                             }
@@ -225,7 +228,8 @@ fun PairingScreen(
                     // Wi-Fi and network details
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        colors = CardDefaults.cardColors(containerColor = if (isBlackTheme) Color(0xFF121212) else Color.White),
+                        border = if (isBlackTheme) BorderStroke(1.dp, Color(0xFF242424)) else null,
                         shape = RoundedCornerShape(12.dp),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
@@ -238,32 +242,32 @@ fun PairingScreen(
                             ) {
                                 Icon(Icons.Default.Wifi, contentDescription = "Wi-Fi Network", tint = Color(0xFF26A69A), modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Wi-Fi network requirements:", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("Wi-Fi network requirements:", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                             Text(
                                 text = "1. Ensure both your Phone and TV are connected to the same Wi-Fi router.",
-                                color = Color(0xFF475569),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp
                             )
                             Text(
                                 text = "2. Open the 'Playlists' screen on the TV app and click 'Import from Phone'.",
-                                color = Color(0xFF475569),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp
                             )
-                            HorizontalDivider(color = Color(0xFFF1F5F9))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             Row(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Wi-Fi SSID", color = Color(0xFF64748B), fontSize = 12.sp)
-                                Text(wifiSsid, color = Color(0xFF0F172A), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("Wi-Fi SSID", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                                Text(wifiSsid, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                             Row(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Local IP Address", color = Color(0xFF64748B), fontSize = 12.sp)
-                                Text(localIp, color = Color(0xFF0F172A), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("Local IP Address", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                                Text(localIp, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }

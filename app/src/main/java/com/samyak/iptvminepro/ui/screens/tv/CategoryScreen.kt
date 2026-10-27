@@ -113,7 +113,7 @@ fun CategoryScreen(
         if (hasTv) {
         TabRow(
             selectedTabIndex = selectedTab.ordinal,
-            containerColor = Color.White,
+            containerColor = MaterialTheme.colorScheme.surface,
             contentColor = Color(0xFF26A69A),
             indicator = { tabPositions ->
                 TabRowDefaults.SecondaryIndicator(
@@ -122,7 +122,7 @@ fun CategoryScreen(
                 )
             },
             divider = {
-                HorizontalDivider(color = Color(0xFFE5E7EB))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
         ) {
             // Tab 0: Movies
@@ -328,8 +328,8 @@ private fun MovieCategoriesContent(
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = Color(0xFF26A69A),
                                 selectedLabelColor = Color.White,
-                                containerColor = Color(0xFFF5F5F5),
-                                labelColor = Color(0xFF6B7280)
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant
                             ),
                             border = null,
                             shape = RoundedCornerShape(8.dp)
@@ -497,9 +497,14 @@ fun MovieCategoryCard(
         )
     }
 
-    val cardGradient = remember(name) {
-        val index = name.hashCode().absoluteValue % gradients.size
-        gradients[index]
+    val isBlackTheme = com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme.current
+    val cardGradient = remember(name, isBlackTheme) {
+        if (isBlackTheme) {
+            Brush.linearGradient(listOf(Color(0xFF141414), Color(0xFF1E1E1E)))
+        } else {
+            val index = name.hashCode().absoluteValue % gradients.size
+            gradients[index]
+        }
     }
 
     val primaryColor = remember(name) {
@@ -527,7 +532,7 @@ fun MovieCategoryCard(
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(
             width = if (isFocused) 2.dp else 1.dp,
-            color = if (isFocused) MaterialTheme.colorScheme.primary else Color.Transparent
+            color = if (isFocused) MaterialTheme.colorScheme.primary else if (isBlackTheme) Color(0xFF262626) else Color.Transparent
         ),
         elevation = CardDefaults.cardElevation(
             defaultElevation = if (isFocused) 8.dp else 2.dp
@@ -582,7 +587,7 @@ fun MovieCategoryCard(
                     text = name,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF212121),
+                    color = if (isBlackTheme) Color.White else Color(0xFF212121),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth()
@@ -614,9 +619,14 @@ fun CategoryCard(
         )
     }
 
-    val cardGradient = remember(name) {
-        val index = name.hashCode().absoluteValue % gradients.size
-        gradients[index]
+    val isBlackTheme = com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme.current
+    val cardGradient = remember(name, isBlackTheme) {
+        if (isBlackTheme) {
+            Brush.linearGradient(listOf(Color(0xFF141414), Color(0xFF1E1E1E)))
+        } else {
+            val index = name.hashCode().absoluteValue % gradients.size
+            gradients[index]
+        }
     }
 
     val primaryColor = remember(name) {
@@ -644,7 +654,7 @@ fun CategoryCard(
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(
             width = if (isFocused) 2.dp else 1.dp,
-            color = if (isFocused) MaterialTheme.colorScheme.primary else Color.Transparent
+            color = if (isFocused) MaterialTheme.colorScheme.primary else if (isBlackTheme) Color(0xFF262626) else Color.Transparent
         ),
         elevation = CardDefaults.cardElevation(
             defaultElevation = if (isFocused) 8.dp else 2.dp
@@ -699,7 +709,7 @@ fun CategoryCard(
                     text = name,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF212121), // High contrast text for light colored card backgrounds
+                    color = if (isBlackTheme) Color.White else Color(0xFF212121),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth()

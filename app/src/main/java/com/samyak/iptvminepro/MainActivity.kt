@@ -133,7 +133,9 @@ class MainActivity : ComponentActivity() {
             com.samyak.iptvminepro.provider.VegaStreamResolver(applicationContext)
         requestNotificationPermissionIfNeeded()
         setContent {
-            IPTVMineProTheme {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val isBlackTheme by com.samyak.iptvminepro.ui.theme.ThemePreferenceManager.observeBlackTheme(context)
+            IPTVMineProTheme(blackTheme = isBlackTheme) {
                 MainApp()
             }
         }
@@ -320,17 +322,18 @@ fun MainApp() {
                 currentRoute != Screen.VideoList.route &&
                 currentRoute != Screen.DnsSettings.route
             ) {
+                val isBlackThemeActive = com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme.current
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color.White)
+                        .background(if (isBlackThemeActive) Color.Black else Color.White)
                 ) {
                     // Thin top border/divider
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(1.dp)
-                            .background(Color(0xFFE5E7EB))
+                            .background(if (isBlackThemeActive) Color(0xFF1E1E1E) else Color(0xFFE5E7EB))
                     )
 
                     Row(
@@ -384,7 +387,7 @@ fun MainApp() {
                                 }
 
                                 CompositionLocalProvider(
-                                    LocalContentColor provides (if (selected) Color.White else Color(0xFF6B7280))
+                                    LocalContentColor provides (if (selected) Color.White else if (isBlackThemeActive) Color(0xFFA5A5A5) else Color(0xFF6B7280))
                                 ) {
                                     val iconScale = if (selected) 1.05f else 1f
                                     Box(modifier = Modifier.scale(iconScale)) {
@@ -591,7 +594,7 @@ fun MainApp() {
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color(0xFF26A69A),
+                        containerColor = if (com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme.current) Color.Black else Color(0xFF26A69A),
                         titleContentColor = Color.White,
                         actionIconContentColor = Color.White,
                         navigationIconContentColor = Color.White

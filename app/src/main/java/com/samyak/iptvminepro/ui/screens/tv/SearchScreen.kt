@@ -24,6 +24,7 @@ import com.samyak.iptvminepro.model.Channel
 import com.samyak.iptvminepro.provider.ChannelsProvider
 import com.samyak.iptvminepro.ui.components.CategoryChip
 import com.samyak.iptvminepro.ui.components.ChannelCard
+import com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,6 +33,7 @@ fun SearchScreen(
     onChannelClick: (Channel) -> Unit = {},
     onBack: () -> Unit = {}
 ) {
+    val isBlackTheme = LocalIsBlackTheme.current
     val channels by viewModel.filteredChannels.observeAsState(emptyList())
     val allChannels by viewModel.channels.observeAsState(emptyList())
     val categories by viewModel.categories.observeAsState(emptyList())
@@ -95,10 +97,10 @@ fun SearchScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = if (isBlackTheme) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primary,
+                    titleContentColor = if (isBlackTheme) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimary,
+                    navigationIconContentColor = if (isBlackTheme) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = if (isBlackTheme) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimary
                 )
             )
         }

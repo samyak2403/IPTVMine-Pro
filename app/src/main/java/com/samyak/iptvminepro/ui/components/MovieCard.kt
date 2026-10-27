@@ -24,9 +24,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.platform.LocalContext
 import com.samyak.iptvminepro.R
 import com.samyak.iptvminepro.model.VegaPost
+import com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme
 
 @Composable
 fun MovieCard(
@@ -34,6 +36,7 @@ fun MovieCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isBlackTheme = LocalIsBlackTheme.current
     var isFocused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (isFocused) 1.05f else 1.0f)
     val context = LocalContext.current
@@ -77,8 +80,9 @@ fun MovieCard(
             .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF1D1B26)
+            containerColor = if (isBlackTheme) Color(0xFF121212) else Color(0xFF1D1B26)
         ),
+        border = if (isBlackTheme) BorderStroke(1.dp, Color(0xFF262626)) else null,
         elevation = CardDefaults.cardElevation(
             defaultElevation = if (isFocused) 8.dp else 2.dp
         )

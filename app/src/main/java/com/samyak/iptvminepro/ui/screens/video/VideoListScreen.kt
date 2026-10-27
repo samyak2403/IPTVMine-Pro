@@ -29,10 +29,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.BorderStroke
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.samyak.iptvminepro.model.Provider
 import com.samyak.iptvminepro.model.ProviderType
 import com.samyak.iptvminepro.provider.ChannelsProvider
+import com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
@@ -48,6 +50,7 @@ fun VideoListScreen(
     onNavigateBack: () -> Unit,
     onAddProviderClick: () -> Unit
 ) {
+    val isBlackTheme = LocalIsBlackTheme.current
     val context = LocalContext.current
     val providers by viewModel.providers.observeAsState(emptyList())
     val videos = remember(providers) {
@@ -55,7 +58,7 @@ fun VideoListScreen(
     }
 
     Scaffold(
-        containerColor = Color(0xFFF5F7FA),
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text("My Videos") },
@@ -69,14 +72,14 @@ fun VideoListScreen(
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Add Provider",
-                            tint = Color.White
+                            tint = if (isBlackTheme) MaterialTheme.colorScheme.onSurface else Color.White
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
+                    containerColor = if (isBlackTheme) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primary,
+                    titleContentColor = if (isBlackTheme) MaterialTheme.colorScheme.onSurface else Color.White,
+                    navigationIconContentColor = if (isBlackTheme) MaterialTheme.colorScheme.onSurface else Color.White
                 )
             )
         }
@@ -117,6 +120,7 @@ fun VideoListScreen(
 
 @Composable
 private fun VideoRow(video: Provider, onClick: () -> Unit) {
+    val isBlackTheme = LocalIsBlackTheme.current
     val context = LocalContext.current
     // Preview frame + duration, cached per URL so scrolling doesn't re-download media.
     var preview by remember(video.url) { mutableStateOf(VideoPreviewCache.get(video.url)) }
@@ -141,7 +145,10 @@ private fun VideoRow(video: Provider, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isBlackTheme) Color(0xFF121212) else Color.White
+        ),
+        border = if (isBlackTheme) BorderStroke(1.dp, Color(0xFF262626)) else null,
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -200,7 +207,7 @@ private fun VideoRow(video: Provider, onClick: () -> Unit) {
                     text = video.title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1F2937),
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -208,7 +215,7 @@ private fun VideoRow(video: Provider, onClick: () -> Unit) {
                 Text(
                     text = fileNameFromUrl(video.url),
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF6B7280),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

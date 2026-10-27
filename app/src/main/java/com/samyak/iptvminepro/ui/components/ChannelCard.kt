@@ -21,13 +21,16 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.samyak.iptvminepro.model.Channel
+import com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme
 
 @Composable
 fun ChannelCard(channel: Channel, onClick: () -> Unit) {
+    val isBlackTheme = LocalIsBlackTheme.current
     var isFocused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (isFocused) 1.05f else 1.0f)
 
@@ -41,8 +44,9 @@ fun ChannelCard(channel: Channel, onClick: () -> Unit) {
             .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = if (isBlackTheme) Color(0xFF121212) else MaterialTheme.colorScheme.surface
         ),
+        border = if (isBlackTheme) BorderStroke(1.dp, Color(0xFF262626)) else null,
         elevation = CardDefaults.cardElevation(
             defaultElevation = if (isFocused) 8.dp else 2.dp
         )
@@ -60,7 +64,7 @@ fun ChannelCard(channel: Channel, onClick: () -> Unit) {
                 modifier = Modifier
                     .size(64.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color.LightGray),
+                    .background(if (isBlackTheme) Color(0xFF1E1E1E) else Color.LightGray),
                 contentScale = ContentScale.Fit
             )
             Spacer(modifier = Modifier.height(12.dp))
