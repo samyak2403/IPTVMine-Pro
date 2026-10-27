@@ -1,0 +1,3 @@
+- Added Material Black Theme (AMOLED #000000) across all screens
+- Settings switch to toggle Material Black Theme
+- High-contrast card surfaces and edge-to-edge system bars
