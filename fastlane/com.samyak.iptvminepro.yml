@@ -11,7 +11,6 @@ AutoName: IPTVMine Pro
 
 RepoType: git
 Repo: https://github.com/samyak2403/IPTVMine-Pro.git
-
 Binaries: https://github.com/samyak2403/IPTVMine-Pro/releases/download/v%v/app-release.apk
 
 Builds:
@@ -43,16 +42,9 @@ Builds:
     gradle:
       - yes
 
-  - versionName: 1.1.2
-    versionCode: 12
-    commit: a89580224d0622e628d9b67e6c845c070de031c5
-    subdir: app
-    gradle:
-      - yes
-
   - versionName: 1.1.3
     versionCode: 13
-    commit: ccc3f13ca50f19763ba710a7224adecc77ba330e
+    commit: 4c8081bc21223e863c0c0d36e477e351d1218919
     subdir: app
     gradle:
       - yes
