@@ -96,7 +96,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.samyak.iptvminepro.ui.screens.settings.SettingsScreen
 import com.samyak.iptvminepro.ui.screens.provider.AddProviderScreen
 import com.samyak.iptvminepro.ui.screens.provider.ProviderListScreen
-import com.samyak.iptvminepro.ui.screens.settings.PairingScreen
 import com.samyak.iptvminepro.ui.theme.IPTVMineProTheme
 import com.samyak.iptvminepro.ui.viewmodel.MoviesViewModel
 import com.samyak.iptvminepro.ui.viewmodel.HomeViewModel
@@ -318,7 +317,6 @@ fun MainApp() {
                 currentRoute != Screen.BugReport.route &&
                 currentRoute != Screen.WatchHistory.route &&
                 currentRoute != Screen.Legal.route &&
-                currentRoute != "pairing" &&
                 currentRoute != Screen.VideoList.route &&
                 currentRoute != Screen.DnsSettings.route
             ) {
@@ -450,7 +448,6 @@ fun MainApp() {
                                 Screen.Support.route -> "Support"
                                 Screen.Donate.route -> "Donate"
                                 Screen.DnsSettings.route -> "DNS over HTTPS"
-                                "pairing" -> "TV Pairing"
                                 Screen.CategoryDetail.route -> categoryName ?: "Category"
                                 Screen.Downloads.route -> "Downloads"
                                 Screen.BugReport.route -> "Report Bug"
@@ -503,8 +500,7 @@ fun MainApp() {
                             currentRoute == Screen.BugReport.route ||
                             currentRoute == Screen.WatchHistory.route ||
                             currentRoute == Screen.Legal.route ||
-                            currentRoute == Screen.DnsSettings.route ||
-                            currentRoute == "pairing"
+                            currentRoute == Screen.DnsSettings.route
                         ) {
                             FilledIconButton(
                                 onClick = { navController.popBackStack() },
@@ -529,10 +525,6 @@ fun MainApp() {
                         if (currentRoute == Screen.WatchHistory.route) {
                             IconButton(onClick = { onWatchHistoryClearClick?.invoke() }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Clear All", tint = Color.White)
-                            }
-                        } else if (currentRoute == Screen.ProviderList.route) {
-                            IconButton(onClick = { navController.navigate("pairing") }) {
-                                Icon(Icons.Outlined.Tv, contentDescription = "Pair with TV", tint = Color.White)
                             }
                         } else if (currentRoute == Screen.AddProvider.route) {
                             IconButton(
@@ -825,11 +817,6 @@ fun MainApp() {
                     viewModel = channelsViewModel,
                     onNavigateBack = { navController.popBackStack() },
                     onAddProviderClick = { navController.navigate(Screen.AddProvider.route) }
-                )
-            }
-            composable("pairing") {
-                PairingScreen(
-                    onNavigateBack = { navController.popBackStack() }
                 )
             }
             composable(Screen.AddProvider.route) {
