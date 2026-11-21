@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
@@ -74,7 +75,10 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
+fun TelevisionApp(
+    viewModel: TelevisionViewModel = viewModel(),
+    onSwitchToMobile: (() -> Unit)? = null
+) {
     val context = LocalContext.current
     val isConnected by remember(context) {
         NetworkUtils.observeConnectivity(context)
@@ -232,6 +236,15 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
                         isExpanded = isSidebarExpanded,
                         onClick = { activeScreenIndex = 7 }
                     )
+                    if (onSwitchToMobile != null) {
+                        SidebarItem(
+                            painter = rememberVectorPainter(Icons.Default.PhoneAndroid),
+                            label = "Mobile UI",
+                            isSelected = false,
+                            isExpanded = isSidebarExpanded,
+                            onClick = onSwitchToMobile
+                        )
+                    }
                 }
 
                 // Bottom profile mock (Disney+ Style) with Network status badge
@@ -318,7 +331,8 @@ fun TelevisionApp(viewModel: TelevisionViewModel = viewModel()) {
                                 providerRepository.removeProvider(url)
                                 providerList = providerRepository.getProviders()
                                 viewModel.refreshChannels()
-                            }
+                            },
+                            onSwitchToMobile = onSwitchToMobile
                         )
                     }
                     3 -> {
@@ -625,7 +639,8 @@ fun TvChannelCard(channel: Channel, onClick: () -> Unit) {
 fun ManageProvidersScreen(
     providerList: List<Provider>,
     onAddProvider: (String, String, ProviderType) -> Unit,
-    onDeleteProvider: (String) -> Unit
+    onDeleteProvider: (String) -> Unit,
+    onSwitchToMobile: (() -> Unit)? = null
 ) {
     var title by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
@@ -846,6 +861,29 @@ fun ManageProvidersScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(text = "Add Provider")
+            }
+
+            if (onSwitchToMobile != null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = onSwitchToMobile,
+                    colors = ButtonDefaults.colors(
+                        containerColor = Color(0xFF37474F),
+                        focusedContainerColor = Color(0xFF455A64),
+                        contentColor = Color.White
+                    ),
+                    shape = ButtonDefaults.shape(RoundedCornerShape(8.dp)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PhoneAndroid,
+                        contentDescription = "Switch to Mobile UI",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "Switch to Mobile UI")
+                }
             }
         }
     }

@@ -138,4 +138,6 @@
     <string name="section_appearance">Appearance</string>
     <string name="setting_material_black_theme">Material Black Theme</string>
     <string name="desc_material_black_theme">Pure AMOLED black background across all screens</string>
+    <string name="setting_tv_ui_mode">Android TV Interface</string>
+    <string name="desc_tv_ui_mode">Switch between Mobile touch UI and Android TV D-pad UI</string>
 </resources>

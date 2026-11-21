@@ -1,4 +1,3 @@
 <resources>
-
-    <style name="Theme.IPTVMinePro" parent="Theme.AppCompat.DayNight.NoActionBar" />
+    <style name="Theme.IPTVMinePro.Television" parent="Theme.AppCompat.DayNight.NoActionBar" />
 </resources>

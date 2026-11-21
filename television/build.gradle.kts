@@ -1,30 +1,20 @@
 plugins {
-    alias(libs.plugins.android.application)
+    alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
 }
 
 android {
     namespace = "com.samyak.television"
-    compileSdk {
-        version = release(37)
-    }
+    compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.samyak.television"
         minSdk = 24
-        targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
-
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
-            optimization {
-                enable = false
-            }
         }
     }
     compileOptions {
@@ -33,11 +23,6 @@ android {
     }
     buildFeatures {
         compose = true
-    }
-
-    dependenciesInfo {
-        includeInApk = false
-        includeInBundle = false
     }
 }
 
@@ -52,6 +37,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.tv.foundation)
     implementation(libs.androidx.tv.material)
+    implementation(libs.androidx.compose.material.icons.extended)
     implementation(project(":Player"))
     implementation(libs.gson)
     implementation(libs.okhttp)

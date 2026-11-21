@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import com.samyak.iptvminepro.network.DnsPreferenceManager
 import com.samyak.iptvminepro.network.DnsMode
 import com.samyak.iptvminepro.ui.theme.ThemePreferenceManager
+import com.samyak.iptvminepro.ui.theme.UiModePreferenceManager
 
 @Composable
 fun SettingsScreen(
@@ -100,6 +101,21 @@ fun SettingsScreen(
             checked = isBlackTheme,
             onCheckedChange = { checked ->
                 ThemePreferenceManager.setBlackTheme(context, checked)
+            }
+        )
+        val uiMode by UiModePreferenceManager.observeUiMode(context)
+        val isTvMode = UiModePreferenceManager.isTvMode(context)
+        SettingsSwitchItem(
+            title = stringResource(id = R.string.setting_tv_ui_mode),
+            subtitle = if (uiMode == UiModePreferenceManager.MODE_AUTO) {
+                "Auto (${if (isTvMode) "TV" else "Mobile"}) • " + stringResource(id = R.string.desc_tv_ui_mode)
+            } else {
+                stringResource(id = R.string.desc_tv_ui_mode)
+            },
+            icon = Icons.Filled.Tv,
+            checked = isTvMode,
+            onCheckedChange = { checked ->
+                UiModePreferenceManager.setTvMode(context, checked)
             }
         )
 

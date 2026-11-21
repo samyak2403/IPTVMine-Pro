@@ -134,8 +134,26 @@ class MainActivity : ComponentActivity() {
         setContent {
             val context = androidx.compose.ui.platform.LocalContext.current
             val isBlackTheme by com.samyak.iptvminepro.ui.theme.ThemePreferenceManager.observeBlackTheme(context)
-            IPTVMineProTheme(blackTheme = isBlackTheme) {
-                MainApp()
+            val uiMode by com.samyak.iptvminepro.ui.theme.UiModePreferenceManager.observeUiMode(context)
+            val isTv = com.samyak.iptvminepro.ui.theme.UiModePreferenceManager.isTvMode(context)
+
+            if (isTv) {
+                com.samyak.television.ui.theme.IPTVMineProTheme {
+                    androidx.compose.material3.Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        shape = androidx.compose.ui.graphics.RectangleShape
+                    ) {
+                        com.samyak.television.TelevisionApp(
+                            onSwitchToMobile = {
+                                com.samyak.iptvminepro.ui.theme.UiModePreferenceManager.setTvMode(context, false)
+                            }
+                        )
+                    }
+                }
+            } else {
+                IPTVMineProTheme(blackTheme = isBlackTheme) {
+                    MainApp()
+                }
             }
         }
     }

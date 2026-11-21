@@ -25,8 +25,15 @@ object TvUtils {
      * Check if the app is running on Android TV
      */
     fun isTvMode(context: Context): Boolean {
-        val uiModeManager = context.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
-        return uiModeManager.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
+        val uiModeManager = context.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
+        val isUiModeTv = uiModeManager?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
+        val pm = context.packageManager
+        val hasLeanback = pm.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
+        val hasTelevision = pm.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TELEVISION)
+        val hasNoTouch = !pm.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TOUCHSCREEN)
+        val hasDpad = context.resources.configuration.navigation == Configuration.NAVIGATION_DPAD
+
+        return isUiModeTv || hasLeanback || hasTelevision || (hasNoTouch && hasDpad)
     }
     
     /**
