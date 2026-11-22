@@ -102,9 +102,12 @@ object WatchHistoryRepository {
     fun getProgress(context: Context, link: String): Long {
         if (link.isBlank()) return 0L
         val entry = getWatchHistory(context).find { it.link == link } ?: return 0L
-        // If we are close to the end (e.g., watched > 95%), don't resume from the end
-        if (entry.duration > 0 && (entry.position.toDouble() / entry.duration.toDouble()) > 0.95) {
-            return 0L
+        // If we are close to the end (e.g., watched > 90% or within 15 seconds of the end), restart from beginning
+        if (entry.duration > 0) {
+            val ratio = entry.position.toDouble() / entry.duration.toDouble()
+            if (ratio > 0.90 || (entry.duration - entry.position) < 15_000) {
+                return 0L
+            }
         }
         return entry.position
     }

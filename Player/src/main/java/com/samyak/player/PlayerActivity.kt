@@ -134,6 +134,7 @@ class PlayerActivity : AppCompatActivity() {
     private var channelName: String? = null
     private var channelStreamUrl: String? = null
     private var playbackPosition = 0L
+    private var hasRetriedPositionReset = false
     private var isPlayerReady = false
     private var isFullScreen = false
     private var playWhenReady = true
@@ -321,6 +322,7 @@ class PlayerActivity : AppCompatActivity() {
         }
         currentStreamIndex = 0
         playbackPosition = 0L
+        hasRetriedPositionReset = false
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -495,7 +497,14 @@ class PlayerActivity : AppCompatActivity() {
             ) {
                 isUserScrubbing = false
                 if (!canceled) {
-                    player?.seekTo(position.coerceAtLeast(0))
+                    val p = player
+                    val dur = p?.duration ?: C.TIME_UNSET
+                    val safePos = if (dur > 0 && dur != C.TIME_UNSET) {
+                        position.coerceIn(0L, (dur - 2000L).coerceAtLeast(0L))
+                    } else {
+                        position.coerceAtLeast(0L)
+                    }
+                    p?.seekTo(safePos)
                 }
             }
         })
@@ -997,6 +1006,7 @@ class PlayerActivity : AppCompatActivity() {
                             // Stream is playing fine, clear any pending retry state
                             formatRetryIndex = -1
                             triedHeaderWorkaround = false
+                            hasRetriedPositionReset = false
                             // Now that the timeline is known, resolve real live status
                             // so VOD content keeps its seek bar and only true live
                             // streams show the LIVE badge.
@@ -1309,6 +1319,7 @@ class PlayerActivity : AppCompatActivity() {
         channelName = title
         channelStreamUrl = normalizeUrl(url)
         playbackPosition = 0L
+        hasRetriedPositionReset = false
         isPlayerReady = false
         formatRetryIndex = -1
         triedHeaderWorkaround = false
@@ -1758,6 +1769,18 @@ class PlayerActivity : AppCompatActivity() {
         errorTextView.text = "This video uses a format (10-bit HEVC) that your device can't play in the built-in player."
         errorTextView.visibility = View.VISIBLE
         playerView.visibility = View.GONE
+        errorTextView.setOnClickListener {
+            errorTextView.visibility = View.GONE
+            playerView.visibility = View.VISIBLE
+            progressBar.visibility = View.VISIBLE
+            hasRetriedPositionReset = false
+            playbackPosition = 0L
+            player?.apply {
+                seekToDefaultPosition()
+                prepare()
+                play()
+            }
+        }
 
         val dialog = android.app.AlertDialog.Builder(this)
             .setMessage("This video uses a format (10-bit HEVC) that your device can't play in the built-in player.")
@@ -1827,6 +1850,25 @@ class PlayerActivity : AppCompatActivity() {
                 prepare()
             }
             Toast.makeText(this, "Reconnecting to live stream...", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (error.errorCode == PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE) {
+            Log.w(TAG, "Handling ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE (currentPos=${player?.currentPosition}, playbackPos=$playbackPosition)")
+            if (!hasRetriedPositionReset) {
+                hasRetriedPositionReset = true
+                playbackPosition = 0L
+                Log.d(TAG, "Attempting recovery by restarting from beginning (position 0)")
+                player?.apply {
+                    seekToDefaultPosition()
+                    prepare()
+                    play()
+                }
+                Toast.makeText(this, "Stream position out of range, restarting...", Toast.LENGTH_SHORT).show()
+                return
+            }
+            if (tryNextStreamCandidate()) return
+            tryNextFormat()
             return
         }
 
@@ -1992,6 +2034,18 @@ class PlayerActivity : AppCompatActivity() {
 
         errorTextView.visibility = View.VISIBLE
         playerView.visibility = View.GONE
+        errorTextView.setOnClickListener {
+            errorTextView.visibility = View.GONE
+            playerView.visibility = View.VISIBLE
+            progressBar.visibility = View.VISIBLE
+            hasRetriedPositionReset = false
+            playbackPosition = 0L
+            player?.apply {
+                seekToDefaultPosition()
+                prepare()
+                play()
+            }
+        }
 
         errorTextView.text = when {
             forbiddenError -> "This source refused the connection (403). It may be expired or region-locked. Try another quality or provider."
@@ -2002,6 +2056,8 @@ class PlayerActivity : AppCompatActivity() {
             error.errorCodeName == "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED" ||
             error.errorCodeName == "ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT" ->
                 "Network connection failed. The server is unreachable or timed out. Please try another source or check DNS settings."
+            error.errorCode == PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE ->
+                "Playback position is out of range or this stream ended. Tap here to restart from beginning."
             error.errorCodeName == "ERROR_CODE_AUDIO_TRACK_INIT_FAILED" ->
                 "Audio format not supported by your device."
             else -> "Playback error: ${error.errorCodeName}"
@@ -2060,6 +2116,18 @@ class PlayerActivity : AppCompatActivity() {
         if (tryNextStreamCandidate()) return
         errorTextView.visibility = View.VISIBLE
         playerView.visibility = View.GONE
+        errorTextView.setOnClickListener {
+            errorTextView.visibility = View.GONE
+            playerView.visibility = View.VISIBLE
+            progressBar.visibility = View.VISIBLE
+            hasRetriedPositionReset = false
+            playbackPosition = 0L
+            player?.apply {
+                seekToDefaultPosition()
+                prepare()
+                play()
+            }
+        }
         progressBar.visibility = View.GONE
         errorTextView.text = "Unable to play this stream. The source may be expired or unsupported. Try another quality or provider."
     }
@@ -2119,6 +2187,7 @@ class PlayerActivity : AppCompatActivity() {
         channelStreamUrl = normalizeUrl(url)
         formatRetryIndex = -1
         playbackPosition = 0L
+        hasRetriedPositionReset = false
         isPlayerReady = false
         intent.putExtra("channel_stream_url", url)
         if (headers != null && headers.isNotEmpty()) {
@@ -2192,7 +2261,9 @@ class PlayerActivity : AppCompatActivity() {
 
         nextBtn.setOnClickListener {
             player?.let {
-                val newPosition = minOf(it.duration, it.currentPosition + 10000)
+                val dur = it.duration
+                val safeMax = if (dur > 0 && dur != C.TIME_UNSET) (dur - 2000L).coerceAtLeast(0L) else Long.MAX_VALUE
+                val newPosition = minOf(safeMax, it.currentPosition + 10000L)
                 it.seekTo(newPosition)
             }
         }
@@ -2354,7 +2425,9 @@ class PlayerActivity : AppCompatActivity() {
      */
     private fun seekForward() {
         player?.let {
-            val newPosition = minOf(it.duration, it.currentPosition + TV_SEEK_INCREMENT)
+            val dur = it.duration
+            val safeMax = if (dur > 0 && dur != C.TIME_UNSET) (dur - 2000L).coerceAtLeast(0L) else Long.MAX_VALUE
+            val newPosition = minOf(safeMax, it.currentPosition + TV_SEEK_INCREMENT)
             it.seekTo(newPosition)
         }
     }
