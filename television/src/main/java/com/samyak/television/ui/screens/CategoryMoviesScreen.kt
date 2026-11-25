@@ -2,36 +2,40 @@ package com.samyak.television.ui.screens
 
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.*
+import com.samyak.television.R
 import com.samyak.television.data.VegaProviderRunner
 import com.samyak.television.model.Provider
 import com.samyak.television.model.VegaCatalog
 import com.samyak.television.model.VegaPost
 import com.samyak.television.model.VegaProvider
+import com.samyak.television.ui.components.OttSpecs
+import com.samyak.television.ui.components.OttTallPosterCard
+import com.samyak.television.ui.components.rememberOttSafeInsets
+import com.samyak.television.ui.theme.*
 import kotlinx.coroutines.launch
-import androidx.activity.compose.BackHandler
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.material3.Icon
-import androidx.compose.ui.res.painterResource
-import com.samyak.television.R
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -52,7 +56,7 @@ fun CategoryMoviesScreen(
     }
 
     var movies by remember { mutableStateOf<List<VegaPost>>(emptyList()) }
-    var page by remember { mutableStateOf(1) }
+    var page by remember { mutableIntStateOf(1) }
     var isLoading by remember { mutableStateOf(false) }
     var hasMore by remember { mutableStateOf(true) }
 
@@ -66,8 +70,7 @@ fun CategoryMoviesScreen(
             try {
                 backButtonFocusRequester.requestFocus()
                 hasRequestedInitialFocus = true
-            } catch (e: Exception) {
-                // Ignore focus request errors
+            } catch (_: Exception) {
             }
         }
     }
@@ -89,6 +92,8 @@ fun CategoryMoviesScreen(
                         movies = if (isNextPage) movies + newMovies else newMovies
                         page++
                     }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     Log.e("TVCategoryMovies", "Error loading category movies", e)
                     if (!isNextPage) {
@@ -106,11 +111,18 @@ fun CategoryMoviesScreen(
         loadMovies(false)
     }
 
+    val ottInsets = rememberOttSafeInsets()
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF070B13)) // Deep ocean blue base
-            .padding(28.dp)
+            .background(OttBgPrimary)
+            .padding(
+                start = maxOf(ottInsets.railStart + 12.dp, 28.dp),
+                top = ottInsets.top,
+                end = ottInsets.end,
+                bottom = ottInsets.bottom
+            )
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             Row(
@@ -120,14 +132,19 @@ fun CategoryMoviesScreen(
                 Button(
                     onClick = onBack,
                     colors = ButtonDefaults.colors(
-                        containerColor = Color.White.copy(alpha = 0.08f),
-                        focusedContainerColor = Color(0xFF26A69A),
-                        contentColor = Color.White
+                        containerColor = OttSurface,
+                        focusedContainerColor = OttWhite,
+                        contentColor = OttWhite,
+                        focusedContentColor = OttBgPrimary
                     ),
-                    shape = ButtonDefaults.shape(RoundedCornerShape(8.dp)),
+                    shape = ButtonDefaults.shape(RoundedCornerShape(10.dp)),
                     modifier = Modifier
                         .focusRequester(backButtonFocusRequester)
-                        .padding(end = 16.dp)
+                        .focusProperties {
+                            left = backButtonFocusRequester
+                            up = backButtonFocusRequester
+                        }
+                        .padding(end = 18.dp)
                 ) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_back),
@@ -138,31 +155,29 @@ fun CategoryMoviesScreen(
                     Text("Back", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = category.title,
-                        fontSize = 22.sp,
+                        fontSize = 24.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = Color.White
+                        color = OttWhite
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = "•",
                         fontSize = 14.sp,
-                        color = Color.Gray.copy(alpha = 0.6f)
+                        color = OttTextSecondary
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Source: ${scraper.display_name}",
+                        text = scraper.display_name,
                         fontSize = 13.sp,
-                        color = Color.Gray
+                        fontWeight = FontWeight.Medium,
+                        color = OttAmberStreaming
                     )
                 }
             }
 
-            // Movies Grid
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -170,7 +185,6 @@ fun CategoryMoviesScreen(
             ) {
                 val gridState = rememberLazyGridState()
 
-                // Infinite Scroll detection
                 val shouldLoadMore = remember {
                     derivedStateOf {
                         val lastVisibleItem = gridState.layoutInfo.visibleItemsInfo.lastOrNull()
@@ -187,36 +201,36 @@ fun CategoryMoviesScreen(
 
                 if (isLoading && movies.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color(0xFF26A69A))
+                        CircularProgressIndicator(color = OttAmberStreaming)
                     }
                 } else if (movies.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
                             text = "No content found in this category",
-                            color = Color.Gray,
+                            color = OttTextSecondary,
                             fontSize = 15.sp
                         )
                     }
                 } else {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(5), // 5 columns for category view
+                        columns = GridCells.Adaptive(minSize = 138.dp),
                         state = gridState,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(20.dp),
-                        contentPadding = PaddingValues(bottom = 24.dp),
+                        horizontalArrangement = Arrangement.spacedBy(OttSpecs.CarouselItemGap),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         itemsIndexed(movies) { _, movie ->
-                            TvMovieCard(
-                                movie = movie,
-                                onClick = {
-                                    onMovieClick(movie, scraper, provider)
-                                }
+                            OttTallPosterCard(
+                                title = movie.title,
+                                imageUrl = movie.image,
+                                onClick = { onMovieClick(movie, scraper, provider) },
+                                useFixedCarouselSize = false
                             )
                         }
 
                         if (isLoading && movies.isNotEmpty()) {
-                            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(5) }) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -224,7 +238,7 @@ fun CategoryMoviesScreen(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     CircularProgressIndicator(
-                                        color = Color(0xFF26A69A),
+                                        color = OttAmberStreaming,
                                         modifier = Modifier.size(36.dp)
                                     )
                                 }

@@ -3,26 +3,43 @@ package com.samyak.television.ui.screens
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.*
@@ -31,11 +48,9 @@ import com.samyak.television.data.MovieCacheStore
 import com.samyak.television.data.ProviderRepository
 import com.samyak.television.data.VegaProviderRunner
 import com.samyak.television.model.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Icon
+import com.samyak.television.ui.components.OttSpecs
+import com.samyak.television.ui.components.OttTallPosterCard
+import com.samyak.television.ui.theme.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -43,9 +58,11 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun SearchMoviesScreen(
-    onMovieClick: (VegaPost, VegaProvider, Provider) -> Unit
+    onMovieClick: (VegaPost, VegaProvider, Provider) -> Unit,
+    primaryFocusRequester: FocusRequester? = null
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     val runner = remember { VegaProviderRunner(context) }
     val providerRepo = remember { ProviderRepository(context) }
@@ -65,7 +82,7 @@ fun SearchMoviesScreen(
 
     var movies by remember { mutableStateOf<List<VegaPost>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
-    var page by remember { mutableStateOf(1) }
+    var page by remember { mutableIntStateOf(1) }
     var isLoading by remember { mutableStateOf(false) }
     var hasMore by remember { mutableStateOf(true) }
     var searchJob by remember { mutableStateOf<Job?>(null) }
@@ -73,7 +90,6 @@ fun SearchMoviesScreen(
     val extensionRepo = remember { ExtensionRepository.getInstance(context) }
     val installedExtensionsState by extensionRepo.installedExtensionsFlow.collectAsState()
 
-    // 1. Fetch scrapers/extensions with cache store memory
     LaunchedEffect(selectedProvider, installedExtensionsState) {
         val provider = selectedProvider
         if (provider != null) {
@@ -94,6 +110,8 @@ fun SearchMoviesScreen(
                 if (selectedScraper == null || !installed.any { it.value == selectedScraper?.value }) {
                     selectedScraper = installed.firstOrNull()
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("TVSearchMoviesScreen", "Error loading scrapers", e)
                 if (scrapers.isEmpty()) {
@@ -106,7 +124,6 @@ fun SearchMoviesScreen(
         }
     }
 
-    // 2. Perform search with debounce, memory cache, and cancellation
     val performSearch: (Boolean, Boolean) -> Unit = { isNextPage, isImmediate ->
         val provider = selectedProvider
         val scraper = selectedScraper
@@ -115,7 +132,6 @@ fun SearchMoviesScreen(
             val targetPage = if (isNextPage) page else 1
             val trimmedQuery = searchQuery.trim()
 
-            // Immediate cache retrieval for empty query page 1
             if (!isNextPage && trimmedQuery.isBlank()) {
                 val cached = cacheStore.getMovies(provider.url, scraper.value, "")
                 if (!cached.isNullOrEmpty() && movies.isEmpty()) {
@@ -127,7 +143,7 @@ fun SearchMoviesScreen(
 
             searchJob = scope.launch {
                 if (!isImmediate && !isNextPage && trimmedQuery.isNotBlank()) {
-                    delay(350) // Debounce keystrokes
+                    delay(350)
                 }
                 isLoading = true
                 if (!isNextPage) {
@@ -168,7 +184,6 @@ fun SearchMoviesScreen(
         }
     }
 
-    // Search trigger on query or scraper change
     LaunchedEffect(searchQuery, selectedScraper) {
         if (selectedScraper != null) {
             performSearch(false, false)
@@ -184,42 +199,57 @@ fun SearchMoviesScreen(
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("Search by title, genre, or actor...", color = Color.Gray) },
+            placeholder = { Text("Search by title, genre, or actor...", color = OttTextSecondary) },
             singleLine = true,
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.Search,
                     contentDescription = null,
-                    tint = Color.Gray,
+                    tint = OttTextSecondary,
                     modifier = Modifier.size(20.dp)
                 )
             },
             colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                focusedBorderColor = Color(0xFF26A69A),
-                unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
-                focusedContainerColor = Color(0xFF0C111F).copy(alpha = 0.85f),
-                unfocusedContainerColor = Color(0xFF0C111F).copy(alpha = 0.5f)
+                focusedTextColor = OttWhite,
+                unfocusedTextColor = OttWhite,
+                focusedBorderColor = OttAmberStreaming,
+                unfocusedBorderColor = OttBorderSubtle,
+                focusedContainerColor = OttSurface,
+                unfocusedContainerColor = OttSurface,
+                cursorColor = OttAmberStreaming
             ),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { performSearch(false, true) }),
             shape = RoundedCornerShape(30.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(end = 100.dp, bottom = 12.dp)
+                .then(if (primaryFocusRequester != null) Modifier.focusRequester(primaryFocusRequester) else Modifier)
+                .onPreviewKeyEvent { keyEvent ->
+                    if (keyEvent.type == KeyEventType.KeyDown) {
+                        when (keyEvent.key) {
+                            Key.DirectionDown -> { focusManager.moveFocus(FocusDirection.Down); true }
+                            Key.DirectionUp -> { focusManager.moveFocus(FocusDirection.Up); true }
+                            Key.DirectionLeft -> if (searchQuery.isEmpty()) { focusManager.moveFocus(FocusDirection.Left); true } else false
+                            else -> false
+                        }
+                    } else false
+                }
+                .padding(end = 88.dp, bottom = 12.dp)
         )
 
         // 2. Scraper selector chips if multiple extensions are installed
         if (scrapers.size > 1) {
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 12.dp)
             ) {
                 items(scrapers) { scraper ->
                     val isSelected = selectedScraper?.value == scraper.value
+                    var isFocused by remember { mutableStateOf(false) }
+
                     Surface(
                         onClick = {
                             selectedScraper = scraper
@@ -227,19 +257,21 @@ fun SearchMoviesScreen(
                             performSearch(false, true)
                         },
                         colors = ClickableSurfaceDefaults.colors(
-                            containerColor = if (isSelected) Color(0xFF26A69A) else Color.White.copy(alpha = 0.08f),
-                            focusedContainerColor = Color(0xFF26A69A),
-                            pressedContainerColor = Color(0xFF208b80)
+                            containerColor = if (isSelected) OttAmberStreaming else OttSurface,
+                            focusedContainerColor = OttWhite,
+                            pressedContainerColor = OttWhite.copy(alpha = 0.85f)
                         ),
                         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
                         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(16.dp)),
-                        modifier = Modifier.wrapContentWidth()
+                        modifier = Modifier
+                            .wrapContentWidth()
+                            .onFocusChanged { isFocused = it.isFocused }
                     ) {
                         Text(
                             text = scraper.display_name,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color.White,
+                            color = if (isFocused || isSelected) OttBgPrimary else OttWhite,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                         )
                     }
@@ -247,67 +279,72 @@ fun SearchMoviesScreen(
             }
         }
 
-        // 3. Horizontal Scrollable Popular Categories List
+        // 3. Popular Categories Chips
         Text(
             text = "Popular Categories",
             fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.Gray,
-            modifier = Modifier.padding(bottom = 6.dp)
+            fontWeight = FontWeight.Medium,
+            color = OttTextSecondary,
+            modifier = Modifier.padding(bottom = 8.dp)
         )
 
         val genres = listOf("Action", "Comedy", "Horror", "Drama", "Sci-Fi", "Thriller", "Romance", "Adventure")
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 16.dp)
+                .padding(bottom = 14.dp)
         ) {
             items(genres) { genre ->
+                var isFocused by remember { mutableStateOf(false) }
                 Surface(
                     onClick = {
                         searchQuery = genre
                         performSearch(false, true)
                     },
                     colors = ClickableSurfaceDefaults.colors(
-                        containerColor = Color.White.copy(alpha = 0.05f),
-                        focusedContainerColor = Color(0xFF26A69A),
-                        pressedContainerColor = Color(0xFF208b80)
+                        containerColor = OttSurface,
+                        focusedContainerColor = OttWhite,
+                        pressedContainerColor = OttWhite.copy(alpha = 0.85f)
                     ),
-                    scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
+                    scale = ClickableSurfaceDefaults.scale(focusedScale = 1.06f),
                     shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(20.dp)),
-                    modifier = Modifier.wrapContentWidth()
+                    modifier = Modifier
+                        .wrapContentWidth()
+                        .onFocusChanged { isFocused = it.isFocused }
+                        .border(1.dp, OttBorderSubtle, RoundedCornerShape(20.dp))
                 ) {
                     Text(
                         text = genre,
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isFocused) OttBgPrimary else OttWhite,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp)
                     )
                 }
             }
         }
 
-        // 4. Grid Title Row (with Extension Source name on the right)
+        // 4. Grid Title Row
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 10.dp),
+                .padding(bottom = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = if (searchQuery.isBlank()) "Trending Searches" else "Results for \"$searchQuery\"",
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                color = OttWhite
             )
             if (selectedScraper != null) {
                 Text(
                     text = "Source: ${selectedScraper?.display_name}",
                     fontSize = 12.sp,
-                    color = Color.Gray,
+                    color = OttAmberStreaming,
                     fontWeight = FontWeight.Medium
                 )
             }
@@ -321,7 +358,6 @@ fun SearchMoviesScreen(
         ) {
             val gridState = rememberLazyGridState()
 
-            // Infinite Scroll Trigger
             val shouldLoadMore = remember {
                 derivedStateOf {
                     val lastVisibleItem = gridState.layoutInfo.visibleItemsInfo.lastOrNull()
@@ -338,7 +374,7 @@ fun SearchMoviesScreen(
 
             if (isLoading && movies.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Color(0xFF26A69A))
+                    CircularProgressIndicator(color = OttAmberStreaming)
                 }
             } else if (movies.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -350,34 +386,37 @@ fun SearchMoviesScreen(
                     }
                     Text(
                         text = message,
-                        color = Color.Gray,
+                        color = OttTextSecondary,
                         fontSize = 15.sp,
                         textAlign = TextAlign.Center
                     )
                 }
             } else {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(5),
+                    columns = GridCells.Adaptive(minSize = 138.dp),
                     state = gridState,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(OttSpecs.CarouselItemGap),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     itemsIndexed(movies) { _, movie ->
                         val provider = selectedProvider
                         val scraper = selectedScraper
-                        TvMovieCard(
-                            movie = movie,
+                        OttTallPosterCard(
+                            title = movie.title,
+                            imageUrl = movie.image,
                             onClick = {
                                 if (provider != null && scraper != null) {
                                     onMovieClick(movie, scraper, provider)
                                 }
-                            }
+                            },
+                            useFixedCarouselSize = false
                         )
                     }
 
                     if (isLoading && movies.isNotEmpty()) {
-                        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(5) }) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -385,7 +424,7 @@ fun SearchMoviesScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 CircularProgressIndicator(
-                                    color = Color(0xFF26A69A),
+                                    color = OttAmberStreaming,
                                     modifier = Modifier.size(36.dp)
                                 )
                             }
@@ -396,8 +435,10 @@ fun SearchMoviesScreen(
 
             if (isLoading && movies.isNotEmpty()) {
                 LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter),
-                    color = Color(0xFF26A69A)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter),
+                    color = OttAmberStreaming
                 )
             }
         }

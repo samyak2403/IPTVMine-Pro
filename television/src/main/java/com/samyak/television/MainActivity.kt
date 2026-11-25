@@ -2,56 +2,89 @@ package com.samyak.television
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Sensors
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.*
 import coil.compose.AsyncImage
 import com.samyak.television.data.ProviderRepository
+import com.samyak.television.data.StartupTabPreferenceManager
 import com.samyak.television.data.TelevisionViewModel
 import com.samyak.television.model.Channel
 import com.samyak.television.model.Provider
 import com.samyak.television.model.ProviderType
-import com.samyak.television.model.VegaPost
 import com.samyak.television.model.VegaProvider
+import com.samyak.television.ui.components.OttSpecs
+import com.samyak.television.ui.components.buildOttImageRequest
+import com.samyak.television.ui.components.rememberOttSafeInsets
 import com.samyak.television.ui.screens.*
-import com.samyak.television.ui.theme.IPTVMineProTheme
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material3.Icon
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.graphics.painter.Painter
+import com.samyak.television.ui.theme.*
 import com.samyak.television.utils.NetworkUtils
 
 class MainActivity : ComponentActivity() {
@@ -92,10 +125,24 @@ fun TelevisionApp(
 
     val providerRepository = remember { ProviderRepository(context) }
     var providerList by remember { mutableStateOf(providerRepository.getProviders()) }
+    val startupTab by StartupTabPreferenceManager.observeStartupTab(context)
+    val hasActiveIptv = remember(providerList) {
+        providerList.any { it.isActive && it.safeType == ProviderType.IPTV }
+    }
+    val hasActiveVega = remember(providerList) {
+        providerList.any { it.isActive && it.safeType == ProviderType.VEGA }
+    }
+    val defaultScreenIndex = remember(startupTab, hasActiveIptv, hasActiveVega) {
+        StartupTabPreferenceManager.resolveTvScreenIndex(
+            startupTab = startupTab,
+            hasActiveIptvProvider = hasActiveIptv,
+            hasActiveVegaProvider = hasActiveVega
+        )
+    }
 
-    var activeScreenIndex by remember { mutableStateOf(1) } // Default to Movies & Shows for a rich experience!
+    var activeScreenIndex by remember { mutableIntStateOf(defaultScreenIndex) }
     // activeScreenIndex == 0: Live TV Grid (categories)
-    // activeScreenIndex == 1: VOD Movies & Shows catalog
+    // activeScreenIndex == 1: VOD Movies & Shows catalog (Home)
     // activeScreenIndex == 2: Search Movies Screen
     // activeScreenIndex == 3: Manage Extensions
     // activeScreenIndex == 4: Manage Playlists/Providers
@@ -112,10 +159,6 @@ fun TelevisionApp(
     var viewAllScraper by remember { mutableStateOf<VegaProvider?>(null) }
     var viewAllProvider by remember { mutableStateOf<Provider?>(null) }
 
-    var isSidebarExpanded by remember { mutableStateOf(false) }
-    val sidebarWidth by animateDpAsState(targetValue = if (isSidebarExpanded) 220.dp else 72.dp)
-
-    // Handle system back navigation (so pressing back on remote returns to previous screen instead of closing app)
     BackHandler(enabled = selectedMovieLink != null) {
         selectedMovieLink = null
         selectedMovieScraper = null
@@ -128,197 +171,103 @@ fun TelevisionApp(
         viewAllProvider = null
     }
 
-    BackHandler(enabled = selectedMovieLink == null && selectedCategoryForViewAll == null && activeScreenIndex != 1) {
-        activeScreenIndex = 1
+    BackHandler(enabled = selectedMovieLink == null && selectedCategoryForViewAll == null && activeScreenIndex != defaultScreenIndex) {
+        activeScreenIndex = defaultScreenIndex
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Row(
+    val ottInsets = rememberOttSafeInsets()
+    val contentFocusRequester = remember { FocusRequester() }
+    val density = LocalDensity.current
+    var rootTopInWindow by remember { mutableFloatStateOf(0f) }
+    var focusedNavTooltip by remember { mutableStateOf<Pair<String, Float>?>(null) }
+
+    val contentScreenPadding = Modifier
+        .fillMaxSize()
+        .padding(
+            start = ottInsets.contentStart,
+            top = ottInsets.top,
+            end = ottInsets.end,
+            bottom = ottInsets.bottom
+        )
+
+    val viewAllCategory = selectedCategoryForViewAll
+    val viewAllSc = viewAllScraper
+    val viewAllPr = viewAllProvider
+    val activeMovieLink = selectedMovieLink
+    val activeMovieSc = selectedMovieScraper
+    val activeMoviePr = selectedMovieProvider
+    val hasOverlay = (viewAllCategory != null && viewAllSc != null && viewAllPr != null) ||
+        (activeMovieLink != null && activeMovieSc != null && activeMoviePr != null)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(OttBgPrimary)
+            .onGloballyPositioned { coords ->
+                rootTopInWindow = coords.positionInWindow().y
+            }
+    ) {
+        // 1. Background Shell (Content + Clock + Rail) - blocks focus entry while overlay is active
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(Color(0xFF0F172A), Color(0xFF070B13)),
-                        center = androidx.compose.ui.geometry.Offset(500f, 0f),
-                        radius = 2800f
-                    )
-                )
+                .focusProperties {
+                    onEnter = {
+                        if (hasOverlay) cancelFocusChange()
+                    }
+                }
         ) {
-            // 1. Sliding Expandable Sidebar Navigation (Left Panel)
-            Column(
-                modifier = Modifier
-                    .width(sidebarWidth)
-                    .fillMaxHeight()
-                    .background(Color(0xFF080D1A).copy(alpha = 0.96f))
-                    .onFocusChanged { state ->
-                        isSidebarExpanded = state.hasFocus
-                    }
-                    .padding(vertical = 24.dp, horizontal = 8.dp),
-                horizontalAlignment = if (isSidebarExpanded) Alignment.Start else Alignment.CenterHorizontally
-            ) {
-                // Brand Logo area
-                if (isSidebarExpanded) {
-                    Text(
-                        text = "IPTV Mine Pro",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF26A69A),
-                        modifier = Modifier.padding(bottom = 32.dp, start = 12.dp)
+        // Content Layer (Movies Home manages full-bleed backdrop + safe insets internally)
+        Box(modifier = Modifier.fillMaxSize()) {
+            when (activeScreenIndex) {
+                1 -> {
+                    MoviesScreen(
+                        onMovieClick = { movie, scraper, provider ->
+                            selectedMovieLink = movie.link
+                            selectedMovieScraper = scraper
+                            selectedMovieProvider = provider
+                        },
+                        onViewAllClick = { catalog, scraper, provider ->
+                            selectedCategoryForViewAll = catalog
+                            viewAllScraper = scraper
+                            viewAllProvider = provider
+                        },
+                        primaryFocusRequester = contentFocusRequester
                     )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .padding(bottom = 32.dp)
-                            .size(36.dp)
-                            .background(Color(0xFF26A69A).copy(alpha = 0.15f), RoundedCornerShape(8.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "IP",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF26A69A)
+                }
+                0 -> {
+                    LiveTvScreen(
+                        channels = channels,
+                        categories = categories,
+                        selectedCategory = selectedCategory,
+                        isLoading = isLoading,
+                        errorMessage = errorMessage,
+                        onSelectCategory = { viewModel.selectCategory(it) },
+                        onChannelClick = { channel ->
+                            com.samyak.player.PlayerActivity.start(context, channel.name, channel.streamUrl)
+                        },
+                        primaryFocusRequester = contentFocusRequester
+                    )
+                }
+                2 -> {
+                    Box(modifier = contentScreenPadding) {
+                        SearchMoviesScreen(
+                            onMovieClick = { movie, scraper, provider ->
+                                selectedMovieLink = movie.link
+                                selectedMovieScraper = scraper
+                                selectedMovieProvider = provider
+                            },
+                            primaryFocusRequester = contentFocusRequester
                         )
                     }
                 }
-
-                // Nav Items list
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    SidebarItem(
-                        painter = rememberVectorPainter(Icons.Default.Search),
-                        label = "Search",
-                        isSelected = activeScreenIndex == 2,
-                        isExpanded = isSidebarExpanded,
-                        onClick = { activeScreenIndex = 2 }
-                    )
-                    SidebarItem(
-                        painter = painterResource(id = R.drawable.ic_tv),
-                        label = "Live TV",
-                        isSelected = activeScreenIndex == 0,
-                        isExpanded = isSidebarExpanded,
-                        onClick = { activeScreenIndex = 0 }
-                    )
-                    SidebarItem(
-                        painter = rememberVectorPainter(Icons.Default.PlayArrow),
-                        label = "Movies & Shows",
-                        isSelected = activeScreenIndex == 1,
-                        isExpanded = isSidebarExpanded,
-                        onClick = { activeScreenIndex = 1 }
-                    )
-                    SidebarItem(
-                        painter = rememberVectorPainter(Icons.Default.Build),
-                        label = "Extensions",
-                        isSelected = activeScreenIndex == 3,
-                        isExpanded = isSidebarExpanded,
-                        onClick = { activeScreenIndex = 3 }
-                    )
-                    SidebarItem(
-                        painter = rememberVectorPainter(Icons.Default.List),
-                        label = "Playlists",
-                        isSelected = activeScreenIndex == 4,
-                        isExpanded = isSidebarExpanded,
-                        onClick = { activeScreenIndex = 4 }
-                    )
-                    SidebarItem(
-                        painter = painterResource(id = R.drawable.ic_speed),
-                        label = "Speed Test",
-                        isSelected = activeScreenIndex == 5,
-                        isExpanded = isSidebarExpanded,
-                        onClick = { activeScreenIndex = 5 }
-                    )
-                    SidebarItem(
-                        painter = painterResource(id = R.drawable.ic_weather),
-                        label = "Weather",
-                        isSelected = activeScreenIndex == 7,
-                        isExpanded = isSidebarExpanded,
-                        onClick = { activeScreenIndex = 7 }
-                    )
-                    if (onSwitchToMobile != null) {
-                        SidebarItem(
-                            painter = rememberVectorPainter(Icons.Default.PhoneAndroid),
-                            label = "Mobile UI",
-                            isSelected = false,
-                            isExpanded = isSidebarExpanded,
-                            onClick = onSwitchToMobile
-                        )
+                3 -> {
+                    Box(modifier = contentScreenPadding) {
+                        ExtensionsScreen(primaryFocusRequester = contentFocusRequester)
                     }
                 }
-
-                // Bottom profile mock (Disney+ Style) with Network status badge
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp)
-                ) {
-                    Box(contentAlignment = Alignment.BottomEnd) {
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .background(Color(0xFFFFD600), RoundedCornerShape(14.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("U", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Box(
-                            modifier = Modifier
-                                .size(12.dp)
-                                .offset(x = 2.dp, y = 2.dp)
-                                .background(Color(0xFF080D1A), RoundedCornerShape(6.dp))
-                                .padding(1.dp)
-                        ) {
-                            Icon(
-                                painter = painterResource(id = if (isConnected) R.drawable.network_connected else R.drawable.network_not_connected),
-                                contentDescription = null,
-                                tint = if (isConnected) Color(0xFF26A69A) else Color.Red,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    }
-                    if (isSidebarExpanded) {
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            Text("Guest", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            Text(
-                                text = if (isConnected) "Online" else "Offline",
-                                color = if (isConnected) Color(0xFF26A69A) else Color.Red,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Normal
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Divider
-            Box(
-                modifier = Modifier
-                    .width(1.dp)
-                    .fillMaxHeight()
-                    .background(Color.White.copy(alpha = 0.05f))
-            )
-
-            // 2. Right Content Area
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .padding(24.dp)
-            ) {
-                when (activeScreenIndex) {
-                    7 -> {
-                        // Weather screen
-                        WeatherScreen()
-                    }
-                    5 -> {
-                        // Speed Test Screen
-                        SpeedTestScreen()
-                    }
-                    4 -> {
-                        // Manage Providers (M3U & Vega)
+                4 -> {
+                    Box(modifier = contentScreenPadding) {
                         ManageProvidersScreen(
                             providerList = providerList,
                             onAddProvider = { title, url, type ->
@@ -332,178 +281,208 @@ fun TelevisionApp(
                                 providerList = providerRepository.getProviders()
                                 viewModel.refreshChannels()
                             },
-                            onSwitchToMobile = onSwitchToMobile
+                            onSwitchToMobile = onSwitchToMobile,
+                            primaryFocusRequester = contentFocusRequester
                         )
-                    }
-                    3 -> {
-                        // Extensions Manager screen
-                        ExtensionsScreen()
-                    }
-                    2 -> {
-                        // Search Movies screen
-                        SearchMoviesScreen(
-                            onMovieClick = { movie, scraper, provider ->
-                                selectedMovieLink = movie.link
-                                selectedMovieScraper = scraper
-                                selectedMovieProvider = provider
-                            }
-                        )
-                    }
-                    1 -> {
-                        // Movies rows display
-                        MoviesScreen(
-                            onMovieClick = { movie, scraper, provider ->
-                                selectedMovieLink = movie.link
-                                selectedMovieScraper = scraper
-                                selectedMovieProvider = provider
-                            },
-                            onViewAllClick = { catalog, scraper, provider ->
-                                selectedCategoryForViewAll = catalog
-                                viewAllScraper = scraper
-                                viewAllProvider = provider
-                            }
-                        )
-                    }
-                    0 -> {
-                        // Live TV channels list
-                        val filteredChannels = remember(channels, selectedCategory) {
-                            if (selectedCategory == "All") {
-                                channels
-                            } else {
-                                channels.filter { it.category == selectedCategory }
-                            }
-                        }
-
-                        Row(modifier = Modifier.fillMaxSize()) {
-                            // Left Categories Sub-Panel (within Live TV content)
-                            Column(
-                                modifier = Modifier
-                                    .width(180.dp)
-                                    .fillMaxHeight()
-                                    .padding(end = 16.dp)
-                            ) {
-                                Text(
-                                    text = "Categories",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.LightGray,
-                                    modifier = Modifier.padding(bottom = 12.dp, start = 8.dp)
-                                )
-                                LazyColumn(
-                                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier.fillMaxSize()
-                                ) {
-                                    items(categories) { categoryName ->
-                                        val isCatSelected = selectedCategory == categoryName
-                                        Surface(
-                                            onClick = { viewModel.selectCategory(categoryName) },
-                                            colors = ClickableSurfaceDefaults.colors(
-                                                containerColor = if (isCatSelected) Color(0xFF26A69A).copy(alpha = 0.2f) else Color.Transparent,
-                                                focusedContainerColor = Color(0xFF26A69A),
-                                                pressedContainerColor = Color(0xFF208b80)
-                                            ),
-                                            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
-                                            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Text(
-                                                text = categoryName,
-                                                fontSize = 13.sp,
-                                                fontWeight = if (isCatSelected) FontWeight.Bold else FontWeight.Normal,
-                                                color = Color.White,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            // Vertical Divider
-                            Box(
-                                modifier = Modifier
-                                    .width(1.dp)
-                                    .fillMaxHeight()
-                                    .background(Color.White.copy(alpha = 0.08f))
-                            )
-                            
-                            // Right Panel: Channels Grid
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .padding(start = 20.dp)
-                            ) {
-                                Text(
-                                    text = selectedCategory,
-                                    fontSize = 20.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(bottom = 16.dp, end = 100.dp)
-                                )
-
-                                if (isLoading) {
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        CircularProgressIndicator(color = Color(0xFF26A69A))
-                                    }
-                                } else if (errorMessage != null && filteredChannels.isEmpty()) {
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = errorMessage ?: "Unknown Error",
-                                            color = Color.Red,
-                                            fontSize = 14.sp
-                                        )
-                                    }
-                                } else if (filteredChannels.isEmpty()) {
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = "No TV channels found",
-                                            color = Color.Gray,
-                                            fontSize = 14.sp
-                                        )
-                                    }
-                                } else {
-                                    LazyVerticalGrid(
-                                        columns = GridCells.Adaptive(minSize = 130.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                                        verticalArrangement = Arrangement.spacedBy(14.dp),
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        items(filteredChannels, key = { it.name + "_" + it.streamUrl }) { channel ->
-                                            TvChannelCard(channel = channel) {
-                                                com.samyak.player.PlayerActivity.start(context, channel.name, channel.streamUrl)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
+                5 -> {
+                    Box(modifier = contentScreenPadding) {
+                        SpeedTestScreen(primaryFocusRequester = contentFocusRequester)
+                    }
+                }
+                7 -> {
+                    Box(modifier = contentScreenPadding) {
+                        WeatherScreen(primaryFocusRequester = contentFocusRequester)
+                    }
+                }
+            }
+        }
 
-                ClockView(
+        // Subtle Clock in Top-End clearing overscan & status bar
+        ClockView(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = ottInsets.top, end = ottInsets.end)
+        )
+
+        // 2. Compact Icon-Only Floating Product_Nav Rail matching Figma (never crushed by cutouts)
+        val railBrush = remember {
+            Brush.horizontalGradient(
+                0.0f to OttNavRailBg,
+                0.72f to OttNavRailBg.copy(alpha = 0.82f),
+                1.0f to Color.Transparent
+            )
+        }
+
+        val onRailItemFocusChange: (String, Boolean, Float) -> Unit = { label, focused, centerY ->
+            if (focused) {
+                focusedNavTooltip = label to centerY
+            } else if (focusedNavTooltip?.first == label) {
+                focusedNavTooltip = null
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .width(ottInsets.railVisualWidth)
+                .fillMaxHeight()
+                .background(railBrush)
+        ) {
+            BoxWithConstraints(
+                modifier = Modifier
+                    .padding(
+                        start = ottInsets.railStart,
+                        top = ottInsets.top,
+                        bottom = ottInsets.bottom
+                    )
+                    .width(OttSpecs.RailIconColumnWidth)
+                    .fillMaxHeight()
+            ) {
+                val itemButtonSize = when {
+                    maxHeight < 370.dp -> 34.dp
+                    maxHeight < 450.dp -> 38.dp
+                    else -> 44.dp
+                }
+                val iconSize = when {
+                    maxHeight < 370.dp -> 19.dp
+                    maxHeight < 450.dp -> 21.dp
+                    else -> 24.dp
+                }
+
+                Column(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 8.dp)
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    SidebarItem(
+                        selectedIcon = Icons.Filled.Home,
+                        unselectedIcon = Icons.Outlined.Home,
+                        label = "Home",
+                        isSelected = activeScreenIndex == 1,
+                        buttonSize = itemButtonSize,
+                        iconSize = iconSize,
+                        contentFocusRequester = contentFocusRequester,
+                        onFocusChanged = { focused, y -> onRailItemFocusChange("Home", focused, y) },
+                        onClick = { activeScreenIndex = 1 }
+                    )
+                    SidebarItem(
+                        selectedIcon = Icons.Filled.Sensors,
+                        unselectedIcon = Icons.Outlined.Sensors,
+                        label = "Live TV",
+                        isSelected = activeScreenIndex == 0,
+                        buttonSize = itemButtonSize,
+                        iconSize = iconSize,
+                        contentFocusRequester = contentFocusRequester,
+                        onFocusChanged = { focused, y -> onRailItemFocusChange("Live TV", focused, y) },
+                        onClick = { activeScreenIndex = 0 }
+                    )
+                    SidebarItem(
+                        selectedIcon = Icons.Filled.Search,
+                        unselectedIcon = Icons.Outlined.Search,
+                        label = "Search",
+                        isSelected = activeScreenIndex == 2,
+                        buttonSize = itemButtonSize,
+                        iconSize = iconSize,
+                        contentFocusRequester = contentFocusRequester,
+                        onFocusChanged = { focused, y -> onRailItemFocusChange("Search", focused, y) },
+                        onClick = { activeScreenIndex = 2 }
+                    )
+                    SidebarItem(
+                        selectedIcon = Icons.Filled.GridView,
+                        unselectedIcon = Icons.Outlined.GridView,
+                        label = "Extensions",
+                        isSelected = activeScreenIndex == 3,
+                        buttonSize = itemButtonSize,
+                        iconSize = iconSize,
+                        contentFocusRequester = contentFocusRequester,
+                        onFocusChanged = { focused, y -> onRailItemFocusChange("Extensions", focused, y) },
+                        onClick = { activeScreenIndex = 3 }
+                    )
+                    SidebarItem(
+                        selectedIcon = Icons.AutoMirrored.Filled.PlaylistPlay,
+                        unselectedIcon = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                        label = "Playlists",
+                        isSelected = activeScreenIndex == 4,
+                        buttonSize = itemButtonSize,
+                        iconSize = iconSize,
+                        contentFocusRequester = contentFocusRequester,
+                        onFocusChanged = { focused, y -> onRailItemFocusChange("Playlists", focused, y) },
+                        onClick = { activeScreenIndex = 4 }
+                    )
+                    SidebarItem(
+                        selectedIcon = Icons.Filled.Speed,
+                        unselectedIcon = Icons.Outlined.Speed,
+                        label = "Speed Test",
+                        isSelected = activeScreenIndex == 5,
+                        buttonSize = itemButtonSize,
+                        iconSize = iconSize,
+                        contentFocusRequester = contentFocusRequester,
+                        onFocusChanged = { focused, y -> onRailItemFocusChange("Speed Test", focused, y) },
+                        onClick = { activeScreenIndex = 5 }
+                    )
+                    SidebarItem(
+                        selectedIcon = Icons.Filled.Cloud,
+                        unselectedIcon = Icons.Outlined.Cloud,
+                        label = "Weather",
+                        isSelected = activeScreenIndex == 7,
+                        buttonSize = itemButtonSize,
+                        iconSize = iconSize,
+                        contentFocusRequester = contentFocusRequester,
+                        onFocusChanged = { focused, y -> onRailItemFocusChange("Weather", focused, y) },
+                        onClick = { activeScreenIndex = 7 }
+                    )
+
+                    if (onSwitchToMobile != null) {
+                        val mobileLabel = if (isConnected) "Mobile UI" else "Mobile (Offline)"
+                        SidebarItem(
+                            selectedIcon = Icons.Filled.PhoneAndroid,
+                            unselectedIcon = Icons.Outlined.PhoneAndroid,
+                            label = mobileLabel,
+                            isSelected = false,
+                            buttonSize = itemButtonSize,
+                            iconSize = iconSize,
+                            contentFocusRequester = contentFocusRequester,
+                            onFocusChanged = { focused, y -> onRailItemFocusChange(mobileLabel, focused, y) },
+                            onClick = onSwitchToMobile
+                        )
+                    }
+                }
+            }
+        }
+
+        // Pure Compose non-focusable tooltip overlay beside focused rail icon (no Popup window interference)
+        focusedNavTooltip?.let { (label, centerYInWindow) ->
+            val tooltipX = with(density) { (ottInsets.railStart + OttSpecs.RailIconColumnWidth + 6.dp).roundToPx() }
+            val halfPillPx = with(density) { 16.dp.roundToPx() }
+            val offsetY = (centerYInWindow - rootTopInWindow).roundToInt() - halfPillPx
+            Box(
+                modifier = Modifier
+                    .offset { IntOffset(x = tooltipX, y = offsetY.coerceAtLeast(0)) }
+                    .background(OttSurfaceElevated, RoundedCornerShape(8.dp))
+                    .border(1.dp, OttBorderSubtle, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = label,
+                    color = OttWhite,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
                 )
             }
         }
-        // Overlay Category Movies Screen
-        if (selectedCategoryForViewAll != null && viewAllScraper != null && viewAllProvider != null) {
+        }
+
+        // 3. Overlay Category Movies Screen
+        if (viewAllCategory != null && viewAllSc != null && viewAllPr != null) {
             CategoryMoviesScreen(
-                category = selectedCategoryForViewAll!!,
-                scraper = viewAllScraper!!,
-                provider = viewAllProvider!!,
+                category = viewAllCategory,
+                scraper = viewAllSc,
+                provider = viewAllPr,
                 onBack = {
                     selectedCategoryForViewAll = null
                     viewAllScraper = null
@@ -517,12 +496,12 @@ fun TelevisionApp(
             )
         }
 
-        // Overlay Movie Detail Screen
-        if (selectedMovieLink != null && selectedMovieScraper != null && selectedMovieProvider != null) {
+        // 4. Overlay Movie Detail Screen
+        if (activeMovieLink != null && activeMovieSc != null && activeMoviePr != null) {
             MovieDetailScreen(
-                link = selectedMovieLink!!,
-                providerUrl = selectedMovieProvider!!.url,
-                scraperValue = selectedMovieScraper!!.value,
+                link = activeMovieLink,
+                providerUrl = activeMoviePr.url,
+                scraperValue = activeMovieSc.value,
                 onBack = {
                     selectedMovieLink = null
                     selectedMovieScraper = null
@@ -536,54 +515,221 @@ fun TelevisionApp(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun SidebarItem(
-    painter: Painter,
+    selectedIcon: ImageVector,
+    unselectedIcon: ImageVector,
     label: String,
     isSelected: Boolean,
-    isExpanded: Boolean,
+    buttonSize: Dp = 44.dp,
+    iconSize: Dp = 24.dp,
+    contentFocusRequester: FocusRequester? = null,
+    onFocusChanged: (Boolean, Float) -> Unit = { _, _ -> },
     onClick: () -> Unit
 ) {
+    var isFocused by remember { mutableStateOf(false) }
+    var itemCenterY by remember { mutableFloatStateOf(0f) }
+
     Surface(
         onClick = onClick,
         colors = ClickableSurfaceDefaults.colors(
             containerColor = Color.Transparent,
-            focusedContainerColor = Color.White.copy(alpha = 0.12f),
-            pressedContainerColor = Color.White.copy(alpha = 0.08f)
+            focusedContainerColor = OttWhite.copy(alpha = 0.16f),
+            pressedContainerColor = OttWhite.copy(alpha = 0.24f)
         ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
         modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
+            .size(buttonSize)
+            .onGloballyPositioned { coords ->
+                itemCenterY = coords.positionInWindow().y + coords.size.height / 2f
+            }
+            .onFocusChanged {
+                isFocused = it.isFocused
+                onFocusChanged(it.isFocused, itemCenterY)
+            }
+            .then(
+                if (contentFocusRequester != null) {
+                    Modifier
+                        .focusProperties {
+                            right = contentFocusRequester
+                        }
+                        .onPreviewKeyEvent { keyEvent ->
+                            if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.DirectionRight) {
+                                try {
+                                    contentFocusRequester.requestFocus()
+                                    true
+                                } catch (_: Exception) {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        }
+                } else {
+                    Modifier
+                }
+            )
+            .then(
+                if (isFocused) {
+                    Modifier.border(1.5.dp, OttWhite, RoundedCornerShape(12.dp))
+                } else {
+                    Modifier
+                }
+            )
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 10.dp)
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.fillMaxSize()
         ) {
-            Box(
-                modifier = Modifier
-                    .width(4.dp)
-                    .height(20.dp)
-                    .background(if (isSelected) Color(0xFF26A69A) else Color.Transparent, RoundedCornerShape(2.dp))
-            )
-            Spacer(modifier = Modifier.width(10.dp))
             Icon(
-                painter = painter,
+                imageVector = if (isSelected) selectedIcon else unselectedIcon,
                 contentDescription = label,
-                tint = if (isSelected) Color(0xFF26A69A) else Color.White.copy(alpha = 0.6f),
-                modifier = Modifier.size(22.dp)
+                tint = if (isSelected || isFocused) OttWhite else OttWhite.copy(alpha = 0.72f),
+                modifier = Modifier.size(iconSize)
             )
-            if (isExpanded) {
-                Spacer(modifier = Modifier.width(14.dp))
-                Text(
-                    text = label,
-                    fontSize = 14.sp,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.75f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+fun LiveTvScreen(
+    channels: List<Channel>,
+    categories: List<String>,
+    selectedCategory: String,
+    isLoading: Boolean,
+    errorMessage: String?,
+    onSelectCategory: (String) -> Unit,
+    onChannelClick: (Channel) -> Unit,
+    primaryFocusRequester: FocusRequester? = null
+) {
+    val ottInsets = rememberOttSafeInsets()
+    val filteredChannels = remember(channels, selectedCategory) {
+        if (selectedCategory == "All") {
+            channels
+        } else {
+            channels.filter { it.category == selectedCategory }
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(
+                start = ottInsets.contentStart,
+                top = ottInsets.top,
+                end = ottInsets.end,
+                bottom = ottInsets.bottom
+            )
+    ) {
+        // Left Categories List (Borderless OTT Pill Rail)
+        Column(
+            modifier = Modifier
+                .width(172.dp)
+                .fillMaxHeight()
+                .padding(end = 16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(bottom = 12.dp, start = 8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Sensors,
+                    contentDescription = null,
+                    tint = OttLiveRed,
+                    modifier = Modifier.size(16.dp)
                 )
+                Text(
+                    text = "Live Now",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = OttLiveRed
+                )
+            }
+
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                itemsIndexed(categories) { index, categoryName ->
+                    val isCatSelected = selectedCategory == categoryName
+                    var isFocused by remember { mutableStateOf(false) }
+
+                    Surface(
+                        onClick = { onSelectCategory(categoryName) },
+                        colors = ClickableSurfaceDefaults.colors(
+                            containerColor = if (isCatSelected) OttWhite.copy(alpha = 0.14f) else Color.Transparent,
+                            focusedContainerColor = OttWhite,
+                            pressedContainerColor = OttWhite.copy(alpha = 0.85f)
+                        ),
+                        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
+                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(if (index == 0 && primaryFocusRequester != null) Modifier.focusRequester(primaryFocusRequester) else Modifier)
+                            .onFocusChanged { isFocused = it.isFocused }
+                    ) {
+                        Text(
+                            text = categoryName,
+                            fontSize = 13.sp,
+                            fontWeight = if (isCatSelected || isFocused) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isFocused) OttBgPrimary else if (isCatSelected) OttAmberStreaming else OttWhite.copy(alpha = 0.85f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Right Channels Grid
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .padding(start = 8.dp)
+        ) {
+            Text(
+                text = selectedCategory,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = OttWhite,
+                modifier = Modifier.padding(bottom = 14.dp, end = 96.dp)
+            )
+
+            when {
+                isLoading -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = OttAmberStreaming)
+                    }
+                }
+                errorMessage != null && filteredChannels.isEmpty() -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(text = errorMessage, color = OttLiveRed, fontSize = 14.sp)
+                    }
+                }
+                filteredChannels.isEmpty() -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(text = "No TV channels found", color = OttTextSecondary, fontSize = 14.sp)
+                    }
+                }
+                else -> {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 148.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(filteredChannels, key = { it.name + "_" + it.streamUrl }) { channel ->
+                            TvChannelCard(channel = channel) {
+                                onChannelClick(channel)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -592,44 +738,72 @@ fun SidebarItem(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun TvChannelCard(channel: Channel, onClick: () -> Unit) {
+    val context = LocalContext.current
+    val logoRequest = remember(context, channel.logoUrl) { buildOttImageRequest(context, channel.logoUrl) }
+    var isFocused by remember { mutableStateOf(false) }
+
     Surface(
         onClick = onClick,
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = Color(0xFF1E1E1E),
-            focusedContainerColor = Color(0xFF26A69A),
-            pressedContainerColor = Color(0xFF208b80)
+            containerColor = OttSurface,
+            focusedContainerColor = OttSurfaceElevated,
+            pressedContainerColor = OttSurfaceElevated
         ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.06f),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(OttSpecs.CardRadius)),
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(1f)
+            .aspectRatio(1.38f)
+            .onFocusChanged { isFocused = it.isFocused }
+            .then(
+                if (isFocused) {
+                    Modifier.border(2.dp, OttWhite, RoundedCornerShape(OttSpecs.CardRadius))
+                } else {
+                    Modifier.border(1.dp, OttBorderSubtle, RoundedCornerShape(OttSpecs.CardRadius))
+                }
+            )
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .padding(12.dp)
         ) {
-            AsyncImage(
-                model = channel.logoUrl,
-                contentDescription = channel.name,
-                modifier = Modifier
-                    .size(64.dp)
-                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp)),
-                contentScale = ContentScale.Fit
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = channel.name,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth()
-            )
+            if (isFocused) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(OttLiveRed)
+                )
+            }
+
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                AsyncImage(
+                    model = logoRequest,
+                    contentDescription = channel.name,
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(OttWhite.copy(alpha = 0.05f)),
+                    contentScale = ContentScale.Fit
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = channel.name,
+                    fontSize = 13.sp,
+                    fontWeight = if (isFocused) FontWeight.Bold else FontWeight.SemiBold,
+                    color = OttWhite,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }
@@ -640,7 +814,8 @@ fun ManageProvidersScreen(
     providerList: List<Provider>,
     onAddProvider: (String, String, ProviderType) -> Unit,
     onDeleteProvider: (String) -> Unit,
-    onSwitchToMobile: (() -> Unit)? = null
+    onSwitchToMobile: (() -> Unit)? = null,
+    primaryFocusRequester: FocusRequester? = null
 ) {
     var title by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
@@ -657,20 +832,22 @@ fun ManageProvidersScreen(
             Text(
                 text = "Configured Providers",
                 fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
+                fontWeight = FontWeight.ExtraBold,
+                color = OttWhite,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
 
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(providerList) { provider ->
+                itemsIndexed(providerList) { index, provider ->
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFF1E1E1E), RoundedCornerShape(8.dp))
+                            .background(OttSurface, RoundedCornerShape(OttSpecs.CardRadius))
+                            .border(1.dp, OttBorderSubtle, RoundedCornerShape(OttSpecs.CardRadius))
                     ) {
                         Row(
                             modifier = Modifier
@@ -685,20 +862,20 @@ fun ManageProvidersScreen(
                                         text = provider.title,
                                         fontSize = 16.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.White
+                                        color = OttWhite
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Box(
                                         modifier = Modifier
                                             .background(
-                                                if (provider.safeType == ProviderType.VEGA) Color(0xFF26A69A).copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.2f),
+                                                if (provider.safeType == ProviderType.VEGA) OttAmberStreaming.copy(alpha = 0.18f) else OttWhite.copy(alpha = 0.1f),
                                                 RoundedCornerShape(4.dp)
                                             )
                                             .padding(horizontal = 6.dp, vertical = 2.dp)
                                     ) {
                                         Text(
                                             text = if (provider.safeType == ProviderType.VEGA) "VEGA VOD" else "IPTV M3U",
-                                            color = if (provider.safeType == ProviderType.VEGA) Color(0xFF26A69A) else Color.LightGray,
+                                            color = if (provider.safeType == ProviderType.VEGA) OttAmberStreaming else OttTextSecondary,
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -708,23 +885,28 @@ fun ManageProvidersScreen(
                                 Text(
                                     text = provider.url,
                                     fontSize = 12.sp,
-                                    color = Color.Gray,
+                                    color = OttTextSecondary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            
+
                             Spacer(modifier = Modifier.width(16.dp))
-                            
+
                             Button(
                                 onClick = { onDeleteProvider(provider.url) },
                                 colors = ButtonDefaults.colors(
-                                    containerColor = Color.Red.copy(alpha = 0.1f),
-                                    focusedContainerColor = Color.Red,
-                                    contentColor = Color.Red,
-                                    focusedContentColor = Color.White
+                                    containerColor = OttLiveRed.copy(alpha = 0.14f),
+                                    focusedContainerColor = OttLiveRed,
+                                    contentColor = OttLiveRed,
+                                    focusedContentColor = OttWhite
                                 ),
-                                shape = ButtonDefaults.shape(RoundedCornerShape(8.dp))
+                                shape = ButtonDefaults.shape(RoundedCornerShape(8.dp)),
+                                modifier = if (index == 0 && primaryFocusRequester != null) {
+                                    Modifier.focusRequester(primaryFocusRequester)
+                                } else {
+                                    Modifier
+                                }
                             ) {
                                 Text(text = "Delete")
                             }
@@ -734,30 +916,25 @@ fun ManageProvidersScreen(
             }
         }
 
-        // Divider
-        Box(
-            modifier = Modifier
-                .width(1.dp)
-                .fillMaxHeight()
-                .background(Color.White.copy(alpha = 0.1f))
-        )
-
-        // Right Column: Add playlist form
+        // Right Column: Add playlist form & TV settings
+        val context = LocalContext.current
+        val focusManager = LocalFocusManager.current
+        val startupTab by StartupTabPreferenceManager.observeStartupTab(context)
         Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .padding(start = 24.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(start = 16.dp)
         ) {
             Text(
                 text = "Add Provider Source",
                 fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                modifier = Modifier.padding(bottom = 16.dp, end = 100.dp)
+                fontWeight = FontWeight.ExtraBold,
+                color = OttWhite,
+                modifier = Modifier.padding(bottom = 16.dp, end = 96.dp)
             )
 
-            // Selector for Type (IPTV vs Vega)
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier
@@ -767,12 +944,20 @@ fun ManageProvidersScreen(
                 Surface(
                     onClick = { providerType = ProviderType.IPTV },
                     colors = ClickableSurfaceDefaults.colors(
-                        containerColor = if (providerType == ProviderType.IPTV) Color(0xFF26A69A) else Color(0xFF1E1E1E),
-                        focusedContainerColor = Color(0xFF208b80)
+                        containerColor = if (providerType == ProviderType.IPTV) OttAmberStreaming else OttSurface,
+                        focusedContainerColor = OttWhite
                     ),
                     scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
-                    shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
-                    modifier = Modifier.weight(1f)
+                    shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(
+                            if (providerList.isEmpty() && primaryFocusRequester != null) {
+                                Modifier.focusRequester(primaryFocusRequester)
+                            } else {
+                                Modifier
+                            }
+                        )
                 ) {
                     Box(
                         modifier = Modifier
@@ -780,18 +965,23 @@ fun ManageProvidersScreen(
                             .padding(vertical = 10.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("IPTV Playlist (M3U)", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(
+                            "IPTV Playlist (M3U)",
+                            fontSize = 12.sp,
+                            color = if (providerType == ProviderType.IPTV) OttBgPrimary else OttWhite,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
 
                 Surface(
                     onClick = { providerType = ProviderType.VEGA },
                     colors = ClickableSurfaceDefaults.colors(
-                        containerColor = if (providerType == ProviderType.VEGA) Color(0xFF26A69A) else Color(0xFF1E1E1E),
-                        focusedContainerColor = Color(0xFF208b80)
+                        containerColor = if (providerType == ProviderType.VEGA) OttAmberStreaming else OttSurface,
+                        focusedContainerColor = OttWhite
                     ),
                     scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
-                    shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+                    shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
                     modifier = Modifier.weight(1f)
                 ) {
                     Box(
@@ -800,7 +990,12 @@ fun ManageProvidersScreen(
                             .padding(vertical = 10.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("Vega Provider", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Vega Provider",
+                            fontSize = 12.sp,
+                            color = if (providerType == ProviderType.VEGA) OttBgPrimary else OttWhite,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
@@ -808,36 +1003,65 @@ fun ManageProvidersScreen(
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
-                label = { Text("Provider Name", color = Color.Gray) },
+                label = { Text("Provider Name", color = OttTextSecondary) },
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedBorderColor = Color(0xFF26A69A),
-                    unfocusedBorderColor = Color.Gray,
-                    focusedContainerColor = Color(0xFF1E1E1E),
-                    unfocusedContainerColor = Color(0xFF1E1E1E)
+                    focusedTextColor = OttWhite,
+                    unfocusedTextColor = OttWhite,
+                    focusedBorderColor = OttAmberStreaming,
+                    unfocusedBorderColor = OttWhite.copy(alpha = 0.2f),
+                    focusedContainerColor = OttSurface,
+                    unfocusedContainerColor = OttSurface,
+                    cursorColor = OttAmberStreaming
                 ),
+                shape = RoundedCornerShape(10.dp),
                 modifier = Modifier
                     .fillMaxWidth()
+                    .onPreviewKeyEvent { keyEvent ->
+                        if (keyEvent.type == KeyEventType.KeyDown) {
+                            when (keyEvent.key) {
+                                Key.DirectionUp -> { focusManager.moveFocus(FocusDirection.Up); true }
+                                Key.DirectionDown -> { focusManager.moveFocus(FocusDirection.Down); true }
+                                Key.DirectionLeft -> if (title.isEmpty()) { focusManager.moveFocus(FocusDirection.Left); true } else false
+                                else -> false
+                            }
+                        } else false
+                    }
                     .padding(bottom = 16.dp)
             )
 
             OutlinedTextField(
                 value = url,
                 onValueChange = { url = it },
-                label = { Text(if (providerType == ProviderType.IPTV) "M3U URL" else "Vega URL or ID (e.g. @vega-org)", color = Color.Gray) },
+                label = {
+                    Text(
+                        if (providerType == ProviderType.IPTV) "M3U URL" else "Vega URL or ID (e.g. @vega-org)",
+                        color = OttTextSecondary
+                    )
+                },
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedBorderColor = Color(0xFF26A69A),
-                    unfocusedBorderColor = Color.Gray,
-                    focusedContainerColor = Color(0xFF1E1E1E),
-                    unfocusedContainerColor = Color(0xFF1E1E1E)
+                    focusedTextColor = OttWhite,
+                    unfocusedTextColor = OttWhite,
+                    focusedBorderColor = OttAmberStreaming,
+                    unfocusedBorderColor = OttWhite.copy(alpha = 0.2f),
+                    focusedContainerColor = OttSurface,
+                    unfocusedContainerColor = OttSurface,
+                    cursorColor = OttAmberStreaming
                 ),
+                shape = RoundedCornerShape(10.dp),
                 modifier = Modifier
                     .fillMaxWidth()
+                    .onPreviewKeyEvent { keyEvent ->
+                        if (keyEvent.type == KeyEventType.KeyDown) {
+                            when (keyEvent.key) {
+                                Key.DirectionUp -> { focusManager.moveFocus(FocusDirection.Up); true }
+                                Key.DirectionDown -> { focusManager.moveFocus(FocusDirection.Down); true }
+                                Key.DirectionLeft -> if (url.isEmpty()) { focusManager.moveFocus(FocusDirection.Left); true } else false
+                                else -> false
+                            }
+                        } else false
+                    }
                     .padding(bottom = 24.dp)
             )
 
@@ -851,35 +1075,64 @@ fun ManageProvidersScreen(
                 },
                 enabled = title.isNotBlank() && url.isNotBlank(),
                 colors = ButtonDefaults.colors(
-                    containerColor = Color(0xFF26A69A),
-                    focusedContainerColor = Color(0xFF208b80),
-                    disabledContainerColor = Color.Gray.copy(alpha = 0.3f),
-                    contentColor = Color.White,
-                    disabledContentColor = Color.Gray
+                    containerColor = OttWhite,
+                    focusedContainerColor = OttAmberStreaming,
+                    disabledContainerColor = OttWhite.copy(alpha = 0.12f),
+                    contentColor = OttBgPrimary,
+                    focusedContentColor = OttBgPrimary,
+                    disabledContentColor = OttTextSecondary
                 ),
-                shape = ButtonDefaults.shape(RoundedCornerShape(8.dp)),
+                shape = ButtonDefaults.shape(RoundedCornerShape(10.dp)),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(text = "Add Provider")
+                Text(text = "Add Provider", fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            Button(
+                onClick = {
+                    val nextTab = StartupTabPreferenceManager.nextTvStartupTab(startupTab)
+                    StartupTabPreferenceManager.setStartupTab(context, nextTab)
+                },
+                colors = ButtonDefaults.colors(
+                    containerColor = OttSurface,
+                    focusedContainerColor = OttWhite,
+                    contentColor = OttWhite,
+                    focusedContentColor = OttBgPrimary
+                ),
+                shape = ButtonDefaults.shape(RoundedCornerShape(10.dp)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Home,
+                    contentDescription = "Startup Tab",
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Startup Tab: ${StartupTabPreferenceManager.tvLabelFor(startupTab)}",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
 
             if (onSwitchToMobile != null) {
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
                 Button(
                     onClick = onSwitchToMobile,
                     colors = ButtonDefaults.colors(
-                        containerColor = Color(0xFF37474F),
-                        focusedContainerColor = Color(0xFF455A64),
-                        contentColor = Color.White
+                        containerColor = OttSurfaceElevated,
+                        focusedContainerColor = OttWhite,
+                        contentColor = OttWhite,
+                        focusedContentColor = OttBgPrimary
                     ),
-                    shape = ButtonDefaults.shape(RoundedCornerShape(8.dp)),
+                    shape = ButtonDefaults.shape(RoundedCornerShape(10.dp)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(
                         imageVector = Icons.Default.PhoneAndroid,
                         contentDescription = "Switch to Mobile UI",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(text = "Switch to Mobile UI")
@@ -901,9 +1154,9 @@ fun ClockView(modifier: Modifier = Modifier) {
     }
     Text(
         text = timeText,
-        fontSize = 16.sp,
-        fontWeight = FontWeight.SemiBold,
-        color = Color.White.copy(alpha = 0.8f),
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Medium,
+        color = OttWhite.copy(alpha = 0.65f),
         modifier = modifier
     )
 }

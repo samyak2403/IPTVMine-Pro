@@ -1,6 +1,7 @@
 package com.samyak.television.ui.screens
 
 import android.widget.Toast
+import androidx.core.net.toUri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,16 +28,20 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.*
 import androidx.compose.material3.CircularProgressIndicator
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.samyak.television.data.VegaProviderRunner
 import com.samyak.television.data.VegaStreamFallbackEngine
 import com.samyak.television.model.*
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material3.Icon
 import androidx.compose.ui.res.painterResource
 import com.samyak.television.R
+import com.samyak.television.ui.components.OttSpecs
+import com.samyak.television.ui.components.buildOttImageRequest
+import com.samyak.television.ui.components.rememberOttSafeInsets
+import com.samyak.television.ui.theme.*
 import com.samyak.player.StreamOption
 import com.samyak.player.EpisodeItem
 import androidx.activity.compose.BackHandler
@@ -78,12 +83,11 @@ fun MovieDetailScreen(
 
     BackHandler(onBack = onBack)
 
-    LaunchedEffect(meta, isLoading) {
-        if (meta != null && !isLoading) {
+    LaunchedEffect(meta, error, isLoading) {
+        if ((meta != null || error != null) && !isLoading) {
             try {
                 backButtonFocusRequester.requestFocus()
-            } catch (e: Exception) {
-                // Ignore focus request errors
+            } catch (_: Exception) {
             }
         }
     }
@@ -112,6 +116,8 @@ fun MovieDetailScreen(
             } else {
                 meta = resolvedMeta
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             error = e.message ?: "Failed to load details"
         } finally {
@@ -125,6 +131,8 @@ fun MovieDetailScreen(
             try {
                 val eps = runner.getEpisodes(providerUrl, scraperValue, epLink)
                 episodesMap = episodesMap + (epLink to eps)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Toast.makeText(context, "Failed to load episodes: ${e.message}", Toast.LENGTH_SHORT).show()
             } finally {
@@ -235,11 +243,11 @@ fun MovieDetailScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF070B13)) // HSL Tailored premium deep space dark background
+            .background(OttBgPrimary)
     ) {
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color(0xFF26A69A))
+                CircularProgressIndicator(color = OttAmberStreaming)
             }
         } else if (error != null) {
             Column(
@@ -251,7 +259,7 @@ fun MovieDetailScreen(
             ) {
                 Text(
                     text = error ?: "Unknown error occurred",
-                    color = Color.White,
+                    color = OttWhite,
                     fontSize = 16.sp,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.width(450.dp)
@@ -260,13 +268,32 @@ fun MovieDetailScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Button(
                         onClick = { scope.launch { fetchMeta() } },
-                        colors = ButtonDefaults.colors(containerColor = Color(0xFF26A69A))
+                        colors = ButtonDefaults.colors(
+                            containerColor = OttWhite,
+                            focusedContainerColor = OttAmberStreaming,
+                            contentColor = OttBgPrimary,
+                            focusedContentColor = OttBgPrimary
+                        ),
+                        modifier = Modifier
+                            .focusRequester(backButtonFocusRequester)
+                            .focusProperties {
+                                left = backButtonFocusRequester
+                                up = backButtonFocusRequester
+                            }
                     ) {
-                        Text("Retry")
+                        Text("Retry", fontWeight = FontWeight.Bold)
                     }
                     Button(
                         onClick = onBack,
-                        colors = ButtonDefaults.colors(containerColor = Color(0xFF1E1E1E))
+                        colors = ButtonDefaults.colors(
+                            containerColor = OttSurface,
+                            focusedContainerColor = OttWhite,
+                            contentColor = OttWhite,
+                            focusedContentColor = OttBgPrimary
+                        ),
+                        modifier = Modifier.focusProperties {
+                            up = backButtonFocusRequester
+                        }
                     ) {
                         Text("Go Back")
                     }
@@ -279,7 +306,7 @@ fun MovieDetailScreen(
                     "https:$img"
                 } else if (img.startsWith("/")) {
                     try {
-                        val uri = android.net.Uri.parse(cleanLink)
+                        val uri = cleanLink.toUri()
                         val host = uri.host
                         if (host != null) "https://$host$img" else img
                     } catch (e: Exception) {
@@ -290,52 +317,78 @@ fun MovieDetailScreen(
                 }
             }
 
+            val backdropRequest = remember(context, resolvedImageUrl) {
+                buildOttImageRequest(context, resolvedImageUrl)
+            }
+
             // Background Backdrop
             AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(resolvedImageUrl)
-                    .crossfade(true)
-                    .build(),
+                model = backdropRequest,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
 
-            // Dark gradient overlay
+            // Dark gradient overlays matching OTT Mini UI Kit
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
-                        Brush.radialGradient(
-                            colors = listOf(Color.Transparent, Color(0xFF070B13).copy(alpha = 0.95f), Color(0xFF070B13)),
-                            radius = 2000f
+                        Brush.horizontalGradient(
+                            0.0f to OttNavRailBg.copy(alpha = 0.96f),
+                            0.45f to OttBgPrimary.copy(alpha = 0.85f),
+                            1.0f to OttBgPrimary.copy(alpha = 0.72f)
+                        )
+                    )
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0.0f to Color.Transparent,
+                            0.7f to OttBgPrimary.copy(alpha = 0.75f),
+                            1.0f to OttBgPrimary
                         )
                     )
             )
 
+            val ottInsets = rememberOttSafeInsets()
+
             // Two Pane Layout
-            Row(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(24.dp)
+                    .padding(
+                        start = maxOf(ottInsets.railStart + 12.dp, 28.dp),
+                        top = ottInsets.top,
+                        end = ottInsets.end,
+                        bottom = ottInsets.bottom
+                    )
             ) {
-                // Left Column: Movie Info & Poster (Glassmorphism Styled Pane)
-                Column(
-                    modifier = Modifier
-                        .weight(1.2f)
-                        .fillMaxHeight()
-                        .background(Color(0xFF0C111F).copy(alpha = 0.65f), RoundedCornerShape(16.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
-                        .padding(20.dp)
-                ) {
+                val isCompactHeight = maxHeight < 430.dp
+                val posterWidth = if (isCompactHeight) 86.dp else 110.dp
+                val posterHeight = if (isCompactHeight) 124.dp else 165.dp
+
+                Row(modifier = Modifier.fillMaxSize()) {
+                    // Left Column: Movie Info & Poster
+                    Column(
+                        modifier = Modifier
+                            .weight(1.2f)
+                            .fillMaxHeight()
+                            .background(OttNavRailBg.copy(alpha = 0.78f), RoundedCornerShape(OttSpecs.CardRadius))
+                            .border(1.dp, OttBorderSubtle, RoundedCornerShape(OttSpecs.CardRadius))
+                            .padding(if (isCompactHeight) 16.dp else 22.dp)
+                    ) {
                     Button(
                         onClick = onBack,
                         colors = ButtonDefaults.colors(
-                            containerColor = Color.White.copy(alpha = 0.08f),
-                            focusedContainerColor = Color(0xFF26A69A),
-                            contentColor = Color.White
+                            containerColor = OttSurfaceElevated,
+                            focusedContainerColor = OttWhite,
+                            contentColor = OttWhite,
+                            focusedContentColor = OttBgPrimary
                         ),
-                        shape = ButtonDefaults.shape(RoundedCornerShape(8.dp)),
+                        shape = ButtonDefaults.shape(RoundedCornerShape(10.dp)),
                         modifier = Modifier
                             .focusRequester(backButtonFocusRequester)
                             .focusProperties {
@@ -353,66 +406,62 @@ fun MovieDetailScreen(
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_back),
                                 contentDescription = "Back",
-                                modifier = Modifier.size(16.dp),
-                                tint = Color.White
+                                modifier = Modifier.size(16.dp)
                             )
-                            Text("Back")
+                            Text("Back", fontWeight = FontWeight.Bold)
                         }
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Box(
                             modifier = Modifier
-                                .width(110.dp)
-                                .height(155.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+                                .width(posterWidth)
+                                .height(posterHeight)
+                                .clip(RoundedCornerShape(OttSpecs.CardRadius))
+                                .border(1.dp, OttBorderSubtle, RoundedCornerShape(OttSpecs.CardRadius))
                         ) {
                             AsyncImage(
-                                model = resolvedImageUrl,
+                                model = backdropRequest,
                                 contentDescription = movieMeta.title,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
 
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = movieMeta.title,
-                                fontSize = 20.sp,
+                                fontSize = if (isCompactHeight) 19.sp else 22.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = Color.White,
+                                color = OttWhite,
                                 maxLines = 3,
                                 overflow = TextOverflow.Ellipsis,
-                                lineHeight = 24.sp
+                                lineHeight = if (isCompactHeight) 23.sp else 26.sp
                             )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = if (movieMeta.type.isNotBlank()) "Now Streaming • ${movieMeta.type.uppercase()}" else "Now Streaming",
+                                color = OttAmberStreaming,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (movieMeta.imdbId.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(6.dp))
                                 Box(
                                     modifier = Modifier
-                                        .background(Color(0xFF26A69A).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        .background(OttAmberBrand.copy(alpha = 0.16f), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 8.dp, vertical = 3.dp)
                                 ) {
                                     Text(
-                                        text = movieMeta.type.uppercase(),
-                                        color = Color(0xFF26A69A),
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
+                                        text = "IMDb: ${movieMeta.imdbId}",
+                                        color = OttAmberBrand,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
-                                }
-                                if (movieMeta.imdbId.isNotEmpty()) {
-                                    Box(
-                                        modifier = Modifier
-                                            .background(Color(0xFFFFD600).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                                    ) {
-                                        Text(
-                                            text = "IMDb: ${movieMeta.imdbId}",
-                                            color = Color(0xFFFFD600),
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
                                 }
                             }
                         }
@@ -423,7 +472,7 @@ fun MovieDetailScreen(
                         text = "Synopsis",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = OttWhite
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Box(
@@ -435,31 +484,32 @@ fun MovieDetailScreen(
                         Text(
                             text = if (movieMeta.synopsis.isBlank()) "No synopsis description available." else movieMeta.synopsis,
                             fontSize = 12.sp,
-                            color = Color.LightGray,
+                            color = OttTextSecondary,
                             lineHeight = 18.sp
                         )
                     }
 
-                    // Cinematic Hotstar Play Button (Auto-resolves first option)
+                    // OTT Play Now Button (Auto-resolves first option)
                     if (movieMeta.linkList.isNotEmpty() && movieMeta.type.lowercase() == "movie") {
                         Button(
                             onClick = {
                                 val firstLink = movieMeta.linkList.firstOrNull()
                                 if (firstLink != null) {
-                                    if (!firstLink.directLinks.isNullOrEmpty()) {
-                                        onDirectLinkClick(firstLink.directLinks!![0], "${movieMeta.title} (${firstLink.directLinks!![0].title})")
+                                    val firstDirect = firstLink.directLinks?.firstOrNull()
+                                    if (firstDirect != null) {
+                                        onDirectLinkClick(firstDirect, "${movieMeta.title} (${firstDirect.title})")
                                     } else {
                                         firstLink.episodesLink?.let { loadEpisodes(it) }
                                     }
                                 }
                             },
                             colors = ButtonDefaults.colors(
-                                containerColor = Color.White,
-                                contentColor = Color.Black,
-                                focusedContainerColor = Color(0xFF26A69A),
-                                focusedContentColor = Color.White
+                                containerColor = OttWhite,
+                                contentColor = OttBgPrimary,
+                                focusedContainerColor = OttAmberStreaming,
+                                focusedContentColor = OttBgPrimary
                             ),
-                            shape = ButtonDefaults.shape(RoundedCornerShape(8.dp)),
+                            shape = ButtonDefaults.shape(RoundedCornerShape(10.dp)),
                             modifier = Modifier
                                 .focusRequester(watchNowFocusRequester)
                                 .focusProperties {
@@ -469,39 +519,38 @@ fun MovieDetailScreen(
                                     down = watchNowFocusRequester // Box focus from escaping downwards
                                 }
                                 .fillMaxWidth()
-                                .height(44.dp)
+                                .height(46.dp)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.PlayArrow,
+                                    imageVector = Icons.Filled.PlayCircle,
                                     contentDescription = null,
                                     modifier = Modifier.size(20.dp)
                                 )
-                                Text("Watch Now", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Text("Play Now", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                 }
 
                 // Spacer panel divider
-                Spacer(modifier = Modifier.width(24.dp))
+                Spacer(modifier = Modifier.width(20.dp))
 
                 // Right Column: Playback Options (Seasons / Direct Links)
                 Column(
                     modifier = Modifier
-                        .weight(1.8f)
+                        .weight(1.75f)
                         .fillMaxHeight()
-                        .padding(start = 24.dp)
                 ) {
                     Text(
                         text = if (resolvingStream) "Resolving Stream Links..." else if (movieMeta.type.lowercase() == "series") "Seasons & Episodes" else "Stream Playback Links",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
-                        modifier = Modifier.padding(bottom = 16.dp)
+                        modifier = Modifier.padding(start = 6.dp, end = 6.dp, bottom = 14.dp)
                     )
 
                     // INACTIVE stream selection panel (streamsToSelect is never set — auto-play uses streams[0])
@@ -509,12 +558,12 @@ fun MovieDetailScreen(
                     if (resolvingStream) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                CircularProgressIndicator(color = Color(0xFF26A69A))
+                                CircularProgressIndicator(color = OttAmberStreaming)
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
                                     text = streamStatusText,
                                     fontSize = 14.sp,
-                                    color = Color.White.copy(alpha = 0.8f)
+                                    color = OttWhite.copy(alpha = 0.8f)
                                 )
                             }
                         }
@@ -522,6 +571,7 @@ fun MovieDetailScreen(
                         // Display resolved stream links selection list
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
                             itemsIndexed(streams) { index, stream ->
@@ -546,12 +596,12 @@ fun MovieDetailScreen(
                                         )
                                     },
                                     colors = ClickableSurfaceDefaults.colors(
-                                        containerColor = Color(0xFF1E1E1E),
-                                        focusedContainerColor = Color(0xFF26A69A),
-                                        pressedContainerColor = Color(0xFF208b80)
+                                        containerColor = OttSurface,
+                                        focusedContainerColor = OttWhite.copy(alpha = 0.22f),
+                                        pressedContainerColor = OttWhite.copy(alpha = 0.30f)
                                     ),
-                                    scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
-                                    shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+                                    scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
+                                    shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
                                     modifier = Modifier
                                         .then(if (index == 0) Modifier.focusRequester(rightListFocusRequester) else Modifier)
                                         .focusProperties {
@@ -561,7 +611,9 @@ fun MovieDetailScreen(
                                         .fillMaxWidth()
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(14.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 14.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -569,12 +621,17 @@ fun MovieDetailScreen(
                                             text = stream.server,
                                             fontSize = 14.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.White
+                                            color = OttWhite,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .padding(end = 12.dp)
                                         )
                                         Text(
                                             text = stream.quality,
                                             fontSize = 12.sp,
-                                            color = Color(0xFF26A69A),
+                                            color = OttAmberStreaming,
                                             fontWeight = FontWeight.SemiBold
                                         )
                                     }
@@ -585,10 +642,10 @@ fun MovieDetailScreen(
                                 Button(
                                     onClick = { streamsToSelect = null },
                                     colors = ButtonDefaults.colors(
-                                        containerColor = Color.Red.copy(alpha = 0.1f),
-                                        focusedContainerColor = Color.Red,
-                                        contentColor = Color.Red,
-                                        focusedContentColor = Color.White
+                                        containerColor = OttLiveRed.copy(alpha = 0.14f),
+                                        focusedContainerColor = OttLiveRed,
+                                        contentColor = OttLiveRed,
+                                        focusedContentColor = OttWhite
                                     ),
                                     modifier = Modifier.focusProperties {
                                         left = if (hasWatchNow) watchNowFocusRequester else backButtonFocusRequester
@@ -603,6 +660,7 @@ fun MovieDetailScreen(
                         // General catalog list (Seasons or Direct Links)
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
                             itemsIndexed(movieMeta.linkList) { index, vegaLink ->
@@ -629,12 +687,12 @@ fun MovieDetailScreen(
                                             }
                                         },
                                         colors = ClickableSurfaceDefaults.colors(
-                                            containerColor = if (isExpanded) Color(0xFF26A69A).copy(alpha = 0.15f) else Color(0xFF1E1E1E),
-                                            focusedContainerColor = Color(0xFF26A69A),
-                                            pressedContainerColor = Color(0xFF208b80)
+                                            containerColor = if (isExpanded) OttWhite.copy(alpha = 0.14f) else OttSurface,
+                                            focusedContainerColor = OttWhite.copy(alpha = 0.24f),
+                                            pressedContainerColor = OttWhite.copy(alpha = 0.30f)
                                         ),
-                                        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
-                                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+                                        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
+                                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
                                         modifier = Modifier
                                             .then(if (index == 0) Modifier.focusRequester(rightListFocusRequester) else Modifier)
                                             .focusProperties {
@@ -644,7 +702,9 @@ fun MovieDetailScreen(
                                             .fillMaxWidth()
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(14.dp),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 16.dp, vertical = 14.dp),
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
@@ -652,22 +712,29 @@ fun MovieDetailScreen(
                                                 text = vegaLink.title,
                                                 fontSize = 14.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                color = Color.White
+                                                color = if (isExpanded) OttAmberStreaming else OttWhite,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .padding(end = 12.dp)
                                             )
                                             Text(
                                                 text = if (isExpanded) "▼" else "▶",
-                                                color = Color.Gray,
+                                                color = OttTextSecondary,
                                                 fontSize = 12.sp
                                             )
                                         }
                                     }
 
                                     if (isExpanded) {
+                                        Spacer(modifier = Modifier.height(6.dp))
                                         Column(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .background(Color(0xFF16151D))
-                                                .padding(horizontal = 8.dp, vertical = 12.dp)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(OttNavRailBg.copy(alpha = 0.85f))
+                                                .padding(horizontal = 10.dp, vertical = 12.dp)
                                         ) {
                                             if (vegaLink.episodesLink != null) {
                                                 // TV Show episodes list
@@ -676,7 +743,7 @@ fun MovieDetailScreen(
                                                         modifier = Modifier.fillMaxWidth().padding(12.dp),
                                                         contentAlignment = Alignment.Center
                                                     ) {
-                                                        CircularProgressIndicator(color = Color(0xFF26A69A), modifier = Modifier.size(24.dp))
+                                                        CircularProgressIndicator(color = OttAmberStreaming, modifier = Modifier.size(24.dp))
                                                     }
                                                 } else {
                                                     val episodes = episodesMap[vegaLink.episodesLink]?.filter { ep ->
@@ -693,13 +760,12 @@ fun MovieDetailScreen(
                                                     } else {
                                                     val playlist = buildEpisodePlaylist(episodes, vegaLink.title) { getResolveType(it) }
                                                     episodes.forEach { episode ->
-                                                        val hasEpLink = episode.episodesLink != null
-                                                        val hasDirectLinks = !episode.directLinks.isNullOrEmpty()
+                                                        val firstDirect = episode.directLinks?.firstOrNull()
 
                                                         Surface(
                                                             onClick = {
-                                                                val epTargetLink = if (hasDirectLinks) episode.directLinks!![0].link else episode.episodesLink
-                                                                val epTargetType = if (hasDirectLinks) getResolveType(episode.directLinks!![0].type) else getResolveType("series")
+                                                                val epTargetLink = firstDirect?.link ?: episode.episodesLink
+                                                                val epTargetType = if (firstDirect != null) getResolveType(firstDirect.type) else getResolveType("series")
                                                                 val epIndex = playlist.indexOfFirst { it.link == epTargetLink }.coerceAtLeast(0)
                                                                 if (epTargetLink != null) {
                                                                     streamResolutionJob?.cancel()
@@ -774,12 +840,12 @@ fun MovieDetailScreen(
                                                                 }
                                                             },
                                                                 colors = ClickableSurfaceDefaults.colors(
-                                                                    containerColor = Color(0xFF1E1E1E),
-                                                                    focusedContainerColor = Color(0xFF26A69A),
-                                                                    pressedContainerColor = Color(0xFF208b80)
+                                                                    containerColor = OttSurface,
+                                                                    focusedContainerColor = OttWhite.copy(alpha = 0.22f),
+                                                                    pressedContainerColor = OttWhite.copy(alpha = 0.30f)
                                                                 ),
                                                                 scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
-                                                                shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+                                                                shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
                                                                 modifier = Modifier
                                                                     .focusProperties {
                                                                         left = if (hasWatchNow) watchNowFocusRequester else backButtonFocusRequester
@@ -798,14 +864,17 @@ fun MovieDetailScreen(
                                                                         modifier = Modifier
                                                                             .width(96.dp)
                                                                             .aspectRatio(16f / 9f)
-                                                                            .clip(RoundedCornerShape(6.dp))
-                                                                            .background(Color(0xFF2C2A36)),
+                                                                            .clip(RoundedCornerShape(8.dp))
+                                                                            .background(OttSurfaceElevated),
                                                                         contentAlignment = Alignment.Center
                                                                     ) {
                                                                         val thumbUrl = episode.image?.takeIf { it.isNotBlank() } ?: movieMeta.image
                                                                         if (thumbUrl.isNotBlank()) {
+                                                                            val thumbRequest = remember(context, thumbUrl) {
+                                                                                buildOttImageRequest(context, thumbUrl)
+                                                                            }
                                                                             AsyncImage(
-                                                                                model = thumbUrl,
+                                                                                model = thumbRequest,
                                                                                 contentDescription = episode.title,
                                                                                 contentScale = ContentScale.Crop,
                                                                                 modifier = Modifier.fillMaxSize()
@@ -857,9 +926,9 @@ fun MovieDetailScreen(
                                                         },
                                                         colors = ClickableSurfaceDefaults.colors(
                                                             containerColor = Color.Transparent,
-                                                            focusedContainerColor = Color(0xFF26A69A).copy(alpha = 0.2f)
+                                                            focusedContainerColor = OttWhite.copy(alpha = 0.20f)
                                                         ),
-                                                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(4.dp)),
+                                                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
                                                         modifier = Modifier
                                                             .focusProperties {
                                                                 left = if (hasWatchNow) watchNowFocusRequester else backButtonFocusRequester
@@ -883,6 +952,7 @@ fun MovieDetailScreen(
                             }
                         }
                     }
+                }
                 }
             }
         }

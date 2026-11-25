@@ -6,10 +6,14 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
@@ -22,8 +26,11 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.*
+import com.samyak.television.ui.components.OttSpecs
+import com.samyak.television.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.sin
@@ -38,11 +45,13 @@ enum class SpeedTestPhase {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun SpeedTestScreen() {
+fun SpeedTestScreen(
+    primaryFocusRequester: FocusRequester? = null
+) {
     val scope = rememberCoroutineScope()
 
     var testPhase by remember { mutableStateOf(SpeedTestPhase.IDLE) }
-    var currentSpeed by remember { mutableStateOf(0f) }
+    var currentSpeed by remember { mutableFloatStateOf(0f) }
     var pingVal by remember { mutableStateOf<Int?>(null) }
     var jitterVal by remember { mutableStateOf<Int?>(null) }
     var downloadSpeedVal by remember { mutableStateOf<Float?>(null) }
@@ -62,8 +71,8 @@ fun SpeedTestScreen() {
     val cyanColor = Color(0xFF00E5FF)
     val purpleColor = Color(0xFFD500F9)
     val greenColor = Color(0xFF00E676)
-    val orangeColor = Color(0xFFFFB300)
-    val accentColor = Color(0xFF26A69A)
+    val orangeColor = OttAmberStreaming
+    val accentColor = OttAmberStreaming
 
     val startTest = {
         scope.launch {
@@ -132,25 +141,30 @@ fun SpeedTestScreen() {
         }
     }
 
-    Row(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Transparent)
     ) {
-        // Left Column: Stats Cards and Graph Plot (60% width)
-        Column(
-            modifier = Modifier
-                .weight(1.3f)
-                .fillMaxHeight()
-                .padding(end = 16.dp)
-        ) {
-            Text(
-                text = "Internet Speed Test",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                modifier = Modifier.padding(bottom = 20.dp)
-            )
+        val isCompactHeight = maxHeight < 460.dp
+        val gaugeSize = (maxHeight * 0.56f).coerceIn(170.dp, 280.dp)
+        val gaugeSpeedFont = if (gaugeSize < 230.dp) 32.sp else 42.sp
+
+        Row(modifier = Modifier.fillMaxSize()) {
+            // Left Column: Stats Cards and Graph Plot (60% width)
+            Column(
+                modifier = Modifier
+                    .weight(1.3f)
+                    .fillMaxHeight()
+                    .padding(end = 16.dp)
+            ) {
+                Text(
+                    text = "Internet Speed Test",
+                    fontSize = if (isCompactHeight) 20.sp else 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.padding(bottom = if (isCompactHeight) 12.dp else 20.dp)
+                )
 
             // Top row: 4 Metric Cards
             Row(
@@ -160,7 +174,7 @@ fun SpeedTestScreen() {
                 MetricCard(
                     title = "Download",
                     unit = "Mbps",
-                    value = downloadSpeedVal?.let { String.format("%.2f", it) } ?: if (testPhase == SpeedTestPhase.DOWNLOAD) String.format("%.2f", currentSpeed) else "--",
+                    value = downloadSpeedVal?.let { String.format(Locale.US, "%.2f", it) } ?: if (testPhase == SpeedTestPhase.DOWNLOAD) String.format(Locale.US, "%.2f", currentSpeed) else "--",
                     iconColor = cyanColor,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -186,7 +200,7 @@ fun SpeedTestScreen() {
                 MetricCard(
                     title = "Upload",
                     unit = "Mbps",
-                    value = uploadSpeedVal?.let { String.format("%.2f", it) } ?: if (testPhase == SpeedTestPhase.UPLOAD) String.format("%.2f", currentSpeed) else "--",
+                    value = uploadSpeedVal?.let { String.format(Locale.US, "%.2f", it) } ?: if (testPhase == SpeedTestPhase.UPLOAD) String.format(Locale.US, "%.2f", currentSpeed) else "--",
                     iconColor = purpleColor,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -277,15 +291,15 @@ fun SpeedTestScreen() {
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(if (isCompactHeight) 12.dp else 20.dp))
 
             // Graph Panel
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .background(Color(0xFF0E1629).copy(alpha = 0.8f), RoundedCornerShape(12.dp))
-                    .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                    .background(OttSurface, RoundedCornerShape(OttSpecs.CardRadius))
+                    .border(1.dp, OttBorderSubtle, RoundedCornerShape(OttSpecs.CardRadius))
                     .padding(20.dp)
             ) {
                 val lineChartColor = if (testPhase == SpeedTestPhase.UPLOAD) purpleColor else cyanColor
@@ -303,7 +317,7 @@ fun SpeedTestScreen() {
                         )
                         if (speedPoints.isNotEmpty()) {
                             Text(
-                                text = "Current: ${String.format("%.1f", speedPoints.last())} Mbps",
+                                text = "Current: ${String.format(Locale.US, "%.1f", speedPoints.last())} Mbps",
                                 fontSize = 12.sp,
                                 color = lineChartColor,
                                 fontWeight = FontWeight.Bold
@@ -380,7 +394,9 @@ fun SpeedTestScreen() {
         Column(
             modifier = Modifier
                 .weight(0.9f)
-                .fillMaxHeight(),
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState())
+                .padding(top = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -389,8 +405,8 @@ fun SpeedTestScreen() {
             // Gauge Box
             Box(
                 modifier = Modifier
-                    .size(280.dp)
-                    .padding(10.dp),
+                    .size(gaugeSize)
+                    .padding(if (isCompactHeight) 6.dp else 10.dp),
                 contentAlignment = Alignment.Center
             ) {
                 // Dynamic active track color
@@ -414,9 +430,9 @@ fun SpeedTestScreen() {
                     val arcRadius = radius - strokeW / 2f
                     val center = Offset(size.width / 2f, size.height / 2f)
 
-                    // 1. Draw Background Track (Slate Slate)
+                    // 1. Draw Background Track
                     drawArc(
-                        color = Color(0xFF1E293B).copy(alpha = 0.8f),
+                        color = OttSurfaceElevated,
                         startAngle = 135f,
                         sweepAngle = 270f,
                         useCenter = false,
@@ -512,7 +528,7 @@ fun SpeedTestScreen() {
                         center = center
                     )
                     drawCircle(
-                        color = Color(0xFF0F172A),
+                        color = OttBgPrimary,
                         radius = 2.dp.toPx(),
                         center = center
                     )
@@ -522,12 +538,12 @@ fun SpeedTestScreen() {
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 32.dp),
+                        .padding(bottom = if (isCompactHeight) 18.dp else 32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = if (testPhase == SpeedTestPhase.IDLE) "0.00" else String.format("%.2f", currentSpeed),
-                        fontSize = 42.sp,
+                        text = if (testPhase == SpeedTestPhase.IDLE) "0.00" else String.format(Locale.US, "%.2f", currentSpeed),
+                        fontSize = gaugeSpeedFont,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         fontFamily = FontFamily.SansSerif
@@ -576,27 +592,27 @@ fun SpeedTestScreen() {
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(if (isCompactHeight) 12.dp else 24.dp))
 
-            // Action TV Button
+            // Action TV Button (kept focusable during test so D-pad focus does not jump away)
+            val isReadyToRun = testPhase == SpeedTestPhase.IDLE || testPhase == SpeedTestPhase.FINISHED
             Button(
                 onClick = {
-                    if (testPhase == SpeedTestPhase.IDLE || testPhase == SpeedTestPhase.FINISHED) {
+                    if (isReadyToRun) {
                         startTest()
                     }
                 },
-                enabled = testPhase == SpeedTestPhase.IDLE || testPhase == SpeedTestPhase.FINISHED,
                 colors = ButtonDefaults.colors(
-                    containerColor = accentColor,
-                    focusedContainerColor = Color(0xFF208b80),
-                    disabledContainerColor = Color.White.copy(alpha = 0.08f),
-                    contentColor = Color.White,
-                    disabledContentColor = Color.Gray
+                    containerColor = if (isReadyToRun) OttWhite else OttSurfaceElevated,
+                    focusedContainerColor = if (isReadyToRun) accentColor else OttSurfaceElevated,
+                    contentColor = if (isReadyToRun) OttBgPrimary else OttTextSecondary,
+                    focusedContentColor = if (isReadyToRun) OttBgPrimary else OttWhite
                 ),
-                shape = ButtonDefaults.shape(RoundedCornerShape(8.dp)),
+                shape = ButtonDefaults.shape(RoundedCornerShape(10.dp)),
                 modifier = Modifier
                     .width(180.dp)
                     .height(44.dp)
+                    .then(if (primaryFocusRequester != null) Modifier.focusRequester(primaryFocusRequester) else Modifier)
             ) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -614,6 +630,7 @@ fun SpeedTestScreen() {
                 }
             }
         }
+        }
     }
 }
 
@@ -628,8 +645,8 @@ fun MetricCard(
 ) {
     Box(
         modifier = modifier
-            .background(Color(0xFF0E1629).copy(alpha = 0.7f), RoundedCornerShape(10.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.04f), RoundedCornerShape(10.dp))
+            .background(OttSurface, RoundedCornerShape(OttSpecs.CardRadius))
+            .border(1.dp, OttBorderSubtle, RoundedCornerShape(OttSpecs.CardRadius))
             .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         Row(

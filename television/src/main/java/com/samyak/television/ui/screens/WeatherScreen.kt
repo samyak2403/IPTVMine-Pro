@@ -20,6 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
@@ -40,12 +42,17 @@ import com.samyak.television.model.DailyWeather
 import com.samyak.television.model.GeocodingResponse
 import com.samyak.television.model.HourlyWeather
 import com.samyak.television.model.WeatherResponse
+import com.samyak.television.ui.components.OttSpecs
+import com.samyak.television.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun WeatherScreen(viewModel: WeatherViewModel = viewModel()) {
+fun WeatherScreen(
+    viewModel: WeatherViewModel = viewModel(),
+    primaryFocusRequester: FocusRequester? = null
+) {
     val focusManager = LocalFocusManager.current
 
     val weatherState by viewModel.weatherState.collectAsState()
@@ -76,7 +83,7 @@ fun WeatherScreen(viewModel: WeatherViewModel = viewModel()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 12.dp),
+                    .padding(end = 88.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
@@ -89,13 +96,13 @@ fun WeatherScreen(viewModel: WeatherViewModel = viewModel()) {
                     },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF26A69A),
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                        focusedContainerColor = Color(0xFF0E1629).copy(alpha = 0.6f),
-                        unfocusedContainerColor = Color(0xFF0E1629).copy(alpha = 0.3f),
-                        cursorColor = Color(0xFF26A69A)
+                        focusedTextColor = OttWhite,
+                        unfocusedTextColor = OttWhite,
+                        focusedBorderColor = OttAmberStreaming,
+                        unfocusedBorderColor = OttBorderSubtle,
+                        focusedContainerColor = OttSurface,
+                        unfocusedContainerColor = OttSurface,
+                        cursorColor = OttAmberStreaming
                     ),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = {
@@ -107,6 +114,7 @@ fun WeatherScreen(viewModel: WeatherViewModel = viewModel()) {
                     modifier = Modifier
                         .width(280.dp)
                         .height(54.dp)
+                        .then(if (primaryFocusRequester != null) Modifier.focusRequester(primaryFocusRequester) else Modifier)
                         .onPreviewKeyEvent { keyEvent ->
                             if (keyEvent.type == KeyEventType.KeyDown) {
                                 when (keyEvent.key) {
@@ -130,9 +138,12 @@ fun WeatherScreen(viewModel: WeatherViewModel = viewModel()) {
                     },
                     enabled = citySearchQuery.isNotBlank(),
                     colors = ButtonDefaults.colors(
-                        containerColor = Color(0xFF26A69A),
-                        focusedContainerColor = Color(0xFF1DB8AC),
-                        disabledContainerColor = Color.Gray.copy(alpha = 0.25f)
+                        containerColor = OttWhite,
+                        focusedContainerColor = OttAmberStreaming,
+                        disabledContainerColor = OttWhite.copy(alpha = 0.12f),
+                        contentColor = OttBgPrimary,
+                        focusedContentColor = OttBgPrimary,
+                        disabledContentColor = OttTextSecondary
                     ),
                     modifier = Modifier.height(44.dp)
                 ) {
@@ -145,15 +156,16 @@ fun WeatherScreen(viewModel: WeatherViewModel = viewModel()) {
                 Button(
                     onClick = { viewModel.toggleUnits() },
                     colors = ButtonDefaults.colors(
-                        containerColor = Color(0xFF1E293B).copy(alpha = 0.8f),
-                        focusedContainerColor = Color(0xFF26A69A)
+                        containerColor = OttSurface,
+                        focusedContainerColor = OttWhite,
+                        contentColor = OttWhite,
+                        focusedContentColor = OttBgPrimary
                     ),
                     modifier = Modifier.height(44.dp)
                 ) {
                     Text(
                         text = if (units == "metric") "°C / m/s" else "°F / mph",
-                        fontSize = 13.sp,
-                        color = Color.White
+                        fontSize = 13.sp
                     )
                 }
             }
@@ -195,12 +207,12 @@ fun WeatherScreen(viewModel: WeatherViewModel = viewModel()) {
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             CircularProgressIndicator(
-                                color = Color(0xFF26A69A),
+                                color = OttAmberStreaming,
                                 modifier = Modifier.size(40.dp),
                                 strokeWidth = 3.dp
                             )
                             Spacer(modifier = Modifier.height(12.dp))
-                            Text("Fetching weather...", color = Color.Gray, fontSize = 13.sp)
+                            Text("Fetching weather...", color = OttTextSecondary, fontSize = 13.sp)
                         }
                     }
 
@@ -216,13 +228,13 @@ fun WeatherScreen(viewModel: WeatherViewModel = viewModel()) {
                                 text = "⚠  Weather Failed",
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFEF5350)
+                                color = OttLiveRed
                             )
                             Spacer(modifier = Modifier.height(10.dp))
                             Text(
                                 text = state.message,
                                 fontSize = 12.sp,
-                                color = Color.LightGray,
+                                color = OttTextSecondary,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
@@ -230,11 +242,13 @@ fun WeatherScreen(viewModel: WeatherViewModel = viewModel()) {
                             Button(
                                 onClick = { viewModel.fetchWeather() },
                                 colors = ButtonDefaults.colors(
-                                    containerColor = Color(0xFF26A69A),
-                                    focusedContainerColor = Color(0xFF1DB8AC)
+                                    containerColor = OttWhite,
+                                    focusedContainerColor = OttAmberStreaming,
+                                    contentColor = OttBgPrimary,
+                                    focusedContentColor = OttBgPrimary
                                 )
                             ) {
-                                Text("Retry", fontSize = 13.sp)
+                                Text("Retry", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -257,16 +271,16 @@ fun WeatherScreen(viewModel: WeatherViewModel = viewModel()) {
                     .padding(start = 0.dp, top = 58.dp)
                     .width(320.dp)
                     .heightIn(max = 280.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF0D1B2A).copy(alpha = 0.98f))
-                    .border(1.dp, Color(0xFF26A69A).copy(alpha = 0.4f), RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(OttSpecs.CardRadius))
+                    .background(OttNavRailBg.copy(alpha = 0.98f))
+                    .border(1.dp, OttAmberStreaming.copy(alpha = 0.45f), RoundedCornerShape(OttSpecs.CardRadius))
                     .align(Alignment.TopStart)
             ) {
                 when {
                     isSearching -> {
                         Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(
-                                color = Color(0xFF26A69A),
+                                color = OttAmberStreaming,
                                 modifier = Modifier.size(28.dp),
                                 strokeWidth = 2.dp
                             )
@@ -276,7 +290,7 @@ fun WeatherScreen(viewModel: WeatherViewModel = viewModel()) {
                         Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
                             Text(
                                 text = searchError ?: "",
-                                color = Color(0xFFEF5350),
+                                color = OttLiveRed,
                                 fontSize = 13.sp,
                                 textAlign = TextAlign.Center
                             )
@@ -310,9 +324,9 @@ fun GeocodingResultItem(result: GeocodingResponse, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = Color(0xFF1E3A5F).copy(alpha = 0.6f),
-            focusedContainerColor = Color(0xFF26A69A),
-            pressedContainerColor = Color(0xFF1DB8AC)
+            containerColor = OttSurface,
+            focusedContainerColor = OttWhite.copy(alpha = 0.22f),
+            pressedContainerColor = OttWhite.copy(alpha = 0.30f)
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
@@ -370,7 +384,7 @@ fun WeatherDetailsContent(
         state = columnState,
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(bottom = 32.dp)
+        contentPadding = PaddingValues(start = 6.dp, top = 4.dp, end = 6.dp, bottom = 24.dp)
     ) {
 
         // ── SECTION: City header + timestamp ──────────────────────────────
@@ -392,7 +406,7 @@ fun WeatherDetailsContent(
                     Text(
                         text = "Weather Cast",
                         fontSize = 12.sp,
-                        color = Color(0xFF26A69A),
+                        color = OttAmberStreaming,
                         fontWeight = FontWeight.SemiBold,
                         letterSpacing = 1.2.sp
                     )
@@ -422,16 +436,16 @@ fun WeatherDetailsContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(OttSpecs.CardRadius))
                     .background(
                         Brush.linearGradient(
                             colors = listOf(
-                                Color(0xFF0D2137).copy(alpha = 0.9f),
-                                Color(0xFF1A3A5C).copy(alpha = 0.7f)
+                                OttSurface,
+                                OttSurfaceElevated
                             )
                         )
                     )
-                    .border(1.dp, Color(0xFF26A69A).copy(alpha = 0.25f), RoundedCornerShape(20.dp))
+                    .border(1.dp, OttBorderSubtle, RoundedCornerShape(OttSpecs.CardRadius))
                     .padding(horizontal = 24.dp, vertical = 20.dp)
             ) {
                 Row(
@@ -537,7 +551,7 @@ fun WeatherDetailsContent(
             LazyRow(
                 state = hourlyState,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp),
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 val next24 = weather.hourly.take(8) // 8 × 3hr = 24h from 2.5 API
@@ -579,7 +593,7 @@ fun WeatherSectionHeader(title: String, subtitle: String) {
                     .width(4.dp)
                     .height(18.dp)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(Color(0xFF26A69A))
+                    .background(OttAmberStreaming)
             )
             Text(
                 text = title,
@@ -639,15 +653,15 @@ fun HourlyForecastCard(hourData: HourlyWeather, tempUnit: String) {
     Surface(
         onClick = {},
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = Color(0xFF0E1A2D).copy(alpha = 0.7f),
-            focusedContainerColor = Color(0xFF26A69A),
-            pressedContainerColor = Color(0xFF1DB8AC)
+            containerColor = OttSurface,
+            focusedContainerColor = OttWhite.copy(alpha = 0.20f),
+            pressedContainerColor = OttWhite.copy(alpha = 0.28f)
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.06f),
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(14.dp)),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(OttSpecs.CardRadius)),
         modifier = Modifier
             .width(88.dp)
-            .border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(14.dp))
+            .border(1.dp, OttBorderSubtle, RoundedCornerShape(OttSpecs.CardRadius))
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -721,15 +735,15 @@ fun DailyForecastRow(dailyData: DailyWeather, tempUnit: String) {
     Surface(
         onClick = {},
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = Color(0xFF0E1A2D).copy(alpha = 0.5f),
-            focusedContainerColor = Color(0xFF1A3A5C).copy(alpha = 0.9f),
-            pressedContainerColor = Color(0xFF26A69A).copy(alpha = 0.4f)
+            containerColor = OttSurface,
+            focusedContainerColor = OttWhite.copy(alpha = 0.20f),
+            pressedContainerColor = OttWhite.copy(alpha = 0.28f)
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(OttSpecs.CardRadius)),
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+            .border(1.dp, OttBorderSubtle, RoundedCornerShape(OttSpecs.CardRadius))
     ) {
         Row(
             modifier = Modifier

@@ -2,15 +2,19 @@ package com.samyak.television.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -23,15 +27,23 @@ import com.samyak.television.data.VegaProviderRunner
 import com.samyak.television.model.Provider
 import com.samyak.television.model.ProviderType
 import com.samyak.television.model.VegaProvider
-import kotlinx.coroutines.launch
+import com.samyak.television.ui.components.OttSpecs
+import com.samyak.television.ui.theme.*
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun ExtensionsScreen() {
+fun ExtensionsScreen(
+    primaryFocusRequester: FocusRequester? = null
+) {
     val context = LocalContext.current
     val providerRepository = remember { ProviderRepository(context) }
     val extensionRepository = remember { ExtensionRepository.getInstance(context) }
     val runner = remember { VegaProviderRunner(context) }
+    DisposableEffect(Unit) {
+        onDispose {
+            runner.destroy()
+        }
+    }
 
     var vegaProviders by remember { mutableStateOf<List<Provider>>(emptyList()) }
     var selectedSource by remember { mutableStateOf<Provider?>(null) }
@@ -40,7 +52,6 @@ fun ExtensionsScreen() {
 
     val installedExtensionsState by extensionRepository.installedExtensionsFlow.collectAsState()
 
-    // Load sources
     LaunchedEffect(Unit) {
         val providers = providerRepository.getProviders().filter { it.safeType == ProviderType.VEGA }
         if (providers.isEmpty()) {
@@ -59,7 +70,6 @@ fun ExtensionsScreen() {
         }
     }
 
-    // Load extensions when selected source changes
     LaunchedEffect(selectedSource) {
         val source = selectedSource
         if (source != null) {
@@ -67,6 +77,8 @@ fun ExtensionsScreen() {
             try {
                 val manifest = runner.fetchManifest(source.url)
                 allExtensions = manifest.distinctBy { it.value }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Toast.makeText(context, "Failed to load extensions: ${e.message}", Toast.LENGTH_LONG).show()
                 allExtensions = emptyList()
@@ -90,46 +102,53 @@ fun ExtensionsScreen() {
             Text(
                 text = "Extensions",
                 fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                modifier = Modifier.padding(bottom = 16.dp)
+                fontWeight = FontWeight.ExtraBold,
+                color = OttWhite,
+                modifier = Modifier.padding(bottom = 14.dp)
             )
-            
+
             Text(
-                text = "Choose Provider Source:",
-                fontSize = 14.sp,
-                color = Color.Gray,
+                text = "Choose Provider Source",
+                fontSize = 13.sp,
+                color = OttTextSecondary,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
 
             if (vegaProviders.isEmpty()) {
                 Text(
-                    text = "No Vega Providers added yet. Go to Manage Playlists to add a Vega source.",
+                    text = "No Vega Providers added yet. Go to Playlists to add a Vega source.",
                     fontSize = 14.sp,
-                    color = Color.Gray
+                    color = OttTextSecondary
                 )
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(vegaProviders) { provider ->
+                    itemsIndexed(vegaProviders) { index, provider ->
                         val isSelected = selectedSource?.url == provider.url
+                        var isFocused by remember { mutableStateOf(false) }
+
                         Surface(
                             onClick = { selectedSource = provider },
                             colors = ClickableSurfaceDefaults.colors(
-                                containerColor = if (isSelected) Color(0xFF26A69A).copy(alpha = 0.2f) else Color(0xFF1E1E1E),
-                                focusedContainerColor = Color(0xFF26A69A),
-                                pressedContainerColor = Color(0xFF208b80)
+                                containerColor = if (isSelected) OttWhite.copy(alpha = 0.14f) else OttSurface,
+                                focusedContainerColor = OttWhite,
+                                pressedContainerColor = OttWhite.copy(alpha = 0.85f)
                             ),
-                            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
-                            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
-                            modifier = Modifier.fillMaxWidth()
+                            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
+                            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(if (index == 0 && primaryFocusRequester != null) Modifier.focusRequester(primaryFocusRequester) else Modifier)
+                                .onFocusChanged { isFocused = it.isFocused }
                         ) {
                             Text(
                                 text = provider.title,
                                 fontSize = 14.sp,
-                                color = Color.White,
+                                fontWeight = if (isSelected || isFocused) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isFocused) OttBgPrimary else if (isSelected) OttAmberStreaming else OttWhite,
                                 modifier = Modifier.padding(12.dp)
                             )
                         }
@@ -138,58 +157,52 @@ fun ExtensionsScreen() {
             }
         }
 
-        // Divider
-        Box(
-            modifier = Modifier
-                .width(1.dp)
-                .fillMaxHeight()
-                .background(Color.White.copy(alpha = 0.1f))
-        )
-
         // Right Column: List of extensions available from source
         Column(
             modifier = Modifier
                 .weight(1.8f)
                 .fillMaxHeight()
-                .padding(start = 24.dp)
+                .padding(start = 8.dp)
         ) {
             Text(
                 text = selectedSource?.let { "Extensions from ${it.title}" } ?: "Scraper Extensions",
                 fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                modifier = Modifier.padding(bottom = 16.dp, end = 100.dp)
+                fontWeight = FontWeight.ExtraBold,
+                color = OttWhite,
+                modifier = Modifier.padding(bottom = 16.dp, end = 88.dp)
             )
 
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Color(0xFF26A69A))
+                    CircularProgressIndicator(color = OttAmberStreaming)
                 }
             } else if (allExtensions.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         text = if (selectedSource == null) "Select a provider source to load extensions" else "No extensions found in this source",
-                        color = Color.Gray,
+                        color = OttTextSecondary,
                         fontSize = 15.sp
                     )
                 }
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(allExtensions, key = { it.value }) { ext ->
                         val isInstalled = installedExtensionsState.contains(ext.value)
-                        
+
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(Color(0xFF1E1E1E), RoundedCornerShape(8.dp))
+                                .background(OttSurface, RoundedCornerShape(OttSpecs.CardRadius))
+                                .border(1.dp, OttBorderSubtle, RoundedCornerShape(OttSpecs.CardRadius))
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(12.dp),
+                                    .padding(14.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -199,7 +212,7 @@ fun ExtensionsScreen() {
                                             text = ext.display_name,
                                             fontSize = 15.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.White,
+                                            color = OttWhite,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
@@ -207,14 +220,14 @@ fun ExtensionsScreen() {
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Box(
                                                 modifier = Modifier
-                                                    .background(Color(0xFF26A69A).copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                                    .background(OttAmberStreaming.copy(alpha = 0.18f), RoundedCornerShape(4.dp))
                                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                                             ) {
                                                 Text(
                                                     text = "Installed",
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = Color(0xFF26A69A)
+                                                    color = OttAmberStreaming
                                                 )
                                             }
                                         }
@@ -223,12 +236,12 @@ fun ExtensionsScreen() {
                                     Text(
                                         text = "v${ext.version} • ${ext.type}",
                                         fontSize = 12.sp,
-                                        color = Color.Gray
+                                        color = OttTextSecondary
                                     )
                                 }
-                                
+
                                 Spacer(modifier = Modifier.width(16.dp))
-                                
+
                                 Button(
                                     onClick = {
                                         extensionRepository.setExtensionInstalled(ext.value, !isInstalled)
@@ -240,14 +253,17 @@ fun ExtensionsScreen() {
                                         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                     },
                                     colors = ButtonDefaults.colors(
-                                        containerColor = if (isInstalled) Color.Red.copy(alpha = 0.1f) else Color(0xFF26A69A),
-                                        focusedContainerColor = if (isInstalled) Color.Red else Color(0xFF208b80),
-                                        contentColor = if (isInstalled) Color.Red else Color.White,
-                                        focusedContentColor = Color.White
+                                        containerColor = if (isInstalled) OttLiveRed.copy(alpha = 0.14f) else OttWhite,
+                                        focusedContainerColor = if (isInstalled) OttLiveRed else OttAmberStreaming,
+                                        contentColor = if (isInstalled) OttLiveRed else OttBgPrimary,
+                                        focusedContentColor = if (isInstalled) OttWhite else OttBgPrimary
                                     ),
                                     shape = ButtonDefaults.shape(RoundedCornerShape(8.dp))
                                 ) {
-                                    Text(text = if (isInstalled) "Uninstall" else "Install")
+                                    Text(
+                                        text = if (isInstalled) "Uninstall" else "Install",
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             }
                         }

@@ -276,7 +276,11 @@ class VegaProviderRunner(private val context: Context) {
             }
 
             override fun onRenderProcessGone(view: WebView?, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
-                val didCrash = detail?.didCrash() ?: false
+                val didCrash = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    detail?.didCrash() ?: false
+                } else {
+                    true
+                }
                 Log.w(TAG, "Headless WebView render process gone (didCrash=$didCrash). Recovering WebView...")
                 isCompatInjected = false
                 loadedScrapers.clear()
