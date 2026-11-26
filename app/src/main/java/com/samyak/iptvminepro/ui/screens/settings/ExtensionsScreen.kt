@@ -1,12 +1,17 @@
 package com.samyak.iptvminepro.ui.screens.settings
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
@@ -19,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -69,22 +75,21 @@ fun ExtensionsScreen(
         allExtensions.filter { !it.disabled }
     }
 
-    // Load sources
-    LaunchedEffect(Unit) {
-        val providers = providerRepository.getProviders().filter { it.safeType == ProviderType.VEGA }
-        if (providers.isEmpty()) {
-            val defaultVega = Provider(
-                title = "Vega",
-                url = VegaProviderRunner.DEFAULT_VEGA_REPO,
-                type = ProviderType.VEGA,
-                isActive = true
-            )
-            providerRepository.addProvider(defaultVega)
-            vegaProviders = listOf(defaultVega)
-            selectedSource = defaultVega
+    // Load active VEGA sources (checked in Manage Providers) and preserve user's selected source
+    LaunchedEffect(reloadTrigger) {
+        val activeProviders = providerRepository.getProviders()
+            .filter { it.isActive && it.safeType == ProviderType.VEGA }
+        vegaProviders = activeProviders
+        val currentUrl = selectedSource?.url
+        val resolved = if (currentUrl != null) {
+            activeProviders.firstOrNull { it.url == currentUrl }
+                ?: providerRepository.getPreferredActiveVegaProvider(activeProviders)
         } else {
-            vegaProviders = providers
-            selectedSource = providers.firstOrNull()
+            providerRepository.getPreferredActiveVegaProvider(activeProviders)
+        }
+        selectedSource = resolved
+        if (resolved != null && resolved.url != providerRepository.getSelectedVegaProviderUrl()) {
+            providerRepository.setSelectedVegaProviderUrl(resolved.url)
         }
     }
 
@@ -151,33 +156,128 @@ fun ExtensionsScreen(
         ) {
             // Provider Source Selector
             if (vegaProviders.isNotEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    ExposedDropdownMenuBox(
-                        expanded = isDropdownExpanded,
-                        onExpandedChange = { isDropdownExpanded = it },
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Surface(
+                        onClick = { isDropdownExpanded = !isDropdownExpanded },
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(
+                            width = if (isDropdownExpanded) 1.5.dp else 1.dp,
+                            color = if (isDropdownExpanded) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outline
+                            }
+                        ),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        OutlinedTextField(
-                            value = selectedSource?.title ?: "Select Source",
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Provider Source") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isDropdownExpanded) },
-                            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
-                        )
-                        ExposedDropdownMenu(
-                            expanded = isDropdownExpanded,
-                            onDismissRequest = { isDropdownExpanded = false }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            vegaProviders.forEach { provider ->
-                                DropdownMenuItem(
-                                    text = { Text(provider.title) },
-                                    onClick = {
-                                        selectedSource = provider
-                                        isDropdownExpanded = false
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Provider Source",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isDropdownExpanded) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
                                     }
                                 )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = selectedSource?.title ?: "Select Source",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = "Select Provider Source",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.rotate(if (isDropdownExpanded) 180f else 0f)
+                            )
+                        }
+                    }
+
+                    AnimatedVisibility(visible = isDropdownExpanded) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            tonalElevation = 2.dp,
+                            shadowElevation = 4.dp,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 6.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 260.dp)
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                vegaProviders.forEachIndexed { index, provider ->
+                                    val isSelected = selectedSource?.url == provider.url
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                selectedSource = provider
+                                                providerRepository.setSelectedVegaProviderUrl(provider.url)
+                                                isDropdownExpanded = false
+                                            }
+                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = provider.title,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurface
+                                                },
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = provider.url,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        if (isSelected) {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Selected",
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                    if (index < vegaProviders.lastIndex) {
+                                        HorizontalDivider(
+                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -210,11 +310,15 @@ fun ExtensionsScreen(
                             modifier = Modifier.padding(24.dp)
                         ) {
                             Text(
-                                text = if (selectedTabIndex == 0) "No extensions installed" else "No extensions available",
+                                text = when {
+                                    vegaProviders.isEmpty() -> "No Vega Providers added yet. Go to Playlists to add a Vega source."
+                                    selectedTabIndex == 0 -> "No extensions installed"
+                                    else -> "No extensions available"
+                                },
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            if (allExtensions.isEmpty()) {
+                            if (allExtensions.isEmpty() && selectedSource != null) {
                                 Button(onClick = { reloadTrigger++ }) {
                                     Text("Retry Loading Extensions")
                                 }

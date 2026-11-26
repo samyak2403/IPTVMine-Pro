@@ -53,21 +53,11 @@ fun ExtensionsScreen(
     val installedExtensionsState by extensionRepository.installedExtensionsFlow.collectAsState()
 
     LaunchedEffect(Unit) {
-        val providers = providerRepository.getProviders().filter { it.safeType == ProviderType.VEGA }
-        if (providers.isEmpty()) {
-            val defaultVega = Provider(
-                title = "Vega",
-                url = VegaProviderRunner.DEFAULT_VEGA_REPO,
-                type = ProviderType.VEGA,
-                isActive = true
-            )
-            providerRepository.addProvider(defaultVega)
-            vegaProviders = listOf(defaultVega)
-            selectedSource = defaultVega
-        } else {
-            vegaProviders = providers
-            selectedSource = providers.firstOrNull()
-        }
+        val providers = providerRepository.getProviders()
+            .filter { it.isActive && it.safeType == ProviderType.VEGA }
+        vegaProviders = providers
+        val savedUrl = providerRepository.getSelectedVegaProviderUrl()
+        selectedSource = providers.firstOrNull { it.url == savedUrl } ?: providers.firstOrNull()
     }
 
     LaunchedEffect(selectedSource) {
@@ -131,7 +121,10 @@ fun ExtensionsScreen(
                         var isFocused by remember { mutableStateOf(false) }
 
                         Surface(
-                            onClick = { selectedSource = provider },
+                            onClick = {
+                                selectedSource = provider
+                                providerRepository.setSelectedVegaProviderUrl(provider.url)
+                            },
                             colors = ClickableSurfaceDefaults.colors(
                                 containerColor = if (isSelected) OttWhite.copy(alpha = 0.14f) else OttSurface,
                                 focusedContainerColor = OttWhite,

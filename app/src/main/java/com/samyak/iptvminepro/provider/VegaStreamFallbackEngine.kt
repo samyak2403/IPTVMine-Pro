@@ -46,7 +46,12 @@ object VegaStreamFallbackEngine {
             initialType.equals("movie", ignoreCase = true) -> "movie"
             else -> "movie"
         }
-        val repoUrl = currentProviderUrl.ifBlank { VegaProviderRunner.DEFAULT_VEGA_REPO }
+        val repoUrl = currentProviderUrl.ifBlank {
+            ProviderRepository(context).getProviders()
+                .firstOrNull { it.isActive && it.safeType == com.samyak.iptvminepro.model.ProviderType.VEGA }
+                ?.url
+                .orEmpty()
+        }
 
         // 1. Direct attempt on chosen link
         onStatusUpdate?.invoke("Resolving stream links...")

@@ -57,7 +57,7 @@ class MovieSearchViewModel(application: Application) : AndroidViewModel(applicat
     val activeProviders: List<Provider>
         get() = providerRepo.getProviders().filter { it.isActive && it.safeType == ProviderType.VEGA }
 
-    private val _selectedProvider = MutableStateFlow<Provider?>(providerRepo.getProviders().firstOrNull { it.isActive && it.safeType == ProviderType.VEGA })
+    private val _selectedProvider = MutableStateFlow<Provider?>(providerRepo.getPreferredActiveVegaProvider())
     val selectedProvider: StateFlow<Provider?> = _selectedProvider.asStateFlow()
 
     private val _scrapers = MutableStateFlow<List<VegaProvider>>(emptyList())
@@ -107,8 +107,10 @@ class MovieSearchViewModel(application: Application) : AndroidViewModel(applicat
 
     fun initIfNeeded() {
         val providers = activeProviders
-        if (_selectedProvider.value == null && providers.isNotEmpty()) {
-            _selectedProvider.value = providers.firstOrNull()
+        val preferred = providerRepo.getPreferredActiveVegaProvider(providers)
+        if (preferred != null && _selectedProvider.value?.url != preferred.url) {
+            _selectedProvider.value = preferred
+            dataLoaded = false
         }
 
         // If movies or sections are already cached and loaded in memory, do NOT re-fetch unless missing scrapers!

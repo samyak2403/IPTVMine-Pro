@@ -16,34 +16,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import com.samyak.iptvminepro.R
 import com.samyak.iptvminepro.model.Provider
+import com.samyak.iptvminepro.model.ProviderType
+import com.samyak.iptvminepro.provider.ProviderDetectionEngine
 import com.samyak.iptvminepro.provider.ProviderRepository
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-
-import com.samyak.iptvminepro.model.ProviderType
-
-private val VIDEO_URL_EXTENSIONS = setOf(
-    ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm",
-    ".mpg", ".mpeg", ".3gp", ".ogv", ".m4v", ".rm", ".rmvb"
-)
-
-/** True when the URL points directly at a video file (not a playlist). */
-private fun isDirectVideoUrlInput(url: String): Boolean {
-    val path = url.trim().lowercase().substringBefore("?").substringBefore("#")
-    return VIDEO_URL_EXTENSIONS.any { path.endsWith(it) }
-}
-
-/** Auto-detect the provider type from the first URL and the title. */
-private fun detectProviderType(firstUrl: String, title: String): ProviderType {
-    val trimmed = firstUrl.trim()
-    return when {
-        trimmed.startsWith("@") || trimmed.contains("vega", ignoreCase = true) ||
-            title.contains("vega", ignoreCase = true) -> ProviderType.VEGA
-        isDirectVideoUrlInput(trimmed) -> ProviderType.VIDEO
-        else -> ProviderType.IPTV
-    }
-}
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,11 +33,13 @@ fun AddProviderScreen(
 ) {
     val context = LocalContext.current
     val repository = remember { ProviderRepository(context) }
+    val scope = rememberCoroutineScope()
 
     var title by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     var userAgent by remember { mutableStateOf("") }
     var providerType by remember { mutableStateOf(ProviderType.IPTV) }
+    var isDetecting by remember { mutableStateOf(false) }
 
     LaunchedEffect(editUrl) {
         if (editUrl != null) {
@@ -114,7 +95,7 @@ fun AddProviderScreen(
             value = title,
             onValueChange = { 
                 title = it
-                providerType = detectProviderType(url.trim(), it)
+                providerType = ProviderDetectionEngine.detectQuick(url.trim(), it)
             },
             label = { Text(stringResource(id = R.string.label_provider_title)) },
             placeholder = { Text(if (providerType == ProviderType.IPTV) stringResource(id = R.string.placeholder_provider_title) else "e.g. Vega-Org Scraper") },
@@ -126,7 +107,7 @@ fun AddProviderScreen(
             value = url,
             onValueChange = { newValue ->
                 url = newValue
-                providerType = detectProviderType(newValue.trim(), title)
+                providerType = ProviderDetectionEngine.detectQuick(newValue.trim(), title)
             },
             label = { 
                 Text(
@@ -160,32 +141,69 @@ fun AddProviderScreen(
         )
 
         Button(
+            enabled = !isDetecting,
             onClick = {
                 val trimmedUrl = url.trim()
                 if (title.isBlank() || trimmedUrl.isEmpty()) {
                     Toast.makeText(context, msgRequiredFields, Toast.LENGTH_SHORT).show()
                 } else {
-                    val provider = Provider(
-                        title = title.trim(),
-                        url = trimmedUrl,
-                        userAgent = userAgent.trim().takeIf { it.isNotEmpty() },
-                        type = providerType
-                    )
-                    if (editUrl == null) {
-                        repository.addProvider(provider)
-                        Toast.makeText(context, msgProviderAdded, Toast.LENGTH_SHORT).show()
-                    } else {
-                        repository.updateProviderWithUrl(editUrl, provider)
-                        Toast.makeText(context, msgProviderUpdated, Toast.LENGTH_SHORT).show()
+                    scope.launch {
+                        isDetecting = true
+                        val resolvedType = if (ProviderDetectionEngine.needsContentInspection(trimmedUrl)) {
+                            val result = ProviderDetectionEngine.detectFromUrl(trimmedUrl)
+                            providerType = result.providerType
+                            val detectedLabel = when (result.sourceKind) {
+                                ProviderDetectionEngine.SourceKind.VOD_SCRAPER_MAP ->
+                                    "VOD Scraper JSON detected (${result.scraperEntries.size} scrapers)"
+                                ProviderDetectionEngine.SourceKind.VOD_MANIFEST ->
+                                    "VOD Extension Repo detected (${result.manifestEntries.size} extensions)"
+                                ProviderDetectionEngine.SourceKind.IPTV_JSON ->
+                                    "IPTV Channel JSON detected"
+                                ProviderDetectionEngine.SourceKind.IPTV_M3U ->
+                                    "IPTV M3U Playlist detected"
+                                ProviderDetectionEngine.SourceKind.DIRECT_VIDEO ->
+                                    "Direct Video Stream detected"
+                                ProviderDetectionEngine.SourceKind.UNKNOWN -> null
+                            }
+                            if (detectedLabel != null) {
+                                Toast.makeText(context, detectedLabel, Toast.LENGTH_SHORT).show()
+                            }
+                            result.providerType
+                        } else {
+                            ProviderDetectionEngine.detectQuick(trimmedUrl, title)
+                        }
+
+                        val provider = Provider(
+                            title = title.trim(),
+                            url = trimmedUrl,
+                            userAgent = userAgent.trim().takeIf { it.isNotEmpty() },
+                            type = resolvedType
+                        )
+                        if (editUrl == null) {
+                            repository.addProvider(provider)
+                            Toast.makeText(context, msgProviderAdded, Toast.LENGTH_SHORT).show()
+                        } else {
+                            repository.updateProviderWithUrl(editUrl, provider)
+                            Toast.makeText(context, msgProviderUpdated, Toast.LENGTH_SHORT).show()
+                        }
+                        isDetecting = false
+                        onProviderAdded()
                     }
-                    onProviderAdded()
                 }
             },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp)
         ) {
-            Text(stringResource(id = R.string.btn_save_provider), fontSize = 18.sp)
+            if (isDetecting) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+            } else {
+                Text(stringResource(id = R.string.btn_save_provider), fontSize = 18.sp)
+            }
         }
         }
     }

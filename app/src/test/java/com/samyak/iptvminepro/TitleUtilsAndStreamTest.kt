@@ -114,16 +114,12 @@ class TitleUtilsAndStreamTest {
 
     @Test
     fun testVegaRepoJsDelivrMirrorFallback() {
-        val mirror = com.samyak.iptvminepro.provider.VegaProviderRunner.toJsDelivrMirror(
-            "https://raw.githubusercontent.com/vega-org/vega-providers/refs/heads/main"
-        )
-        assertEquals("https://cdn.jsdelivr.net/gh/vega-org/vega-providers@main", mirror)
+        val sampleRepo = "https://raw.githubusercontent.com/example-org/custom-providers/refs/heads/main"
+        val mirror = com.samyak.iptvminepro.provider.VegaProviderRunner.toJsDelivrMirror(sampleRepo)
+        assertEquals("https://cdn.jsdelivr.net/gh/example-org/custom-providers@main", mirror)
 
-        val urls = com.samyak.iptvminepro.provider.VegaProviderRunner.buildRepoUrlsFromResolved(
-            com.samyak.iptvminepro.provider.VegaProviderRunner.DEFAULT_VEGA_REPO
-        )
-        assertTrue(urls.contains("https://raw.githubusercontent.com/vega-org/vega-providers/refs/heads/main"))
-        assertTrue(urls.contains("https://cdn.jsdelivr.net/gh/vega-org/vega-providers@main"))
-        assertTrue(urls.contains("https://cdn.jsdelivr.net/gh/himanshu8443/vega-providers@main"))
+        val urls = com.samyak.iptvminepro.provider.VegaProviderRunner.buildRepoUrlsFromResolved(sampleRepo)
+        assertTrue(urls.contains(sampleRepo))
+        assertTrue(urls.contains("https://cdn.jsdelivr.net/gh/example-org/custom-providers@main"))
     }
 }

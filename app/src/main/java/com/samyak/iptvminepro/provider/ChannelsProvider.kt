@@ -705,6 +705,10 @@ class ChannelsProvider(application: Application) : AndroidViewModel(application)
     private fun parseJSONFile(jsonText: String): List<Channel> {
         val channelsList = ArrayList<Channel>()
         try {
+            if (ProviderDetectionEngine.isVodScraperMapJson(jsonText)) {
+                Log.w(TAG, "Skipping JSON parse as IPTV channels — payload is a VOD scraper map")
+                return channelsList
+            }
             val trimmed = jsonText.trim()
             val root: Any = if (trimmed.startsWith("[")) JSONArray(trimmed) else JSONObject(trimmed)
 

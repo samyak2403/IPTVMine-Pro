@@ -111,25 +111,50 @@ class VegaProviderRunner(private val context: Context) {
         private const val TAG = "VegaProviderRunner"
         private const val CHROME_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        const val DEFAULT_VEGA_REPO = "https://raw.githubusercontent.com/vega-org/vega-providers/refs/heads/main"
-        const val FALLBACK_VEGA_REPO = "https://raw.githubusercontent.com/himanshu8443/vega-providers/refs/heads/main"
     }
 
     private var baseUrls = mutableMapOf<String, String>()
     private var baseUrlsFetched = false
     private val baseUrlsLock = Any()
 
+    private fun activeVegaProviderUrls(): List<String> = try {
+        ProviderRepository(context).getProviders()
+            .filter { it.isActive && it.safeType == ProviderType.VEGA }
+            .map { it.url.trim() }
+            .filter { it.isNotBlank() }
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    private fun firstActiveVegaRepoUrl(): String =
+        activeVegaProviderUrls().firstOrNull().orEmpty()
+
+    private fun buildBaseUrlCandidateSources(): List<String> {
+        val sources = linkedSetOf<String>()
+        for (rawUrl in activeVegaProviderUrls()) {
+            val lowerPath = rawUrl.lowercase().substringBefore("?").substringBefore("#")
+            if (lowerPath.endsWith(".json")) {
+                sources.add(rawUrl)
+            } else {
+                val repo = resolveRepoUrl(rawUrl).removeSuffix("/")
+                if (repo.isNotBlank()) {
+                    sources.add("$repo/urls.json")
+                    sources.add("$repo/modflix.json")
+                    sources.add("$repo/movies.json")
+                }
+            }
+        }
+        return sources.toList()
+    }
+
     private fun ensureBaseUrlsFetched() {
         if (baseUrlsFetched) return
         synchronized(baseUrlsLock) {
             if (baseUrlsFetched) return
-            val modflixSources = listOf(
-                "https://raw.githubusercontent.com/vega-org/vega-providers/refs/heads/main/urls.json",
-                "https://raw.githubusercontent.com/himanshu8443/vega-providers/refs/heads/main/modflix.json",
-                "https://himanshu8443.github.io/providers/modflix.json"
-            )
+            val sources = buildBaseUrlCandidateSources()
+            if (sources.isEmpty()) return
             var loaded = false
-            for (source in modflixSources) {
+            for (source in sources) {
                 try {
                     val request = Request.Builder().url(source).build()
                     httpClient.newCall(request).execute().use { response ->
@@ -156,66 +181,11 @@ class VegaProviderRunner(private val context: Context) {
                 }
                 if (loaded) break
             }
-            if (!loaded) {
-                Log.w(TAG, "All modflix sources failed, using hardcoded fallback URLs")
+            if (loaded) {
+                baseUrlsFetched = true
+            } else {
+                Log.w(TAG, "All modflix sources failed")
             }
-            val hardcodedDefaults = mapOf(
-                "Vega" to "https://new1.vegamovies.lease",
-                "vegamovies" to "https://new1.vegamovies.lease",
-                "vegastream" to "https://new1.vegamovies.lease",
-                "Moviesmod" to "https://moviesmod.uk.com",
-                "Animeflix" to "https://ww3.animeflix.ltd",
-                "Topmovies" to "https://moviesleech.club",
-                "topmovies" to "https://moviesleech.club",
-                "UhdMovies" to "https://uhdmovies.us.org",
-                "uhdmovies" to "https://uhdmovies.us.org",
-                "lux" to "https://rogmovies.one",
-                "luxMovies" to "https://rogmovies.one",
-                "drive" to "https://new3.moviesdrive.beer/",
-                "multi" to "https://m1.multimovies.courses",
-                "extra" to "https://extramovies.ist",
-                "hdhub" to "https://new8.hdhub4u.cl",
-                "hdhub4u" to "https://new8.hdhub4u.cl",
-                "kat" to "https://new.katmoviehd.top",
-                "katmovies" to "https://new.katmoviehd.top",
-                "autoEmbed" to "https://autoembed.me",
-                "tokyoinsider" to "https://www.tokyoinsider.com",
-                "primewire" to "https://primewire.pw",
-                "rive" to "https://rivestream.live",
-                "kissKh" to "https://kisskh.is",
-                "showbox" to "https://www.showbox.media",
-                "protonMovies" to "https://m.protonmovies.space",
-                "filmyfly" to "https://filmyfiy.co.in",
-                "4khdhub" to "https://4khdhub.one",
-                "moviezwap" to "https://www.moviezwap.ltd/",
-                "movieBox" to "https://api6.aoneroom.com",
-                "movieBoxWeb" to "https://officialmoviebox.com",
-                "1cinevood" to "https://new1.cinevood.capital",
-                "cinevood" to "https://new1.cinevood.capital",
-                "kmmovies" to "https://kmmovies.cam",
-                "kmMovies" to "https://kmmovies.cam",
-                "zeefliz" to "https://zeefliz.club",
-                "movies4u" to "https://movies4u.cr",
-                "bolly4u" to "https://bolly4u.yoga",
-                "bollyflix" to "https://bollyflix.army",
-                "hubcloud" to "https://hubcloud.band",
-                "gofile" to "https://gofile.io",
-                "eonMovies" to "https://new4.eonmovies.click",
-                "dramacool" to "https://asianc.id",
-                "asianc" to "https://asianc.id",
-                "cinemaLuxe" to "https://cinemalux.cyou",
-                "anikoto" to "https://anikototv.to",
-                "kickAssAnime" to "https://kaa.lt",
-                "animesalt" to "https://animesalt.in",
-                "animeworld" to "https://watchanimeworld.one",
-                "movielinkdb" to "https://ex5wfv.movielinkbd.li",
-                "movielinkbd" to "https://ex5wfv.movielinkbd.li",
-                "skymovieshd" to "https://new1.skymovieshd.clinic"
-            )
-            for ((k, v) in hardcodedDefaults) {
-                if (!baseUrls.containsKey(k)) baseUrls[k] = v
-            }
-            baseUrlsFetched = true
         }
     }
 
@@ -410,10 +380,7 @@ class VegaProviderRunner(private val context: Context) {
 
     fun resolveRepoUrl(input: String): String {
         var trimmed = input.trim().removeSuffix("/")
-        if (trimmed.isBlank() || trimmed.equals("vega", ignoreCase = true) || trimmed.equals("@vega", ignoreCase = true) ||
-            trimmed.equals("vega-org", ignoreCase = true) || trimmed.equals("@vega-org", ignoreCase = true)) {
-            return DEFAULT_VEGA_REPO
-        }
+        if (trimmed.isBlank()) return ""
 
         if (!trimmed.startsWith("http://", ignoreCase = true) && !trimmed.startsWith("https://", ignoreCase = true)) {
             if (trimmed.startsWith("github.com/", ignoreCase = true) || trimmed.startsWith("raw.githubusercontent.com/", ignoreCase = true)) {
@@ -1369,7 +1336,11 @@ class VegaProviderRunner(private val context: Context) {
 
     private suspend fun loadScraperInternal(repoUrl: String, providerValue: String) {
         val escapedProviderValue = providerValue.replace("\\", "\\\\").replace("'", "\\'")
-        val resolvedRepo = resolveRepoUrl(repoUrl).ifBlank { DEFAULT_VEGA_REPO }
+        val resolvedRepo = resolveRepoUrl(repoUrl).ifBlank { resolveRepoUrl(firstActiveVegaRepoUrl()) }
+        if (resolvedRepo.isBlank()) {
+            Log.w(TAG, "No Vega repository URL configured for $providerValue")
+            return
+        }
         if (loadedScrapers.contains("${resolvedRepo}::${providerValue}")) {
             val isActuallyLoaded = try {
                 val check = evalJsAsync("""
@@ -1403,11 +1374,7 @@ class VegaProviderRunner(private val context: Context) {
             window.providerContext.providerValue = '$escapedProviderValue';
         """.trimIndent())
         
-        val reposToTry = linkedSetOf(
-            resolvedRepo,
-            DEFAULT_VEGA_REPO,
-            FALLBACK_VEGA_REPO
-        )
+        val reposToTry = listOf(resolvedRepo)
         
         val modules = listOf("catalog", "posts", "meta", "stream", "episodes")
         for (module in modules) {
@@ -1501,12 +1468,8 @@ class VegaProviderRunner(private val context: Context) {
     }
 
     suspend fun fetchManifest(repoUrl: String): List<VegaProvider> {
-        val resolvedRepo = resolveRepoUrl(repoUrl).ifBlank { DEFAULT_VEGA_REPO }
-        val reposToTry = linkedSetOf(
-            resolvedRepo,
-            DEFAULT_VEGA_REPO,
-            FALLBACK_VEGA_REPO
-        )
+        val resolvedRepo = resolveRepoUrl(repoUrl).ifBlank { resolveRepoUrl(firstActiveVegaRepoUrl()) }
+        val reposToTry = listOf(resolvedRepo)
 
         var lastException: Exception? = null
         for (repo in reposToTry) {
@@ -2038,7 +2001,7 @@ class VegaProviderRunner(private val context: Context) {
 
         // Auto-recovery retry: if still empty, re-inject/reload the scraper and retry once
         if (streams.isEmpty()) {
-            val resolvedRepo = resolveRepoUrl(repoUrl).ifBlank { DEFAULT_VEGA_REPO }
+            val resolvedRepo = resolveRepoUrl(repoUrl).ifBlank { resolveRepoUrl(firstActiveVegaRepoUrl()) }
             Log.w(TAG, "No streams found on first pass for $providerValue. Evicting module cache and retrying...")
             loadedScrapers.remove("${resolvedRepo}::${providerValue}")
             try {

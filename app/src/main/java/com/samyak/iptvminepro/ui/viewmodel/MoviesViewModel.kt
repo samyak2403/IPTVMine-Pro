@@ -32,7 +32,7 @@ class MoviesViewModel(application: Application) : AndroidViewModel(application) 
     val vegaProvidersList: List<Provider>
         get() = repository.getProviders().filter { it.isActive && it.safeType == ProviderType.VEGA }
 
-    private val _selectedProvider = MutableStateFlow<Provider?>(repository.getProviders().firstOrNull { it.isActive && it.safeType == ProviderType.VEGA })
+    private val _selectedProvider = MutableStateFlow<Provider?>(repository.getPreferredActiveVegaProvider())
     val selectedProvider: StateFlow<Provider?> = _selectedProvider.asStateFlow()
 
     // ── Scrapers ───────────────────────────────────────────────────────────────
@@ -103,8 +103,9 @@ class MoviesViewModel(application: Application) : AndroidViewModel(application) 
      */
     fun refreshProvidersAndInit() {
         val activeProviders = vegaProvidersList
-        if (_selectedProvider.value == null && activeProviders.isNotEmpty()) {
-            _selectedProvider.value = activeProviders.firstOrNull()
+        val preferred = repository.getPreferredActiveVegaProvider(activeProviders)
+        if (preferred != null && _selectedProvider.value?.url != preferred.url) {
+            _selectedProvider.value = preferred
             dataLoaded = false
         }
         if (_categories.value.isEmpty()) {
@@ -184,6 +185,7 @@ class MoviesViewModel(application: Application) : AndroidViewModel(application) 
     fun selectProvider(provider: Provider) {
         if (_selectedProvider.value?.url == provider.url) return
         _selectedProvider.value = provider
+        repository.setSelectedVegaProviderUrl(provider.url)
         _searchQuery.value = ""
         dataLoaded = false       // Allow re-init for new provider
         initIfNeeded()

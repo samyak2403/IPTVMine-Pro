@@ -13,6 +13,14 @@ class ProviderRepository(context: Context) {
 
     companion object {
         private const val KEY_PROVIDERS = "saved_providers"
+        private const val KEY_SELECTED_VEGA_PROVIDER_URL = "selected_vega_provider_url"
+    }
+
+    fun getSelectedVegaProviderUrl(): String =
+        prefs.getString(KEY_SELECTED_VEGA_PROVIDER_URL, "") ?: ""
+
+    fun setSelectedVegaProviderUrl(url: String) {
+        prefs.edit().putString(KEY_SELECTED_VEGA_PROVIDER_URL, url).apply()
     }
 
     fun getProviders(): List<Provider> {

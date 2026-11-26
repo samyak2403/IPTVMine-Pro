@@ -80,7 +80,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isMoviesLoading.value = true
             try {
-                val provider = activeVegaProviders.first()
+                val provider = providerRepo.getPreferredActiveVegaProvider(activeVegaProviders)
+                    ?: activeVegaProviders.first()
                 _selectedProvider.value = provider
 
                 val manifest = runner.fetchManifest(provider.url)

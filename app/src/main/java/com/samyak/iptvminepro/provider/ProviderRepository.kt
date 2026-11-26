@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.samyak.iptvminepro.model.Provider
+import com.samyak.iptvminepro.model.ProviderType
 
 class ProviderRepository(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("iptv_providers", Context.MODE_PRIVATE)
@@ -12,6 +13,22 @@ class ProviderRepository(context: Context) {
 
     companion object {
         private const val KEY_PROVIDERS = "saved_providers"
+        private const val KEY_SELECTED_VEGA_PROVIDER_URL = "selected_vega_provider_url"
+    }
+
+    fun getSelectedVegaProviderUrl(): String =
+        prefs.getString(KEY_SELECTED_VEGA_PROVIDER_URL, "") ?: ""
+
+    fun setSelectedVegaProviderUrl(url: String) {
+        prefs.edit().putString(KEY_SELECTED_VEGA_PROVIDER_URL, url).apply()
+    }
+
+    fun getPreferredActiveVegaProvider(
+        activeProviders: List<Provider> = getProviders().filter { it.isActive && it.safeType == ProviderType.VEGA }
+    ): Provider? {
+        if (activeProviders.isEmpty()) return null
+        val savedUrl = getSelectedVegaProviderUrl()
+        return activeProviders.firstOrNull { it.url == savedUrl } ?: activeProviders.firstOrNull()
     }
 
     fun getProviders(): List<Provider> {
