@@ -50,6 +50,46 @@ class TitleUtilsAndStreamTest {
     }
 
     @Test
+    fun testMojibakeRepairInCleanTitle() {
+        assertEquals(
+            "Season 2 \u2022 2160p \u2022 WEB-DL \u2022 H265 \u2022 DoVi-HDR",
+            TitleUtils.cleanTitle("Season 2 \u00E2\u0080\u00A2 2160p \u00E2\u0080\u00A2 WEB-DL \u00E2\u0080\u00A2 H265 \u00E2\u0080\u00A2 DoVi-HDR")
+        )
+        assertEquals(
+            "Season 1 \u2022 Hindi-English \u2022 480p",
+            TitleUtils.cleanTitle("Season 1 â¢ Hindi-English â¢ 480p")
+        )
+    }
+
+    @Test
+    fun testExtractEpisodeBadgeMeta() {
+        val stickMeta = TitleUtils.extractEpisodeBadgeMeta(
+            episodeTitle = "Episode-05 6.39 GB",
+            seasonTitle = "Season 2 â¢ 2160p â¢ WEB-DL â¢ H265 â¢ DoVi-HDR"
+        )
+        assertEquals("Episode-05", stickMeta.displayTitle)
+        assertEquals("2160p", stickMeta.qualityBadge)
+        assertEquals("S02", stickMeta.seasonLabel)
+        assertEquals("EP 05", stickMeta.episodeLabel)
+        assertEquals(2, stickMeta.seasonNumber)
+        assertEquals(5, stickMeta.episodeNumber)
+        assertEquals("6.39 GB", stickMeta.bottomRightTag)
+
+        val structuredMeta = TitleUtils.extractEpisodeBadgeMeta(
+            episodeTitle = "The Sunset Journey",
+            seasonTitle = "Season 1",
+            rawSeasonNumber = "1",
+            rawEpisodeNumber = "4",
+            rawDuration = "42:18"
+        )
+        assertEquals("The Sunset Journey", structuredMeta.displayTitle)
+        assertEquals("HD", structuredMeta.qualityBadge)
+        assertEquals("S01", structuredMeta.seasonLabel)
+        assertEquals("EP 04", structuredMeta.episodeLabel)
+        assertEquals("42:18", structuredMeta.bottomRightTag)
+    }
+
+    @Test
     fun testNuxtRegexExtractionPattern() {
         val sampleHtml = """
             <!DOCTYPE html>

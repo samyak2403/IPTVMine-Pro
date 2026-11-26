@@ -3,19 +3,30 @@ package com.samyak.iptvminepro.ui.screens.movies
 import android.app.Activity
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.ArrowDropUp
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -32,6 +44,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
 import androidx.core.view.WindowCompat
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
@@ -42,7 +55,12 @@ import com.samyak.iptvminepro.provider.VegaStreamFallbackEngine
 import com.samyak.player.PlayerActivity
 import com.samyak.player.EpisodeItem
 import com.samyak.player.StreamOption
+import com.samyak.iptvminepro.ui.theme.ColorPrimary
+import com.samyak.iptvminepro.ui.theme.ColorPrimaryDark
 import com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme
+import com.samyak.iptvminepro.utils.EpisodeBadgeMeta
+import com.samyak.iptvminepro.utils.EpisodeThumbnailResolver
+import com.samyak.iptvminepro.utils.TitleUtils
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -114,12 +132,13 @@ fun MovieDetailScreen(
     var episodesMap by remember { mutableStateOf<Map<String, List<VegaLink>>>(emptyMap()) }
     var loadingEpisodesLink by remember { mutableStateOf<String?>(null) }
 
-    // Stream resolution state (Note: streamsToSelect is inactive — auto-play uses streams[0])
+    // Stream resolution state
     var streamsToSelect by remember { mutableStateOf<List<VegaStream>?>(null) }
     var streamsToDownload by remember { mutableStateOf<List<VegaStream>?>(null) }
     var resolvingStream by remember { mutableStateOf(false) }
     var streamStatusText by remember { mutableStateOf("Resolving stream links...") }
     var selectedItemTitle by remember { mutableStateOf("") }
+    var selectedEpisodeContext by remember { mutableStateOf<Pair<ArrayList<EpisodeItem>, Int>?>(null) }
     var streamResolutionJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     // Expanded states for season categories
@@ -377,6 +396,47 @@ fun MovieDetailScreen(
         }
     }
 
+    val onSelectQualityForTarget: (
+        targetLink: String,
+        targetType: String,
+        title: String,
+        playlistContext: Pair<ArrayList<EpisodeItem>, Int>?
+    ) -> Unit = { targetLink, targetType, title, playlistContext ->
+        streamResolutionJob?.cancel()
+        streamResolutionJob = scope.launch {
+            resolvingStream = true
+            streamStatusText = "Loading available servers..."
+            try {
+                val fallbackRes = VegaStreamFallbackEngine.resolveWithAutoFallback(
+                    context = context,
+                    runner = runner,
+                    initialLink = targetLink,
+                    initialType = getResolveType(targetType),
+                    itemTitle = title,
+                    movieTitle = meta?.title ?: title,
+                    currentMeta = meta,
+                    currentProviderUrl = providerUrl,
+                    currentScraperValue = scraperValue,
+                    onStatusUpdate = { status -> streamStatusText = status }
+                )
+                val streams = fallbackRes?.allStreams.orEmpty()
+                if (streams.isEmpty()) {
+                    Toast.makeText(context, "No stream servers found", Toast.LENGTH_SHORT).show()
+                } else {
+                    selectedItemTitle = title
+                    selectedEpisodeContext = playlistContext
+                    streamsToSelect = streams
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Toast.makeText(context, "Error loading servers: ${e.message}", Toast.LENGTH_SHORT).show()
+            } finally {
+                resolvingStream = false
+            }
+        }
+    }
+
 
     val isBlackTheme = LocalIsBlackTheme.current
 
@@ -459,44 +519,11 @@ fun MovieDetailScreen(
             val scrollState = rememberScrollState()
 
             val resolvedImageUrl = remember(movieMeta.image, cleanLink) {
-                val img = movieMeta.image
-                if (img.startsWith("//")) {
-                    "https:$img"
-                } else if (img.startsWith("/")) {
-                    try {
-                        val uri = android.net.Uri.parse(cleanLink)
-                        val host = uri.host
-                        if (host != null) {
-                            "https://$host$img"
-                        } else {
-                            img
-                        }
-                    } catch (e: Exception) {
-                        img
-                    }
-                } else {
-                    img
-                }
+                resolveMediaImageUrl(movieMeta.image, cleanLink)
             }
 
             val refererHeader = remember(resolvedImageUrl) {
-                try {
-                    val uri = android.net.Uri.parse(resolvedImageUrl)
-                    val host = uri.host
-                    if (host != null) {
-                        val parts = host.split(".")
-                        if (parts.size >= 2) {
-                            val domain = parts.takeLast(2).joinToString(".")
-                            "https://$domain/"
-                        } else {
-                            "https://$host/"
-                        }
-                    } else {
-                        null
-                    }
-                } catch (e: Exception) {
-                    null
-                }
+                extractImageReferer(resolvedImageUrl)
             }
 
             Column(
@@ -682,6 +709,18 @@ fun MovieDetailScreen(
                             } == true
                         }
 
+                    var episodeThumbnails by remember(cleanLink) {
+                        mutableStateOf<Map<Pair<Int, Int>, String>>(emptyMap())
+                    }
+                    LaunchedEffect(movieMeta.title, movieMeta.imdbId, isSeries) {
+                        if (isSeries) {
+                            episodeThumbnails = EpisodeThumbnailResolver.fetchEpisodeThumbnails(
+                                imdbId = movieMeta.imdbId,
+                                seriesTitle = movieMeta.title
+                            )
+                        }
+                    }
+
                     Text(
                         text = if (isSeries) "Seasons & Episodes" else "Stream / Download Options",
                         fontSize = 16.sp,
@@ -700,14 +739,20 @@ fun MovieDetailScreen(
                     } else {
                         movieMeta.linkList.forEach { vegaLink ->
                             val isExpanded = expandedLinks.contains(vegaLink.title)
-                            
+                            val chevronRotation by animateFloatAsState(
+                                targetValue = if (isExpanded) 180f else 0f,
+                                animationSpec = tween(durationMillis = 180, easing = EmilEaseOut),
+                                label = "seasonChevron"
+                            )
+
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(bottom = 12.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = Color(0xFF16151D)
+                                    containerColor = if (isBlackTheme) Color(0xFF0E0E11) else Color(0xFF16151D)
                                 ),
+                                border = BorderStroke(0.75.dp, Color.White.copy(alpha = 0.08f)),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
                                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -733,34 +778,43 @@ fun MovieDetailScreen(
                                                     }
                                                 }
                                             }
-                                            .padding(16.dp),
+                                            .padding(horizontal = 14.dp, vertical = 14.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Text(
-                                            text = vegaLink.title,
+                                            text = TitleUtils.cleanTitle(vegaLink.title),
                                             fontSize = 14.sp,
                                             fontWeight = FontWeight.SemiBold,
-                                            color = Color.White,
+                                            color = Color(0xFFF3F4F6),
                                             modifier = Modifier.weight(1f)
                                         )
-                                        
+
                                         if (vegaLink.episodesLink != null || (vegaLink.directLinks != null && vegaLink.directLinks.isNotEmpty())) {
                                             Icon(
-                                                imageVector = if (isExpanded) Icons.Filled.ArrowDropUp else Icons.Filled.ArrowDropDown,
+                                                imageVector = Icons.Filled.ArrowDropDown,
                                                 contentDescription = if (isExpanded) "Collapse" else "Expand",
-                                                tint = Color(0xFF26A69A)
+                                                tint = ColorPrimary,
+                                                modifier = Modifier.graphicsLayer {
+                                                    rotationZ = chevronRotation
+                                                }
                                             )
                                         }
                                     }
 
                                     // Expanded content (Direct Links or Episodes)
-                                    AnimatedVisibility(visible = isExpanded) {
+                                    AnimatedVisibility(
+                                        visible = isExpanded,
+                                        enter = expandVertically(tween(200, easing = EmilEaseOut)) +
+                                            fadeIn(tween(180, easing = EmilEaseOut)),
+                                        exit = shrinkVertically(tween(150, easing = EmilEaseOut)) +
+                                            fadeOut(tween(120, easing = EmilEaseOut))
+                                    ) {
                                         Column(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .background(Color(0xFF1B1A24))
-                                                .padding(16.dp)
+                                                .background(if (isBlackTheme) Color(0xFF08080A) else Color(0xFF111116))
+                                                .padding(10.dp)
                                         ) {
                                             // 1. If it's a TV show with episode link
                                             if (vegaLink.episodesLink != null) {
@@ -786,247 +840,223 @@ fun MovieDetailScreen(
                                                         !titleLower.contains("telegram") &&
                                                         !titleLower.contains("click")
                                                     }
-                                                    if (episodes == null || episodes.isEmpty()) {
+                                                    if (episodes.isNullOrEmpty()) {
                                                         Text("No episodes loaded.", color = Color.Gray, fontSize = 13.sp)
                                                     } else {
-                                                        val episodePlaylist = buildEpisodePlaylist(episodes, vegaLink.title, getResolveType)
-                                                        episodes.forEach { episodeLink ->
-                                                            val hasEpLink = episodeLink.episodesLink != null
-                                                            val hasDirectLinks = episodeLink.directLinks != null && episodeLink.directLinks.isNotEmpty()
-                                                            val episodeTargetLink = if (hasDirectLinks) episodeLink.directLinks!![0].link else episodeLink.episodesLink
-                                                            val playEpisode = {
-                                                                val idx = episodePlaylist.indexOfFirst { it.link == episodeTargetLink }
-                                                                playEpisodeFromPlaylist(episodePlaylist, if (idx >= 0) idx else 0)
-                                                            }
-                                                            Column(
-                                                                modifier = Modifier
-                                                                    .fillMaxWidth()
-                                                                    .padding(bottom = 12.dp)
-                                                            ) {
-                                                                Row(
-                                                                    modifier = Modifier
-                                                                        .fillMaxWidth()
-                                                                        .clickable(enabled = hasEpLink || hasDirectLinks) {
-                                                                            playEpisode()
-                                                                        }
-                                                                        .padding(vertical = 6.dp),
-                                                                    verticalAlignment = Alignment.CenterVertically,
-                                                                    horizontalArrangement = Arrangement.SpaceBetween
-                                                                ) {
-                                                                    Text(
-                                                                        text = episodeLink.title,
-                                                                        fontSize = 13.sp,
-                                                                        fontWeight = FontWeight.Bold,
-                                                                        color = Color(0xFF26A69A),
-                                                                        modifier = Modifier.weight(1f).padding(end = 8.dp)
-                                                                    )
-                                                                    
-                                                                    if (hasEpLink || hasDirectLinks) {
-                                                                        Row(
-                                                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                                            verticalAlignment = Alignment.CenterVertically
-                                                                        ) {
-                                                                            Box(
-                                                                                contentAlignment = Alignment.Center,
-                                                                                modifier = Modifier
-                                                                                    .size(32.dp)
-                                                                                    .background(Color(0xFF26A69A).copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                                                                                    .clip(RoundedCornerShape(16.dp))
-                                                                                    .clickable {
-                                                                                        playEpisode()
-                                                                                    }
-                                                                            ) {
-                                                                                Icon(
-                                                                                    imageVector = Icons.Filled.PlayArrow,
-                                                                                    contentDescription = "Play Episode",
-                                                                                    tint = Color(0xFF26A69A),
-                                                                                    modifier = Modifier.size(18.dp)
-                                                                                )
-                                                                            }
+                                                        val cleanSeasonTitle = TitleUtils.cleanTitle(vegaLink.title)
+                                                        val episodePlaylist = buildEpisodePlaylist(episodes, cleanSeasonTitle, getResolveType)
+                                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                            episodes.forEach { episodeLink ->
+                                                                val firstDirect = episodeLink.directLinks?.firstOrNull()
+                                                                val hasEpLink = episodeLink.episodesLink != null
+                                                                val hasDirectLinks = firstDirect != null
+                                                                val episodeTargetLink = firstDirect?.link ?: episodeLink.episodesLink
+                                                                val episodeTargetType = firstDirect?.type ?: "series"
+                                                                val epIdx = episodePlaylist.indexOfFirst { it.link == episodeTargetLink }.coerceAtLeast(0)
+                                                                val playEpisode = {
+                                                                    playEpisodeFromPlaylist(episodePlaylist, epIdx)
+                                                                }
+                                                                val cleanEpTitle = TitleUtils.cleanTitle(episodeLink.title)
+                                                                val epActionTitle = "$cleanSeasonTitle - $cleanEpTitle"
+                                                                val badgeMeta = TitleUtils.extractEpisodeBadgeMeta(
+                                                                    episodeTitle = episodeLink.title,
+                                                                    seasonTitle = cleanSeasonTitle,
+                                                                    rawSeasonNumber = episodeLink.seasonNumber ?: vegaLink.seasonNumber,
+                                                                    rawEpisodeNumber = episodeLink.episodeNumber,
+                                                                    rawDuration = episodeLink.duration,
+                                                                    fallbackQualitySource = firstDirect?.title ?: ""
+                                                                )
+                                                                val matchedEpisodeThumb = if (badgeMeta.seasonNumber != null && badgeMeta.episodeNumber != null) {
+                                                                    episodeThumbnails[badgeMeta.seasonNumber to badgeMeta.episodeNumber]
+                                                                } else null
+                                                                val thumbUrl = resolveMediaImageUrl(
+                                                                    episodeLink.image?.takeIf { it.isNotBlank() }
+                                                                        ?: firstDirect?.image?.takeIf { it.isNotBlank() }
+                                                                        ?: matchedEpisodeThumb?.takeIf { it.isNotBlank() }
+                                                                        ?: movieMeta.image,
+                                                                    cleanLink
+                                                                )
 
-                                                                            Box(
-                                                                                contentAlignment = Alignment.Center,
-                                                                                modifier = Modifier
-                                                                                    .size(32.dp)
-                                                                                    .background(Color(0xFF26A69A).copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                                                                                    .clip(RoundedCornerShape(16.dp))
-                                                                                    .clickable {
-                                                                                        if (hasDirectLinks) {
-                                                                                            val dLinks = episodeLink.directLinks!!
-                                                                                            onDownloadLinkClick(dLinks[0], "${vegaLink.title} - ${episodeLink.title} (${dLinks[0].title})")
-                                                                                        } else if (hasEpLink) {
-                                                                                            streamResolutionJob?.cancel()
-                                                                                            streamResolutionJob = scope.launch {
-                                                                                                resolvingStream = true
-                                                                                                streamStatusText = "Resolving stream links..."
-                                                                                                try {
-                                                                                                    val epResolveType = getResolveType("series")
-                                                                                                    val fallbackRes = VegaStreamFallbackEngine.resolveWithAutoFallback(
-                                                                                                        context = context,
-                                                                                                        runner = runner,
-                                                                                                        initialLink = episodeLink.episodesLink!!,
-                                                                                                        initialType = epResolveType,
-                                                                                                        itemTitle = "${vegaLink.title} - ${episodeLink.title}",
-                                                                                                        movieTitle = meta?.title ?: vegaLink.title,
-                                                                                                        currentMeta = meta,
-                                                                                                        currentProviderUrl = providerUrl,
-                                                                                                        currentScraperValue = scraperValue,
-                                                                                                        onStatusUpdate = { status -> streamStatusText = status }
-                                                                                                    )
-                                                                                                    val streams = fallbackRes?.allStreams ?: emptyList()
-                                                                                                    if (streams.isEmpty()) {
-                                                                                                        Toast.makeText(context, "No stream links found for download", Toast.LENGTH_SHORT).show()
-                                                                                                    } else if (streams.size == 1) {
-                                                                                                         downloadWithPermissionCheck(
-                                                                                                             streams[0].link,
-                                                                                                             "${vegaLink.title} - ${episodeLink.title} - ${streams[0].quality}",
-                                                                                                             streams[0].headers
-                                                                                                         )
-                                                                                                    } else {
-                                                                                                        selectedItemTitle = "${vegaLink.title} - ${episodeLink.title}"
-                                                                                                        streamsToDownload = streams
-                                                                                                    }
-                                                                                                } catch (e: kotlinx.coroutines.CancellationException) {
-                                                                                                    throw e
-                                                                                                } catch (e: Exception) {
-                                                                                                    Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
-                                                                                                } finally {
-                                                                                                    resolvingStream = false
-                                                                                                }
-                                                                                            }
-                                                                                        }
-                                                                                    }
-                                                                            ) {
-                                                                                Icon(
-                                                                                    imageVector = Icons.Filled.Download,
-                                                                                    contentDescription = "Download Episode",
-                                                                                    tint = Color(0xFF26A69A),
-                                                                                    modifier = Modifier.size(18.dp)
-                                                                                )
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                                
-                                                                if (episodeLink.directLinks != null && episodeLink.directLinks.isNotEmpty()) {
-                                                                    Spacer(modifier = Modifier.height(6.dp))
-                                                                    FlowRow(
-                                                                        modifier = Modifier.fillMaxWidth(),
-                                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                                                    ) {
-                                                                        episodeLink.directLinks.forEach { directLink ->
-                                                                            Row(
-                                                                                verticalAlignment = Alignment.CenterVertically,
-                                                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                                            ) {
-                                                                                Button(
-                                                                                    onClick = { onDirectLinkClick(directLink, "${vegaLink.title} - ${episodeLink.title} (${directLink.title})") },
-                                                                                    colors = ButtonDefaults.buttonColors(
-                                                                                        containerColor = Color(0xFF2C2A36),
-                                                                                        contentColor = Color.White
-                                                                                    ),
-                                                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                                                                    shape = RoundedCornerShape(6.dp),
-                                                                                    modifier = Modifier.height(32.dp)
-                                                                                ) {
-                                                                                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
-                                                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                                                    Text(directLink.title, fontSize = 11.sp)
-                                                                                }
-                                                                                Box(
-                                                                                    contentAlignment = Alignment.Center,
-                                                                                    modifier = Modifier
-                                                                                        .size(32.dp)
-                                                                                        .background(Color(0xFF2C2A36).copy(alpha = 0.5f), RoundedCornerShape(6.dp))
-                                                                                        .clip(RoundedCornerShape(6.dp))
-                                                                                        .clickable { onDownloadLinkClick(directLink, "${vegaLink.title} - ${episodeLink.title} (${directLink.title})") }
-                                                                                ) {
-                                                                                    Icon(
-                                                                                        imageVector = Icons.Filled.Download,
-                                                                                        contentDescription = "Download",
-                                                                                        tint = Color(0xFF26A69A),
-                                                                                        modifier = Modifier.size(16.dp)
+                                                                MobileEpisodeCard(
+                                                                    meta = badgeMeta,
+                                                                    dateText = episodeLink.date,
+                                                                    thumbnailUrl = thumbUrl,
+                                                                    isBlackTheme = isBlackTheme,
+                                                                    canPlay = hasEpLink || hasDirectLinks,
+                                                                    canDownload = hasEpLink || hasDirectLinks,
+                                                                    extraDirectLinks = episodeLink.directLinks.orEmpty(),
+                                                                    onPlay = playEpisode,
+                                                                    onDownload = {
+                                                                        if (firstDirect != null) {
+                                                                            onDownloadLinkClick(firstDirect, "$epActionTitle (${TitleUtils.cleanTitle(firstDirect.title)})")
+                                                                        } else if (episodeLink.episodesLink != null) {
+                                                                            val epLinkForDownload = episodeLink.episodesLink
+                                                                            streamResolutionJob?.cancel()
+                                                                            streamResolutionJob = scope.launch {
+                                                                                resolvingStream = true
+                                                                                streamStatusText = "Resolving stream links..."
+                                                                                try {
+                                                                                    val fallbackRes = VegaStreamFallbackEngine.resolveWithAutoFallback(
+                                                                                        context = context,
+                                                                                        runner = runner,
+                                                                                        initialLink = epLinkForDownload,
+                                                                                        initialType = getResolveType("series"),
+                                                                                        itemTitle = epActionTitle,
+                                                                                        movieTitle = meta?.title ?: cleanSeasonTitle,
+                                                                                        currentMeta = meta,
+                                                                                        currentProviderUrl = providerUrl,
+                                                                                        currentScraperValue = scraperValue,
+                                                                                        onStatusUpdate = { status -> streamStatusText = status }
                                                                                     )
+                                                                                    val streams = fallbackRes?.allStreams.orEmpty()
+                                                                                    if (streams.isEmpty()) {
+                                                                                        Toast.makeText(context, "No stream links found for download", Toast.LENGTH_SHORT).show()
+                                                                                    } else if (streams.size == 1) {
+                                                                                        downloadWithPermissionCheck(
+                                                                                            streams[0].link,
+                                                                                            "$epActionTitle - ${streams[0].quality}",
+                                                                                            streams[0].headers
+                                                                                        )
+                                                                                    } else {
+                                                                                        selectedItemTitle = epActionTitle
+                                                                                        streamsToDownload = streams
+                                                                                    }
+                                                                                } catch (e: kotlinx.coroutines.CancellationException) {
+                                                                                    throw e
+                                                                                } catch (e: Exception) {
+                                                                                    Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                                                } finally {
+                                                                                    resolvingStream = false
                                                                                 }
                                                                             }
                                                                         }
+                                                                    },
+                                                                    onSelectServer = episodeTargetLink?.let { target ->
+                                                                        {
+                                                                            onSelectQualityForTarget(
+                                                                                target,
+                                                                                episodeTargetType,
+                                                                                epActionTitle,
+                                                                                Pair(episodePlaylist, epIdx)
+                                                                            )
+                                                                        }
+                                                                    },
+                                                                    onPlayDirectLink = { directLink ->
+                                                                        onDirectLinkClick(directLink, "$epActionTitle (${TitleUtils.cleanTitle(directLink.title)})")
+                                                                    },
+                                                                    onDownloadDirectLink = { directLink ->
+                                                                        onDownloadLinkClick(directLink, "$epActionTitle (${TitleUtils.cleanTitle(directLink.title)})")
                                                                     }
-                                                                } else if (episodeLink.episodesLink != null) {
-                                                                    Spacer(modifier = Modifier.height(4.dp))
-                                                                    Text("Stream available. Tap here or the play button to resolve & play.", color = Color(0xFF26A69A).copy(alpha = 0.8f), fontSize = 12.sp)
-                                                                } else {
-                                                                    Spacer(modifier = Modifier.height(4.dp))
-                                                                    Text("No streaming links found for this episode", color = Color.Gray, fontSize = 12.sp)
-                                                                }
-                                                                Spacer(modifier = Modifier.height(8.dp))
-                                                                HorizontalDivider(color = Color(0xFF2C2A36))
+                                                                )
                                                             }
                                                         }
                                                     }
                                                 }
                                             }
-                                            // 2. Direct links (Movie resolutions/mirrors)
-                                            else if (vegaLink.directLinks != null && vegaLink.directLinks.isNotEmpty()) {
-                                                FlowRow(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                                ) {
-                                                    val isSeriesLinks = movieMeta.type.equals("series", ignoreCase = true) ||
-                                                        (vegaLink.directLinks.size > 1 && vegaLink.directLinks.any {
-                                                            it.title.contains("episode", ignoreCase = true) ||
-                                                            it.title.contains("ep ", ignoreCase = true) ||
-                                                            Regex("(?i)\\bep?\\s*\\d{1,3}\\b").containsMatchIn(it.title)
-                                                        })
-                                                    val seasonPlaylist = if (isSeriesLinks) ArrayList(
+                                            // 2. Direct links (Series direct episodes OR Movie resolutions/mirrors)
+                                            else if (!vegaLink.directLinks.isNullOrEmpty()) {
+                                                val cleanSeasonTitle = TitleUtils.cleanTitle(vegaLink.title)
+                                                val isSeriesLinks = movieMeta.type.equals("series", ignoreCase = true) ||
+                                                    (vegaLink.directLinks.size > 1 && vegaLink.directLinks.any {
+                                                        it.title.contains("episode", ignoreCase = true) ||
+                                                        it.title.contains("ep ", ignoreCase = true) ||
+                                                        Regex("(?i)\\bep?\\s*\\d{1,3}\\b").containsMatchIn(it.title)
+                                                    })
+                                                if (isSeriesLinks) {
+                                                    val seasonPlaylist = ArrayList(
                                                         vegaLink.directLinks.map { dl ->
                                                             EpisodeItem(
-                                                                title = "${movieMeta.title} - ${vegaLink.title} (${dl.title})",
+                                                                title = "${movieMeta.title} - $cleanSeasonTitle (${TitleUtils.cleanTitle(dl.title)})",
                                                                 link = dl.link,
                                                                 type = getResolveType(dl.type)
                                                             )
                                                         }
-                                                    ) else null
-                                                    vegaLink.directLinks.forEachIndexed { dlIndex, directLink ->
-                                                        Row(
-                                                            verticalAlignment = Alignment.CenterVertically,
-                                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                        ) {
-                                                            Button(
-                                                                onClick = {
-                                                                    if (seasonPlaylist != null) {
-                                                                        playEpisodeFromPlaylist(seasonPlaylist, dlIndex)
-                                                                    } else {
-                                                                        onDirectLinkClick(directLink, "${movieMeta.title} - ${vegaLink.title} (${directLink.title})")
-                                                                    }
-                                                                },
-                                                                colors = ButtonDefaults.buttonColors(
-                                                                    containerColor = Color(0xFF26A69A),
-                                                                    contentColor = Color.White
-                                                                ),
-                                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                                                shape = RoundedCornerShape(8.dp),
-                                                                modifier = Modifier.height(36.dp)
+                                                    )
+                                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        vegaLink.directLinks.forEachIndexed { dlIndex, directLink ->
+                                                            val cleanDlTitle = TitleUtils.cleanTitle(directLink.title)
+                                                            val epActionTitle = "${movieMeta.title} - $cleanSeasonTitle ($cleanDlTitle)"
+                                                            val badgeMeta = TitleUtils.extractEpisodeBadgeMeta(
+                                                                episodeTitle = directLink.title,
+                                                                seasonTitle = cleanSeasonTitle,
+                                                                rawSeasonNumber = directLink.seasonNumber ?: vegaLink.seasonNumber,
+                                                                rawEpisodeNumber = directLink.episodeNumber ?: vegaLink.episodeNumber,
+                                                                rawDuration = directLink.duration ?: vegaLink.duration
+                                                            )
+                                                            val matchedEpisodeThumb = if (badgeMeta.seasonNumber != null && badgeMeta.episodeNumber != null) {
+                                                                episodeThumbnails[badgeMeta.seasonNumber to badgeMeta.episodeNumber]
+                                                            } else null
+                                                            val thumbUrl = resolveMediaImageUrl(
+                                                                directLink.image?.takeIf { it.isNotBlank() }
+                                                                    ?: vegaLink.image?.takeIf { it.isNotBlank() }
+                                                                    ?: matchedEpisodeThumb?.takeIf { it.isNotBlank() }
+                                                                    ?: movieMeta.image,
+                                                                cleanLink
+                                                            )
+
+                                                            MobileEpisodeCard(
+                                                                meta = badgeMeta,
+                                                                dateText = directLink.date ?: vegaLink.date,
+                                                                thumbnailUrl = thumbUrl,
+                                                                isBlackTheme = isBlackTheme,
+                                                                canPlay = true,
+                                                                canDownload = true,
+                                                                onPlay = { playEpisodeFromPlaylist(seasonPlaylist, dlIndex) },
+                                                                onDownload = { onDownloadLinkClick(directLink, epActionTitle) },
+                                                                onSelectServer = {
+                                                                    onSelectQualityForTarget(
+                                                                        directLink.link,
+                                                                        directLink.type,
+                                                                        epActionTitle,
+                                                                        Pair(seasonPlaylist, dlIndex)
+                                                                    )
+                                                                }
+                                                            )
+                                                        }
+                                                    }
+                                                } else {
+                                                    FlowRow(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                                    ) {
+                                                        vegaLink.directLinks.forEach { directLink ->
+                                                            val cleanDlTitle = TitleUtils.cleanTitle(directLink.title)
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                                                             ) {
-                                                                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                                Spacer(modifier = Modifier.width(4.dp))
-                                                                Text(directLink.title, fontSize = 12.sp)
-                                                            }
-                                                            Box(
-                                                                contentAlignment = Alignment.Center,
-                                                                modifier = Modifier
-                                                                    .size(36.dp)
-                                                                    .background(Color(0xFF26A69A).copy(alpha = 0.15f), RoundedCornerShape(8.dp))
-                                                                    .clip(RoundedCornerShape(8.dp))
-                                                                    .clickable { onDownloadLinkClick(directLink, "${movieMeta.title} - ${vegaLink.title} (${directLink.title})") }
-                                                            ) {
-                                                                Icon(
-                                                                    imageVector = Icons.Filled.Download,
-                                                                    contentDescription = "Download",
-                                                                    tint = Color(0xFF26A69A),
-                                                                    modifier = Modifier.size(18.dp)
-                                                                )
+                                                                Button(
+                                                                    onClick = {
+                                                                        onDirectLinkClick(directLink, "${movieMeta.title} - $cleanSeasonTitle ($cleanDlTitle)")
+                                                                    },
+                                                                    colors = ButtonDefaults.buttonColors(
+                                                                        containerColor = Color(0xFF26A69A),
+                                                                        contentColor = Color.White
+                                                                    ),
+                                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                                                    shape = RoundedCornerShape(8.dp),
+                                                                    modifier = Modifier.height(36.dp)
+                                                                ) {
+                                                                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                                    Text(cleanDlTitle, fontSize = 12.sp)
+                                                                }
+                                                                Box(
+                                                                    contentAlignment = Alignment.Center,
+                                                                    modifier = Modifier
+                                                                        .size(36.dp)
+                                                                        .background(Color(0xFF26A69A).copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                                                        .clip(RoundedCornerShape(8.dp))
+                                                                        .clickable { onDownloadLinkClick(directLink, "${movieMeta.title} - $cleanSeasonTitle ($cleanDlTitle)") }
+                                                                ) {
+                                                                    Icon(
+                                                                        imageVector = Icons.Filled.Download,
+                                                                        contentDescription = "Download",
+                                                                        tint = Color(0xFF26A69A),
+                                                                        modifier = Modifier.size(18.dp)
+                                                                    )
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -1045,10 +1075,13 @@ fun MovieDetailScreen(
             }
         }
 
-        // Dialog for Stream Selection (INACTIVE — auto-play uses streams[0], will be removed in cleanup)
+        // Dialog for Stream Selection
         streamsToSelect?.let { streams ->
             AlertDialog(
-                onDismissRequest = { streamsToSelect = null },
+                onDismissRequest = {
+                    streamsToSelect = null
+                    selectedEpisodeContext = null
+                },
                 title = { Text("Select Stream Quality / Server", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) },
                 text = {
                     Column(
@@ -1079,7 +1112,9 @@ fun MovieDetailScreen(
                                         val allStreams = streamsToSelect ?: listOf(selected)
                                         val reordered = listOf(selected) + allStreams.filter { it != selected }
                                         val fallbacks = ArrayList(reordered.map { StreamOption(it.link, HashMap(it.headers ?: emptyMap())) })
+                                        val epCtx = selectedEpisodeContext
                                         streamsToSelect = null
+                                        selectedEpisodeContext = null
                                         val mLink = if (meta?.type?.lowercase() == "series") {
                                             "$link#${android.net.Uri.encode(selectedItemTitle)}"
                                         } else {
@@ -1095,6 +1130,8 @@ fun MovieDetailScreen(
                                             movieImage = meta?.image ?: "",
                                             providerUrl = providerUrl,
                                             scraperValue = scraperValue,
+                                            episodes = epCtx?.first ?: ArrayList(),
+                                            episodeIndex = epCtx?.second ?: 0,
                                             streamFallbacks = fallbacks
                                         )
                                     },
@@ -1127,7 +1164,10 @@ fun MovieDetailScreen(
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { streamsToSelect = null }) {
+                    TextButton(onClick = {
+                        streamsToSelect = null
+                        selectedEpisodeContext = null
+                    }) {
                         Text("Cancel", color = Color(0xFF26A69A))
                     }
                 },
@@ -1233,6 +1273,376 @@ fun MovieDetailScreen(
     }
 }
 
+
+private val EmilEaseOut = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
+private val EpisodeTealSoftBg = ColorPrimary.copy(alpha = 0.14f)
+private val EpisodeTealSoftBorder = ColorPrimary.copy(alpha = 0.34f)
+private val EpisodeTealText = Color(0xFF4FD1C5)
+
+@Composable
+private fun MobileEpisodeCard(
+    meta: EpisodeBadgeMeta,
+    dateText: String?,
+    thumbnailUrl: String,
+    isBlackTheme: Boolean,
+    canPlay: Boolean,
+    canDownload: Boolean,
+    extraDirectLinks: List<VegaDirectLink> = emptyList(),
+    onPlay: () -> Unit,
+    onDownload: () -> Unit,
+    onSelectServer: (() -> Unit)? = null,
+    onPlayDirectLink: ((VegaDirectLink) -> Unit)? = null,
+    onDownloadDirectLink: ((VegaDirectLink) -> Unit)? = null
+) {
+    val context = LocalContext.current
+    var menuExpanded by remember { mutableStateOf(false) }
+
+    val cardInteraction = remember { MutableInteractionSource() }
+    val isCardPressed by cardInteraction.collectIsPressedAsState()
+    val cardScale by animateFloatAsState(
+        targetValue = if (isCardPressed) 0.98f else 1f,
+        animationSpec = tween(durationMillis = 140, easing = EmilEaseOut),
+        label = "episodeCardScale"
+    )
+
+    val downloadInteraction = remember { MutableInteractionSource() }
+    val isDownloadPressed by downloadInteraction.collectIsPressedAsState()
+    val downloadScale by animateFloatAsState(
+        targetValue = if (isDownloadPressed) 0.92f else 1f,
+        animationSpec = tween(durationMillis = 120, easing = EmilEaseOut),
+        label = "episodeDownloadScale"
+    )
+
+    val cardShape = RoundedCornerShape(14.dp)
+    val cardBg = if (isBlackTheme) {
+        if (isCardPressed) Color(0xFF16161A) else Color(0xFF111215)
+    } else {
+        if (isCardPressed) Color(0xFF1D1D26) else Color(0xFF17171F)
+    }
+    val thumbShape = RoundedCornerShape(8.dp)
+    val thumbReferer = remember(thumbnailUrl) { extractImageReferer(thumbnailUrl) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = cardScale
+                scaleY = cardScale
+            }
+            .clip(cardShape)
+            .background(cardBg)
+            .border(0.75.dp, Color.White.copy(alpha = 0.08f), cardShape)
+            .clickable(
+                interactionSource = cardInteraction,
+                indication = ripple(color = Color.White.copy(alpha = 0.08f)),
+                enabled = canPlay,
+                onClick = onPlay
+            )
+            .padding(9.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(104.dp)
+                    .aspectRatio(16f / 9f)
+                    .clip(thumbShape)
+                    .background(if (isBlackTheme) Color(0xFF18181C) else Color(0xFF21212B))
+                    .border(0.5.dp, Color.White.copy(alpha = 0.12f), thumbShape)
+            ) {
+                if (thumbnailUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(thumbnailUrl)
+                            .apply {
+                                addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                                if (thumbReferer != null) {
+                                    addHeader("Referer", thumbReferer)
+                                }
+                            }
+                            .crossfade(180)
+                            .build(),
+                        contentDescription = meta.displayTitle,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.Black.copy(alpha = 0.05f),
+                                    Color.Black.copy(alpha = 0.38f)
+                                )
+                            )
+                        )
+                )
+
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(28.dp)
+                        .background(Color.Black.copy(alpha = 0.52f), CircleShape)
+                        .border(0.75.dp, Color.White.copy(alpha = 0.24f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = "Play",
+                        tint = Color.White,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = meta.displayTitle,
+                        color = Color(0xFFF3F4F6),
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 4.dp)
+                    )
+                    if (canPlay || canDownload || onSelectServer != null) {
+                        Box {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .clickable { menuExpanded = true }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.MoreVert,
+                                    contentDescription = "More options",
+                                    tint = Color(0xFF9CA3AF),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false },
+                                containerColor = if (isBlackTheme) Color(0xFF121215) else Color(0xFF1B1B22)
+                            ) {
+                                if (canPlay) {
+                                    DropdownMenuItem(
+                                        text = { Text("Play Episode", color = Color.White, fontSize = 13.sp) },
+                                        onClick = {
+                                            menuExpanded = false
+                                            onPlay()
+                                        }
+                                    )
+                                }
+                                if (extraDirectLinks.size > 1 && onPlayDirectLink != null) {
+                                    extraDirectLinks.forEach { dl ->
+                                        val cleanDlTitle = TitleUtils.cleanTitle(dl.title)
+                                        DropdownMenuItem(
+                                            text = { Text("Play: $cleanDlTitle", color = Color.White, fontSize = 13.sp) },
+                                            onClick = {
+                                                menuExpanded = false
+                                                onPlayDirectLink(dl)
+                                            }
+                                        )
+                                        if (onDownloadDirectLink != null) {
+                                            DropdownMenuItem(
+                                                text = { Text("Download: $cleanDlTitle", color = Color(0xFF9CA3AF), fontSize = 12.sp) },
+                                                onClick = {
+                                                    menuExpanded = false
+                                                    onDownloadDirectLink(dl)
+                                                }
+                                            )
+                                        }
+                                    }
+                                } else if (onSelectServer != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("Select Quality / Server", color = Color.White, fontSize = 13.sp) },
+                                        onClick = {
+                                            menuExpanded = false
+                                            onSelectServer()
+                                        }
+                                    )
+                                }
+                                if (canDownload) {
+                                    DropdownMenuItem(
+                                        text = { Text("Download", color = Color.White, fontSize = 13.sp) },
+                                        onClick = {
+                                            menuExpanded = false
+                                            onDownload()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                val hasBadgeMeta = meta.seasonLabel != null ||
+                    meta.episodeLabel != null ||
+                    meta.qualityBadge.isNotBlank() ||
+                    !meta.bottomRightTag.isNullOrBlank() ||
+                    !dateText.isNullOrBlank()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    if (hasBadgeMeta) {
+                        FlowRow(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            itemVerticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (meta.episodeLabel != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(EpisodeTealSoftBg, RoundedCornerShape(6.dp))
+                                        .border(0.5.dp, EpisodeTealSoftBorder, RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = meta.episodeLabel,
+                                        color = EpisodeTealText,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1
+                                    )
+                                }
+                            } else if (!dateText.isNullOrBlank()) {
+                                Text(
+                                    text = dateText,
+                                    color = Color(0xFF9CA3AF),
+                                    fontSize = 10.5.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (meta.seasonLabel != null) {
+                                Text(
+                                    text = meta.seasonLabel,
+                                    color = Color(0xFF9CA3AF),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            if (meta.qualityBadge.isNotBlank()) {
+                                Text(
+                                    text = "\u2022",
+                                    color = Color(0xFF4B5563),
+                                    fontSize = 10.sp
+                                )
+                                Text(
+                                    text = meta.qualityBadge,
+                                    color = Color(0xFFD1D5DB),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1
+                                )
+                            }
+                            if (!meta.bottomRightTag.isNullOrBlank()) {
+                                Text(
+                                    text = "\u2022",
+                                    color = Color(0xFF4B5563),
+                                    fontSize = 10.sp
+                                )
+                                Text(
+                                    text = meta.bottomRightTag,
+                                    color = Color(0xFF9CA3AF),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    } else if (!canPlay && !canDownload) {
+                        Text(
+                            text = "No streaming links",
+                            color = Color.Gray,
+                            fontSize = 11.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+
+                    if (canDownload) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(30.dp)
+                                .graphicsLayer {
+                                    scaleX = downloadScale
+                                    scaleY = downloadScale
+                                }
+                                .clip(CircleShape)
+                                .background(EpisodeTealSoftBg)
+                                .border(0.75.dp, EpisodeTealSoftBorder, CircleShape)
+                                .clickable(
+                                    interactionSource = downloadInteraction,
+                                    indication = ripple(color = ColorPrimary.copy(alpha = 0.25f)),
+                                    onClick = onDownload
+                                )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Download,
+                                contentDescription = "Download Episode",
+                                tint = EpisodeTealText,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun resolveMediaImageUrl(rawUrl: String, pageLink: String): String {
+    if (rawUrl.startsWith("//")) return "https:$rawUrl"
+    if (rawUrl.startsWith("/")) {
+        return try {
+            val host = pageLink.toUri().host
+            if (host != null) "https://$host$rawUrl" else rawUrl
+        } catch (_: Exception) {
+            rawUrl
+        }
+    }
+    return rawUrl
+}
+
+private fun extractImageReferer(resolvedUrl: String): String? {
+    if (resolvedUrl.isBlank()) return null
+    return try {
+        val host = resolvedUrl.toUri().host ?: return null
+        val parts = host.split(".")
+        if (parts.size >= 2) {
+            "https://${parts.takeLast(2).joinToString(".")}/"
+        } else {
+            "https://$host/"
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
 
 /**
  * Builds an ordered playlist of episodes (within a season) so the player can offer
