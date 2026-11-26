@@ -118,6 +118,30 @@ class VegaProviderRunner(private val context: Context) {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         const val DEFAULT_VEGA_REPO = "https://raw.githubusercontent.com/vega-org/vega-providers/refs/heads/main"
         const val FALLBACK_VEGA_REPO = "https://raw.githubusercontent.com/himanshu8443/vega-providers/refs/heads/main"
+
+        internal fun toJsDelivrMirror(rawGithubUrl: String): String? {
+            val match = Regex(
+                "^https?://raw\\.githubusercontent\\.com/([^/]+)/([^/]+)/(?:refs/heads/)?([^/]+)/?$",
+                RegexOption.IGNORE_CASE
+            ).find(rawGithubUrl.trim().removeSuffix("/")) ?: return null
+            val (owner, repo, branch) = match.destructured
+            return "https://cdn.jsdelivr.net/gh/$owner/$repo@$branch"
+        }
+
+        internal fun buildRepoUrlsFromResolved(resolvedRepo: String): List<String> {
+            val primary = resolvedRepo.ifBlank { DEFAULT_VEGA_REPO }
+            val candidates = linkedSetOf<String>()
+            fun addWithMirror(url: String) {
+                val clean = url.trim().removeSuffix("/")
+                if (clean.isBlank()) return
+                candidates.add(clean)
+                toJsDelivrMirror(clean)?.let { candidates.add(it) }
+            }
+            addWithMirror(primary)
+            addWithMirror(DEFAULT_VEGA_REPO)
+            addWithMirror(FALLBACK_VEGA_REPO)
+            return candidates.toList()
+        }
     }
 
     // Dynamic base URLs mapping - fetched from modflix.json
@@ -1456,21 +1480,21 @@ class VegaProviderRunner(private val context: Context) {
         isCompatInjected = true
     }
 
+    internal fun buildRepoUrls(repoUrl: String): List<String> =
+        buildRepoUrlsFromResolved(resolveRepoUrl(repoUrl))
+
     private val loadedScrapers = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     private suspend fun loadScraperInternal(repoUrl: String, providerValue: String) {
         val resolvedRepo = resolveRepoUrl(repoUrl).ifBlank { DEFAULT_VEGA_REPO }
         // BUG-002 fix: sanitize providerValue before embedding in JS to prevent code injection
         val safeProviderValue = providerValue.replace("\\", "\\\\").replace("'", "\\'")
-        // Skip if already verified in JS memory
+        // Skip if already verified in JS memory with catalog or posts loaded
         if (loadedScrapers.contains("${resolvedRepo}::${providerValue}")) {
             val isActuallyLoaded = try {
                 val check = evalJsAsync("""
-                    const isReady = (
-                        typeof window.vegaModules !== 'undefined' &&
-                        !!window.vegaModules['$safeProviderValue'] &&
-                        !!window.vegaModules['$safeProviderValue']['stream']
-                    );
+                    const m = (typeof window.vegaModules !== 'undefined') ? window.vegaModules['$safeProviderValue'] : null;
+                    const isReady = !!m && (!!m['catalog'] || !!m['posts']) && !!m['stream'];
                     window.AndroidBridge.onResult('__CALLBACK_ID__', isReady ? '1' : '0');
                 """.trimIndent())
                 check == "1"
@@ -1486,28 +1510,25 @@ class VegaProviderRunner(private val context: Context) {
                 """.trimIndent())
                 return
             } else {
-                Log.w(TAG, "Scraper $providerValue was in loadedScrapers but missing from JS runtime. Reloading...")
+                Log.w(TAG, "Scraper $providerValue was in loadedScrapers but missing core modules from JS runtime. Reloading...")
                 loadedScrapers.remove("${resolvedRepo}::${providerValue}")
             }
         }
-        
+
         injectCompatibilityLayer()
-        
+
         // Set the providerValue on the context so scrapers can access it safely
         evalJsDirect("""
             if (typeof window.providerContext === 'undefined') { window.providerContext = {}; }
             window.providerContext.providerValue = '$safeProviderValue';
         """.trimIndent())
-        
-        // Priority order of repositories to attempt fetching scraper modules
-        val reposToTry = linkedSetOf(
-            resolvedRepo,
-            DEFAULT_VEGA_REPO,
-            FALLBACK_VEGA_REPO
-        )
-        
+
+        // Priority order of repositories (including jsDelivr mirrors) to fetch scraper modules
+        val reposToTry = buildRepoUrls(resolvedRepo)
+
         // Load provider scraper files from dist
         val modules = listOf("catalog", "posts", "meta", "stream", "episodes")
+        val loadedModules = mutableSetOf<String>()
         for (module in modules) {
             var js: String? = null
             var lastErr: Exception? = null
@@ -1562,13 +1583,21 @@ class VegaProviderRunner(private val context: Context) {
                     js = patchMovieBoxWebStreamJs(js)
                 }
                 // BUG-016 fix: use safeProviderValue (already sanitized above) in wrapper template
-                val base64Js = android.util.Base64.encodeToString(js.toByteArray(), android.util.Base64.NO_WRAP)
+                val base64Js = android.util.Base64.encodeToString(js.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
                 val wrapper = """
                     (function() {
                         var exports = {};
                         var module = { exports: exports };
                         try {
-                            var decodedJs = atob('$base64Js');
+                            var rawBin = atob('$base64Js');
+                            var decodedJs;
+                            try {
+                                var bytes = new Uint8Array(rawBin.length);
+                                for (var bi = 0; bi < rawBin.length; bi++) bytes[bi] = rawBin.charCodeAt(bi);
+                                decodedJs = new TextDecoder('utf-8').decode(bytes);
+                            } catch (decErr) {
+                                decodedJs = rawBin;
+                            }
                             (new Function('exports', 'module', decodedJs))(exports, module);
                         } catch(e) {
                             console.error("Error executing $module:", e);
@@ -1586,12 +1615,15 @@ class VegaProviderRunner(private val context: Context) {
                     })();
                 """.trimIndent()
                 evalJsAsync(wrapper)
+                loadedModules.add(module)
                 Log.d(TAG, "Loaded module: $providerValue/$module")
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to evaluate module $module: ${e.message}")
             }
         }
-        loadedScrapers.add("${resolvedRepo}::${providerValue}")
+        if ("catalog" in loadedModules || "posts" in loadedModules) {
+            loadedScrapers.add("${resolvedRepo}::${providerValue}")
+        }
     }
 
     suspend fun loadScraper(repoUrl: String, providerValue: String) = runnerMutex.withLock {
@@ -1599,12 +1631,7 @@ class VegaProviderRunner(private val context: Context) {
     }
 
     suspend fun fetchManifest(repoUrl: String): List<VegaProvider> {
-        val resolvedRepo = resolveRepoUrl(repoUrl).ifBlank { DEFAULT_VEGA_REPO }
-        val reposToTry = linkedSetOf(
-            resolvedRepo,
-            DEFAULT_VEGA_REPO,
-            FALLBACK_VEGA_REPO
-        )
+        val reposToTry = buildRepoUrls(repoUrl)
 
         var lastException: Exception? = null
         for (repo in reposToTry) {

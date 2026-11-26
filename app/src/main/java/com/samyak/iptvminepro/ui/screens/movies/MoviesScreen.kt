@@ -232,16 +232,32 @@ fun MoviesScreen(
             ) {
                 if (movies.isEmpty() && !isLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = if (scrapers.isEmpty())
-                                "No extensions installed. Please install an extension from Settings."
-                            else
-                                "No movies or shows found",
-                            color = Color(0xFF6B7280),
-                            fontSize = 16.sp,
-                            textAlign = TextAlign.Center,
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.padding(horizontal = 24.dp)
-                        )
+                        ) {
+                            Text(
+                                text = if (scrapers.isEmpty())
+                                    "No extensions installed. Please install an extension from Settings."
+                                else
+                                    "No movies or shows found",
+                                color = Color(0xFF6B7280),
+                                fontSize = 16.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            if (scrapers.isNotEmpty()) {
+                                OutlinedButton(
+                                    onClick = { viewModel.retryCurrentScraper() },
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = Color(0xFF26A69A)
+                                    ),
+                                    border = BorderStroke(1.dp, Color(0xFF26A69A))
+                                ) {
+                                    Text("Retry")
+                                }
+                            }
+                        }
                     }
                 } else {
                     LazyVerticalGrid(

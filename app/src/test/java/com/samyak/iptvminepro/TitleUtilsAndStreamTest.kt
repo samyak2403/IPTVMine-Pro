@@ -111,4 +111,19 @@ class TitleUtilsAndStreamTest {
         assertTrue(extractedJson.contains("\"hasResource\":true"))
         assertTrue(extractedJson.contains("\"id\":\"r0p639744\""))
     }
+
+    @Test
+    fun testVegaRepoJsDelivrMirrorFallback() {
+        val mirror = com.samyak.iptvminepro.provider.VegaProviderRunner.toJsDelivrMirror(
+            "https://raw.githubusercontent.com/vega-org/vega-providers/refs/heads/main"
+        )
+        assertEquals("https://cdn.jsdelivr.net/gh/vega-org/vega-providers@main", mirror)
+
+        val urls = com.samyak.iptvminepro.provider.VegaProviderRunner.buildRepoUrlsFromResolved(
+            com.samyak.iptvminepro.provider.VegaProviderRunner.DEFAULT_VEGA_REPO
+        )
+        assertTrue(urls.contains("https://raw.githubusercontent.com/vega-org/vega-providers/refs/heads/main"))
+        assertTrue(urls.contains("https://cdn.jsdelivr.net/gh/vega-org/vega-providers@main"))
+        assertTrue(urls.contains("https://cdn.jsdelivr.net/gh/himanshu8443/vega-providers@main"))
+    }
 }
