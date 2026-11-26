@@ -28,6 +28,7 @@ googleServices = "4.5.0"
 tvFoundation = "1.0.0"
 tvMaterial = "1.0.0-alpha07"
 tapTargetCompose = "1.2.1"
+zxingEmbedded = "4.3.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -86,6 +87,7 @@ material = { group = "com.google.android.material", name = "material", version.r
 androidx-tv-foundation = { group = "androidx.tv", name = "tv-foundation", version.ref = "tvFoundation" }
 androidx-tv-material = { group = "androidx.tv", name = "tv-material", version.ref = "tvMaterial" }
 tap-target-compose = { group = "com.pierfrancescosoffritti.taptargetcompose", name = "core", version.ref = "tapTargetCompose" }
+zxing-android-embedded = { group = "com.journeyapps", name = "zxing-android-embedded", version.ref = "zxingEmbedded" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

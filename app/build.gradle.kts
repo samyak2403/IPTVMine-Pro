@@ -79,6 +79,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.security.crypto)
+    implementation(libs.zxing.android.embedded)
 
     implementation(project(":Player"))
     implementation(project(":television"))

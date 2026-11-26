@@ -42,6 +42,12 @@ object ProviderDetectionEngine {
         val manifestEntries: List<VegaProvider> = emptyList()
     )
 
+    data class ParsedQrProvider(
+        val title: String,
+        val url: String,
+        val userAgent: String? = null
+    )
+
     private val VIDEO_EXTENSIONS = setOf(
         ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm",
         ".mpg", ".mpeg", ".3gp", ".ogv", ".m4v", ".rm", ".rmvb"
@@ -88,6 +94,80 @@ object ProviderDetectionEngine {
                 }
             }
         }
+    }
+
+    /**
+     * Parses raw QR scanner text into a provider entry (`title`, `url`, optional `userAgent`).
+     * Supports plain URLs/identifiers, `Title|URL` or two-line `Title\nURL` pairs, and JSON objects.
+     */
+    fun parseProviderQrPayload(raw: String): ParsedQrProvider? {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return null
+
+        val jsonObj = parseJsonSafely(trimmed)?.takeIf { it.isJsonObject }?.asJsonObject
+        if (jsonObj != null) {
+            val url = listOf("url", "playlist_url", "link", "source")
+                .firstNotNullOfOrNull { key -> jsonObj.optString(key).trim().takeIf { it.isNotEmpty() } }
+                ?: return null
+            if (!isProviderCandidateUrl(url)) return null
+            val title = listOf("title", "name", "provider")
+                .firstNotNullOfOrNull { key -> jsonObj.optString(key).trim().takeIf { it.isNotEmpty() } }
+                ?: deriveProviderTitle(url)
+            val ua = listOf("userAgent", "user_agent")
+                .firstNotNullOfOrNull { key -> jsonObj.optString(key).trim().takeIf { it.isNotEmpty() } }
+            return ParsedQrProvider(title = title, url = url, userAgent = ua)
+        }
+
+        // Check two-part "Title|URL" or "Title\nURL" format
+        val parts = when {
+            trimmed.contains('\n') -> trimmed.lines().map { it.trim() }.filter { it.isNotEmpty() }
+            trimmed.contains('|') -> trimmed.split('|', limit = 2).map { it.trim() }
+            else -> emptyList()
+        }
+        if (parts.size == 2 && isProviderCandidateUrl(parts[1])) {
+            val cleanTitle = parts[0].ifBlank { deriveProviderTitle(parts[1]) }
+            return ParsedQrProvider(title = cleanTitle, url = parts[1])
+        }
+
+        if (isProviderCandidateUrl(trimmed)) {
+            return ParsedQrProvider(title = deriveProviderTitle(trimmed), url = trimmed)
+        }
+
+        return null
+    }
+
+    fun deriveProviderTitle(rawUrl: String): String {
+        val trimmed = rawUrl.trim().removeSuffix("/")
+        if (trimmed.startsWith("@")) return trimmed.removePrefix("@").ifBlank { "Provider" }
+        val withoutQuery = trimmed.substringBefore("?").substringBefore("#")
+        val afterScheme = withoutQuery.substringAfter("://", withoutQuery)
+        val segments = afterScheme.split('/').filter { it.isNotBlank() }
+        val last = segments.lastOrNull()
+        val genericNames = setOf("index", "playlist", "manifest", "urls", "modflix", "channels")
+        if (last != null && segments.size > 1) {
+            val baseName = last.substringBeforeLast('.')
+            if (baseName.isNotBlank() && baseName.lowercase() !in genericNames) {
+                return baseName
+            }
+            if (segments.size >= 2) {
+                val parent = segments[segments.size - 2]
+                if (parent.isNotBlank()) return parent
+            }
+        }
+        val host = segments.firstOrNull()?.removePrefix("www.")
+        return host?.ifBlank { null } ?: "Provider"
+    }
+
+    private fun isProviderCandidateUrl(value: String): Boolean {
+        val v = value.trim()
+        if (v.isEmpty() || v.any { it.isWhitespace() }) return false
+        val lower = v.lowercase()
+        return isHttpUrl(v) ||
+            v.startsWith("@") ||
+            lower.startsWith("github.com/") ||
+            lower.startsWith("raw.githubusercontent.com/") ||
+            lower.contains(".m3u") ||
+            lower.contains(".json")
     }
 
     /** Fast URL/title heuristic for live form updates before network inspection. */

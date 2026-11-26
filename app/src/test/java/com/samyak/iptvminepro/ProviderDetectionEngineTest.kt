@@ -149,4 +149,36 @@ class ProviderDetectionEngineTest {
         assertTrue(ProviderDetectionEngine.needsContentInspection("https://example.com/movies.json"))
         assertTrue(ProviderDetectionEngine.needsContentInspection("https://bugsfreeweb.github.io/LiveTVCollector/LiveTV/India/LiveTV.json"))
     }
+
+    @Test
+    fun `parseProviderQrPayload extracts URL, JSON, delimited, and invalid payloads`() {
+        val m3uQr = ProviderDetectionEngine.parseProviderQrPayload("https://iptv-org.github.io/iptv/index.m3u")
+        assertEquals("https://iptv-org.github.io/iptv/index.m3u", m3uQr?.url)
+        assertEquals("iptv", m3uQr?.title)
+
+        val liveTvQr = ProviderDetectionEngine.parseProviderQrPayload(
+            "https://bugsfreeweb.github.io/LiveTVCollector/LiveTV/India/LiveTV.json"
+        )
+        assertEquals("https://bugsfreeweb.github.io/LiveTVCollector/LiveTV/India/LiveTV.json", liveTvQr?.url)
+        assertEquals("LiveTV", liveTvQr?.title)
+
+        val jsonQr = ProviderDetectionEngine.parseProviderQrPayload(
+            """{"title":"Vertex Repo","url":"https://raw.githubusercontent.com/vertex2029/vertex-providers/refs/heads/main/urls.json","userAgent":"MyAgent/1.0"}"""
+        )
+        assertEquals("Vertex Repo", jsonQr?.title)
+        assertEquals(
+            "https://raw.githubusercontent.com/vertex2029/vertex-providers/refs/heads/main/urls.json",
+            jsonQr?.url
+        )
+        assertEquals("MyAgent/1.0", jsonQr?.userAgent)
+
+        val delimitedQr = ProviderDetectionEngine.parseProviderQrPayload(
+            "My VOD Map|https://example.com/movies.json"
+        )
+        assertEquals("My VOD Map", delimitedQr?.title)
+        assertEquals("https://example.com/movies.json", delimitedQr?.url)
+
+        val invalidQr = ProviderDetectionEngine.parseProviderQrPayload("just some random text")
+        assertEquals(null, invalidQr)
+    }
 }
