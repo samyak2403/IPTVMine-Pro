@@ -4,7 +4,6 @@ import android.widget.Toast
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -218,14 +217,17 @@ fun WatchHistoryMovieCard(
             .aspectRatio(0.7f)
             .scale(scale)
             .onFocusChanged { isFocused = it.isFocused }
-            .focusable()
             .clip(RoundedCornerShape(12.dp))
             .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isBlackTheme) Color(0xFF121212) else Color(0xFF1D1B26)
         ),
-        border = if (isBlackTheme) BorderStroke(1.dp, Color(0xFF262626)) else null,
+        border = when {
+            isFocused -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+            isBlackTheme -> BorderStroke(1.dp, Color(0xFF262626))
+            else -> null
+        },
         elevation = CardDefaults.cardElevation(
             defaultElevation = if (isFocused) 8.dp else 2.dp
         )

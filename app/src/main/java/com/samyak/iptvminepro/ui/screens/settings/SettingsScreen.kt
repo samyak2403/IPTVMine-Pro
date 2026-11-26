@@ -39,6 +39,8 @@ import com.samyak.iptvminepro.network.DnsPreferenceManager
 import com.samyak.iptvminepro.network.DnsMode
 import com.samyak.iptvminepro.ui.theme.ThemePreferenceManager
 import com.samyak.iptvminepro.ui.theme.UiModePreferenceManager
+import com.samyak.television.data.StartupTab
+import com.samyak.television.data.StartupTabPreferenceManager
 
 @Composable
 fun SettingsScreen(
@@ -118,6 +120,62 @@ fun SettingsScreen(
                 UiModePreferenceManager.setTvMode(context, checked)
             }
         )
+        val startupTab by StartupTabPreferenceManager.observeStartupTab(context)
+        var showStartupTabDialog by remember { mutableStateOf(false) }
+        SettingsItem(
+            title = stringResource(id = R.string.setting_startup_tab),
+            subtitle = "${startupTab.label} • ${stringResource(id = R.string.desc_startup_tab)}",
+            icon = Icons.Filled.Tab,
+            onClick = { showStartupTabDialog = true }
+        )
+        if (showStartupTabDialog) {
+            AlertDialog(
+                onDismissRequest = { showStartupTabDialog = false },
+                title = {
+                    Text(
+                        text = stringResource(id = R.string.title_select_startup_tab),
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        StartupTab.entries.forEach { tab ->
+                            val isSelected = startupTab == tab
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        StartupTabPreferenceManager.setStartupTab(context, tab)
+                                        showStartupTabDialog = false
+                                    }
+                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = {
+                                        StartupTabPreferenceManager.setStartupTab(context, tab)
+                                        showStartupTabDialog = false
+                                    }
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = tab.label,
+                                    fontSize = 16.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showStartupTabDialog = false }) {
+                        Text(text = "Cancel")
+                    }
+                }
+            )
+        }
 
         SettingsSectionTitle(title = stringResource(id = R.string.section_network))
         SettingsItem(

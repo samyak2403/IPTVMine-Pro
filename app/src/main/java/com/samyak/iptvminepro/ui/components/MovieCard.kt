@@ -3,7 +3,6 @@ package com.samyak.iptvminepro.ui.components
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -76,13 +75,17 @@ fun MovieCard(
             .aspectRatio(0.7f) // Movie poster ratio
             .scale(scale)
             .onFocusChanged { isFocused = it.isFocused }
-            .focusable()
+            .clip(RoundedCornerShape(12.dp))
             .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isBlackTheme) Color(0xFF121212) else Color(0xFF1D1B26)
         ),
-        border = if (isBlackTheme) BorderStroke(1.dp, Color(0xFF262626)) else null,
+        border = when {
+            isFocused -> BorderStroke(2.dp, androidx.compose.material3.MaterialTheme.colorScheme.primary)
+            isBlackTheme -> BorderStroke(1.dp, Color(0xFF262626))
+            else -> null
+        },
         elevation = CardDefaults.cardElevation(
             defaultElevation = if (isFocused) 8.dp else 2.dp
         )

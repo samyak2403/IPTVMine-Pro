@@ -21,19 +21,21 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
 import androidx.compose.ui.draw.scale
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -43,18 +45,30 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.GridView
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.foundation.background
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import com.samyak.television.data.StartupTab
+import com.samyak.television.data.StartupTabPreferenceManager
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -211,6 +225,29 @@ fun MainApp() {
     var tvSearchQuery by rememberSaveable { mutableStateOf("") }
     var isTvSearchActive by rememberSaveable { mutableStateOf(false) }
     val tvSearchFocusRequester = remember { FocusRequester() }
+    val bottomBarSelectedFocusRequester = remember { FocusRequester() }
+    var isBottomBarFocused by remember { mutableStateOf(false) }
+    var isTopBarFocused by remember { mutableStateOf(false) }
+    val inputModeManager = LocalInputModeManager.current
+
+    val showBottomBar = currentRoute != null &&
+        currentRoute != Screen.AddProvider.route &&
+        currentRoute != Screen.AddProviderHelp.route &&
+        currentRoute != Screen.ProviderList.route &&
+        currentRoute != Screen.CategoryDetail.route &&
+        currentRoute != Screen.MovieDetail.route &&
+        currentRoute != Screen.About.route &&
+        currentRoute != Screen.Support.route &&
+        currentRoute != Screen.Donate.route &&
+        currentRoute != Screen.CategoryMovies.route &&
+        currentRoute != Screen.Extensions.route &&
+        currentRoute != Screen.MovieSearch.route &&
+        currentRoute != Screen.Downloads.route &&
+        currentRoute != Screen.BugReport.route &&
+        currentRoute != Screen.WatchHistory.route &&
+        currentRoute != Screen.Legal.route &&
+        currentRoute != Screen.VideoList.route &&
+        currentRoute != Screen.DnsSettings.route
 
     LaunchedEffect(currentRoute) {
         if (currentRoute != Screen.Television.route) {
@@ -225,6 +262,18 @@ fun MainApp() {
         }
     }
 
+    // Move remote/D-pad focus to the tab bar on Back so users aren't trapped inside long lists.
+    BackHandler(
+        enabled = showBottomBar &&
+            !isBottomBarFocused &&
+            inputModeManager.inputMode == InputMode.Keyboard &&
+            !(isTvSearchActive && currentRoute == Screen.Television.route)
+    ) {
+        try {
+            bottomBarSelectedFocusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
+
     BackHandler(enabled = isTvSearchActive && currentRoute == Screen.Television.route) {
         isTvSearchActive = false
         tvSearchQuery = ""
@@ -235,9 +284,11 @@ fun MainApp() {
 
     var onWatchHistoryClearClick by remember { mutableStateOf<(() -> Unit)?>(null) }
     val repository = remember { com.samyak.iptvminepro.provider.ProviderRepository(context) }
+    val initialProviders = remember { repository.getProviders() }
+    val startupTab by StartupTabPreferenceManager.observeStartupTab(context)
     val channelsViewModel: com.samyak.iptvminepro.provider.ChannelsProvider = viewModel()
     val channels by channelsViewModel.channels.observeAsState(emptyList())
-    val providers by channelsViewModel.providers.observeAsState(repository.getProviders())
+    val providers by channelsViewModel.providers.observeAsState(initialProviders)
     val isLoadingChannels by channelsViewModel.isLoading.observeAsState(false)
 
     LaunchedEffect(Unit) {
@@ -248,16 +299,14 @@ fun MainApp() {
         providers.any { it.isActive && it.safeType == ProviderType.IPTV }
     }
 
-    val hasTvChannels = remember(channels, providers, isLoadingChannels, hasActiveIptvProvider) {
-        if (!hasActiveIptvProvider) {
-            false
-        } else if (channels.isNotEmpty()) {
-            true
-        } else if (isLoadingChannels) {
-            providers.any { it.isActive && it.safeType == ProviderType.IPTV && it.channelCount > 0 }
-        } else {
-            false
-        }
+    val hasTvChannels = remember(channels, providers, isLoadingChannels, hasActiveIptvProvider, startupTab) {
+        StartupTabPreferenceManager.shouldShowTelevisionTab(
+            hasActiveIptvProvider = hasActiveIptvProvider,
+            hasLoadedChannels = channels.isNotEmpty(),
+            isLoadingChannels = isLoadingChannels,
+            hasCachedChannelCount = providers.any { it.isActive && it.safeType == ProviderType.IPTV && it.channelCount > 0 },
+            startupTab = startupTab
+        )
     }
 
     val items = remember(hasTvChannels) {
@@ -287,7 +336,18 @@ fun MainApp() {
     val moviesViewModel: MoviesViewModel = viewModel()
     val homeViewModel: HomeViewModel = viewModel()
     val movieSearchViewModel: MovieSearchViewModel = viewModel()
-    val startDestination = if (repository.getProviders().isEmpty()) Screen.AddProvider.route else Screen.Home.route
+    val startDestination = remember {
+        StartupTabPreferenceManager.resolveMobileStartRoute(
+            startupTab = StartupTabPreferenceManager.getStartupTab(context),
+            hasAnyProvider = initialProviders.isNotEmpty(),
+            hasActiveIptvProvider = initialProviders.any { it.isActive && it.safeType == ProviderType.IPTV },
+            homeRoute = Screen.Home.route,
+            televisionRoute = Screen.Television.route,
+            moviesRoute = Screen.Movies.route,
+            categoryRoute = Screen.Category.route,
+            addProviderRoute = Screen.AddProvider.route
+        )
+    }
 
     val isConnected by remember(context) {
         com.samyak.iptvminepro.utils.NetworkUtils.observeConnectivity(context)
@@ -315,29 +375,30 @@ fun MainApp() {
         ) {
             val tapTargetScope = this
             Scaffold(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onPreviewKeyEvent { keyEvent ->
+                        if (showBottomBar && keyEvent.type == KeyEventType.KeyDown) {
+                            val shouldJumpToTabs = keyEvent.key == Key.Menu ||
+                                (isTopBarFocused &&
+                                    keyEvent.key == Key.DirectionUp &&
+                                    !(currentRoute == Screen.Television.route && isTvSearchActive))
+                            if (shouldJumpToTabs) {
+                                try {
+                                    bottomBarSelectedFocusRequester.requestFocus()
+                                } catch (_: Exception) {}
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    },
                 containerColor = Color.Transparent,
         bottomBar = {
             val navBackStackEntry by navController.currentBackStackEntryAsState()
-            val currentRoute = navBackStackEntry?.destination?.route
-            if (currentRoute != Screen.AddProvider.route &&
-                currentRoute != Screen.AddProviderHelp.route &&
-                currentRoute != Screen.ProviderList.route &&
-                currentRoute != Screen.CategoryDetail.route &&
-                currentRoute != Screen.MovieDetail.route &&
-                currentRoute != Screen.About.route &&
-                currentRoute != Screen.Support.route &&
-                currentRoute != Screen.Donate.route &&
-                currentRoute != Screen.CategoryMovies.route &&
-                currentRoute != Screen.Extensions.route &&
-                currentRoute != Screen.MovieSearch.route &&
-                currentRoute != Screen.Downloads.route &&
-                currentRoute != Screen.BugReport.route &&
-                currentRoute != Screen.WatchHistory.route &&
-                currentRoute != Screen.Legal.route &&
-                currentRoute != Screen.VideoList.route &&
-                currentRoute != Screen.DnsSettings.route
-            ) {
+            if (showBottomBar) {
                 val isBlackThemeActive = com.samyak.iptvminepro.ui.theme.LocalIsBlackTheme.current
                 Box(
                     modifier = Modifier
@@ -356,13 +417,21 @@ fun MainApp() {
                         modifier = Modifier
                             .fillMaxWidth()
                             .navigationBarsPadding()
-                            .height(72.dp),
+                            .height(72.dp)
+                            .focusGroup()
+                            .onFocusChanged { isBottomBarFocused = it.hasFocus },
                         horizontalArrangement = Arrangement.SpaceAround,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         val currentDestination = navBackStackEntry?.destination
-                        items.forEach { screen ->
+                        val hasSelectedTab = items.any { item ->
+                            currentDestination?.hierarchy?.any { it.route == item.route } == true
+                        }
+                        items.forEachIndexed { index, screen ->
                             val selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
+                            val isFocusAnchor = selected || (!hasSelectedTab && index == 0)
+                            val interactionSource = remember { MutableInteractionSource() }
+                            val isFocused by interactionSource.collectIsFocusedAsState()
 
                             val scale by animateFloatAsState(
                                 targetValue = if (selected) 1f else 0f,
@@ -372,13 +441,57 @@ fun MainApp() {
                                 ),
                                 label = "SelectedIndicatorScale"
                             )
+                            val focusScale by animateFloatAsState(
+                                targetValue = if (isFocused) 1.12f else 1f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessMediumLow
+                                ),
+                                label = "TabFocusScale"
+                            )
 
                             Box(
                                 modifier = Modifier
                                     .size(48.dp)
+                                    .scale(focusScale)
+                                    .then(
+                                        if (isFocusAnchor) Modifier.focusRequester(bottomBarSelectedFocusRequester)
+                                        else Modifier
+                                    )
+                                    .focusProperties {
+                                        if (index == 0) left = FocusRequester.Cancel
+                                        if (index == items.lastIndex) right = FocusRequester.Cancel
+                                        down = FocusRequester.Cancel
+                                    }
+                                    .clip(CircleShape)
+                                    .then(
+                                        if (isFocused) {
+                                            Modifier
+                                                .background(
+                                                    if (selected) Color(0xFF26A69A)
+                                                    else Color(0xFF26A69A).copy(alpha = 0.22f)
+                                                )
+                                                .border(
+                                                    width = 2.dp,
+                                                    color = if (selected) {
+                                                        if (isBlackThemeActive) Color.White else Color(0xFF004D40)
+                                                    } else {
+                                                        Color(0xFF26A69A)
+                                                    },
+                                                    shape = CircleShape
+                                                )
+                                        } else {
+                                            Modifier
+                                        }
+                                    )
+                                    .semantics {
+                                        role = Role.Tab
+                                        this.selected = selected
+                                        contentDescription = screen.label
+                                    }
                                     .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null
+                                        interactionSource = interactionSource,
+                                        indication = LocalIndication.current
                                     ) {
                                         if (!selected) {
                                             navController.navigate(screen.route) {
@@ -402,8 +515,14 @@ fun MainApp() {
                                     )
                                 }
 
+                                val iconTint = when {
+                                    selected -> Color.White
+                                    isFocused -> if (isBlackThemeActive) Color.White else Color(0xFF00695C)
+                                    isBlackThemeActive -> Color(0xFFA5A5A5)
+                                    else -> Color(0xFF6B7280)
+                                }
                                 CompositionLocalProvider(
-                                    LocalContentColor provides (if (selected) Color.White else if (isBlackThemeActive) Color(0xFFA5A5A5) else Color(0xFF6B7280))
+                                    LocalContentColor provides iconTint
                                 ) {
                                     val iconScale = if (selected) 1.05f else 1f
                                     Box(modifier = Modifier.scale(iconScale)) {
@@ -429,6 +548,7 @@ fun MainApp() {
                 currentRoute != Screen.VideoList.route
             ) {
                 TopAppBar(
+                    modifier = Modifier.onFocusChanged { isTopBarFocused = it.hasFocus },
                     title = {
                         if (currentRoute == Screen.Television.route && isTvSearchActive) {
                             TextField(
@@ -842,7 +962,18 @@ fun MainApp() {
                     onProviderAdded = {
                         channelsViewModel.fetchM3UFile(forceRefresh = true)
                         if (navController.previousBackStackEntry == null) {
-                            navController.navigate(Screen.Home.route) {
+                            val updatedProviders = repository.getProviders()
+                            val nextRoute = StartupTabPreferenceManager.resolveMobileStartRoute(
+                                startupTab = StartupTabPreferenceManager.getStartupTab(context),
+                                hasAnyProvider = updatedProviders.isNotEmpty(),
+                                hasActiveIptvProvider = updatedProviders.any { it.isActive && it.safeType == ProviderType.IPTV },
+                                homeRoute = Screen.Home.route,
+                                televisionRoute = Screen.Television.route,
+                                moviesRoute = Screen.Movies.route,
+                                categoryRoute = Screen.Category.route,
+                                addProviderRoute = Screen.AddProvider.route
+                            )
+                            navController.navigate(nextRoute) {
                                 popUpTo(Screen.AddProvider.route) { inclusive = true }
                             }
                         } else {

@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
@@ -42,6 +43,8 @@ import com.samyak.television.ui.components.OttSpecs
 import com.samyak.television.ui.components.buildOttImageRequest
 import com.samyak.television.ui.components.rememberOttSafeInsets
 import com.samyak.television.ui.theme.*
+import com.samyak.television.utils.EpisodeBadgeMeta
+import com.samyak.television.utils.TitleUtils
 import com.samyak.player.StreamOption
 import com.samyak.player.EpisodeItem
 import androidx.activity.compose.BackHandler
@@ -165,17 +168,22 @@ fun MovieDetailScreen(
         }
     }
 
-    val onDirectLinkClick: (VegaDirectLink, String) -> Unit = { directLink, title ->
+    val resolveAndPlayTarget: (
+        targetLink: String,
+        resolveType: String,
+        title: String,
+        episodes: ArrayList<EpisodeItem>,
+        episodeIndex: Int
+    ) -> Unit = { targetLink, resolveType, title, episodes, episodeIndex ->
         streamResolutionJob?.cancel()
         streamResolutionJob = scope.launch {
             resolvingStream = true
             streamStatusText = "Resolving stream links..."
             try {
-                val resolveType = getResolveType(directLink.type)
                 val fallbackRes = VegaStreamFallbackEngine.resolveWithAutoFallback(
                     context = context,
                     runner = runner,
-                    initialLink = directLink.link,
+                    initialLink = targetLink,
                     initialType = resolveType,
                     itemTitle = title,
                     movieTitle = meta?.title ?: title,
@@ -211,25 +219,29 @@ fun MovieDetailScreen(
                         movieImage = meta?.image ?: "",
                         providerUrl = providerUrl,
                         scraperValue = scraperValue,
+                        episodes = episodes,
+                        episodeIndex = episodeIndex,
                         streamFallbacks = fallbacks
                     )
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (directLink.link.startsWith("http://", ignoreCase = true) || directLink.link.startsWith("https://", ignoreCase = true)) {
+                if (targetLink.startsWith("http://", ignoreCase = true) || targetLink.startsWith("https://", ignoreCase = true)) {
                     val mLink = if (meta?.type?.lowercase() == "series") "$link#${android.net.Uri.encode(title)}" else link
                     com.samyak.player.PlayerActivity.start(
                         context = context,
                         name = "$title - HD",
-                        streamUrl = directLink.link,
+                        streamUrl = targetLink,
                         headers = null,
                         watchHistoryEnabled = true,
                         movieLink = mLink,
                         movieImage = meta?.image ?: "",
                         providerUrl = providerUrl,
                         scraperValue = scraperValue,
-                        streamFallbacks = arrayListOf(StreamOption(directLink.link, HashMap()))
+                        episodes = episodes,
+                        episodeIndex = episodeIndex,
+                        streamFallbacks = arrayListOf(StreamOption(targetLink, HashMap()))
                     )
                 } else {
                     Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -238,6 +250,10 @@ fun MovieDetailScreen(
                 resolvingStream = false
             }
         }
+    }
+
+    val onDirectLinkClick: (VegaDirectLink, String) -> Unit = { directLink, title ->
+        resolveAndPlayTarget(directLink.link, getResolveType(directLink.type), title, ArrayList(), 0)
     }
 
     Box(
@@ -709,7 +725,7 @@ fun MovieDetailScreen(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Text(
-                                                text = vegaLink.title,
+                                                text = TitleUtils.cleanTitle(vegaLink.title),
                                                 fontSize = 14.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (isExpanded) OttAmberStreaming else OttWhite,
@@ -758,94 +774,109 @@ fun MovieDetailScreen(
                                                     if (episodes.isNullOrEmpty()) {
                                                         Text("No episodes loaded.", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
                                                     } else {
-                                                    val playlist = buildEpisodePlaylist(episodes, vegaLink.title) { getResolveType(it) }
+                                                    val cleanSeasonTitle = TitleUtils.cleanTitle(vegaLink.title)
+                                                    val playlist = buildEpisodePlaylist(episodes, cleanSeasonTitle) { getResolveType(it) }
                                                     episodes.forEach { episode ->
                                                         val firstDirect = episode.directLinks?.firstOrNull()
+                                                        val epTargetLink = firstDirect?.link ?: episode.episodesLink
+                                                        val epTargetType = if (firstDirect != null) getResolveType(firstDirect.type) else getResolveType("series")
+                                                        val epIndex = playlist.indexOfFirst { it.link == epTargetLink }.coerceAtLeast(0)
+                                                        val cleanEpTitle = TitleUtils.cleanTitle(episode.title)
+                                                        val badgeMeta = TitleUtils.extractEpisodeBadgeMeta(
+                                                            episodeTitle = episode.title,
+                                                            seasonTitle = cleanSeasonTitle,
+                                                            rawSeasonNumber = episode.seasonNumber ?: vegaLink.seasonNumber,
+                                                            rawEpisodeNumber = episode.episodeNumber,
+                                                            rawDuration = episode.duration,
+                                                            fallbackQualitySource = firstDirect?.title ?: ""
+                                                        )
+                                                        val thumbUrl = episode.image?.takeIf { it.isNotBlank() }
+                                                            ?: firstDirect?.image?.takeIf { it.isNotBlank() }
+                                                            ?: movieMeta.image
+                                                        val returnFocus = if (hasWatchNow) watchNowFocusRequester else backButtonFocusRequester
 
-                                                        Surface(
+                                                        TvEpisodeCard(
+                                                            badgeMeta = badgeMeta,
+                                                            dateText = episode.date,
+                                                            thumbUrl = thumbUrl,
+                                                            returnFocusRequester = returnFocus,
                                                             onClick = {
-                                                                val epTargetLink = firstDirect?.link ?: episode.episodesLink
-                                                                val epTargetType = if (firstDirect != null) getResolveType(firstDirect.type) else getResolveType("series")
-                                                                val epIndex = playlist.indexOfFirst { it.link == epTargetLink }.coerceAtLeast(0)
                                                                 if (epTargetLink != null) {
-                                                                    streamResolutionJob?.cancel()
-                                                                    streamResolutionJob = scope.launch {
-                                                                        resolvingStream = true
-                                                                        streamStatusText = "Resolving stream links..."
-                                                                        try {
-                                                                          val epTitle = "${vegaLink.title} - ${episode.title}"
-                                                                          val fallbackRes = VegaStreamFallbackEngine.resolveWithAutoFallback(
-                                                                              context = context,
-                                                                              runner = runner,
-                                                                              initialLink = epTargetLink,
-                                                                              initialType = epTargetType,
-                                                                              itemTitle = epTitle,
-                                                                              movieTitle = movieMeta.title,
-                                                                              currentMeta = movieMeta,
-                                                                              currentProviderUrl = providerUrl,
-                                                                              currentScraperValue = scraperValue,
-                                                                              onStatusUpdate = { status -> streamStatusText = status }
-                                                                          )
-                                                                          if (fallbackRes == null) {
-                                                                              Toast.makeText(context, "No stream links found", Toast.LENGTH_SHORT).show()
-                                                                          } else {
-                                                                              val selectedStream = fallbackRes.selectedStream
-                                                                              val streams = fallbackRes.allStreams
-                                                                              if (fallbackRes.message != null) {
-                                                                                  Toast.makeText(context, fallbackRes.message, Toast.LENGTH_SHORT).show()
-                                                                              } else {
-                                                                                  Toast.makeText(context, "Playing: ${selectedStream.server} - ${selectedStream.quality}", Toast.LENGTH_SHORT).show()
-                                                                              }
-                                                                              com.samyak.player.PlayerActivity.start(
-                                                                                  context = context,
-                                                                                  name = "$epTitle - ${selectedStream.quality}",
-                                                                                  streamUrl = selectedStream.link,
-                                                                                  headers = selectedStream.headers,
-                                                                                  watchHistoryEnabled = true,
-                                                                                  movieLink = "$link#${android.net.Uri.encode(epTitle)}",
-                                                                                  movieImage = movieMeta.image,
-                                                                                  providerUrl = providerUrl,
-                                                                                  scraperValue = scraperValue,
-                                                                                  episodes = playlist,
-                                                                                  episodeIndex = epIndex,
-                                                                                  streamFallbacks = ArrayList(streams.map { StreamOption(it.link, HashMap(it.headers ?: emptyMap())) })
-                                                                              )
-                                                                          }
-                                                                        } catch (e: kotlinx.coroutines.CancellationException) {
-                                                                            throw e
-                                                                        } catch (e: Exception) {
-                                                                            if (epTargetLink.startsWith("http://", ignoreCase = true) || epTargetLink.startsWith("https://", ignoreCase = true)) {
-                                                                                val epTitle = "${vegaLink.title} - ${episode.title}"
-                                                                                com.samyak.player.PlayerActivity.start(
-                                                                                    context = context,
-                                                                                    name = "$epTitle - HD",
-                                                                                    streamUrl = epTargetLink,
-                                                                                    headers = null,
-                                                                                    watchHistoryEnabled = true,
-                                                                                    movieLink = "$link#${android.net.Uri.encode(epTitle)}",
-                                                                                    movieImage = movieMeta.image,
-                                                                                    providerUrl = providerUrl,
-                                                                                    scraperValue = scraperValue,
-                                                                                    episodes = playlist,
-                                                                                    episodeIndex = epIndex,
-                                                                                    streamFallbacks = arrayListOf(StreamOption(epTargetLink, HashMap()))
-                                                                                )
-                                                                            } else {
-                                                                                Toast.makeText(context, "Error resolving stream: ${e.message}", Toast.LENGTH_SHORT).show()
-                                                                            }
-                                                                        } finally {
-                                                                            resolvingStream = false
-                                                                        }
-                                                                    }
+                                                                    resolveAndPlayTarget(
+                                                                        epTargetLink,
+                                                                        epTargetType,
+                                                                        "$cleanSeasonTitle - $cleanEpTitle",
+                                                                        playlist,
+                                                                        epIndex
+                                                                    )
                                                                 }
-                                                            },
+                                                            }
+                                                        )
+                                                    }
+                                                }
+                                                }
+                                            } else {
+                                                val directLinks = vegaLink.directLinks
+                                                if (!directLinks.isNullOrEmpty()) {
+                                                    val cleanSeasonTitle = TitleUtils.cleanTitle(vegaLink.title)
+                                                    val isSeriesLinks = movieMeta.type.equals("series", ignoreCase = true) ||
+                                                        (directLinks.size > 1 && directLinks.any {
+                                                            it.title.contains("episode", ignoreCase = true) ||
+                                                            it.title.contains("ep ", ignoreCase = true) ||
+                                                            Regex("(?i)\\bep?\\s*\\d{1,3}\\b").containsMatchIn(it.title)
+                                                        })
+                                                    if (isSeriesLinks) {
+                                                        val seasonPlaylist = ArrayList(
+                                                            directLinks.map { dl ->
+                                                                EpisodeItem(
+                                                                    title = "${movieMeta.title} - $cleanSeasonTitle (${TitleUtils.cleanTitle(dl.title)})",
+                                                                    link = dl.link,
+                                                                    type = getResolveType(dl.type)
+                                                                )
+                                                            }
+                                                        )
+                                                        val returnFocus = if (hasWatchNow) watchNowFocusRequester else backButtonFocusRequester
+                                                        directLinks.forEachIndexed { dlIndex, dl ->
+                                                            val cleanDlTitle = TitleUtils.cleanTitle(dl.title)
+                                                            val badgeMeta = TitleUtils.extractEpisodeBadgeMeta(
+                                                                episodeTitle = dl.title,
+                                                                seasonTitle = cleanSeasonTitle,
+                                                                rawSeasonNumber = dl.seasonNumber ?: vegaLink.seasonNumber,
+                                                                rawEpisodeNumber = dl.episodeNumber ?: vegaLink.episodeNumber,
+                                                                rawDuration = dl.duration ?: vegaLink.duration
+                                                            )
+                                                            val thumbUrl = dl.image?.takeIf { it.isNotBlank() }
+                                                                ?: vegaLink.image?.takeIf { it.isNotBlank() }
+                                                                ?: movieMeta.image
+
+                                                            TvEpisodeCard(
+                                                                badgeMeta = badgeMeta,
+                                                                dateText = dl.date ?: vegaLink.date,
+                                                                thumbUrl = thumbUrl,
+                                                                returnFocusRequester = returnFocus,
+                                                                onClick = {
+                                                                    resolveAndPlayTarget(
+                                                                        dl.link,
+                                                                        getResolveType(dl.type),
+                                                                        "${movieMeta.title} - $cleanSeasonTitle ($cleanDlTitle)",
+                                                                        seasonPlaylist,
+                                                                        dlIndex
+                                                                    )
+                                                                }
+                                                            )
+                                                        }
+                                                    } else {
+                                                        // Movies direct quality links
+                                                        directLinks.forEach { dl ->
+                                                            Surface(
+                                                                onClick = {
+                                                                    onDirectLinkClick(dl, "${movieMeta.title} (${TitleUtils.cleanTitle(dl.title)})")
+                                                                },
                                                                 colors = ClickableSurfaceDefaults.colors(
-                                                                    containerColor = OttSurface,
-                                                                    focusedContainerColor = OttWhite.copy(alpha = 0.22f),
-                                                                    pressedContainerColor = OttWhite.copy(alpha = 0.30f)
+                                                                    containerColor = Color.Transparent,
+                                                                    focusedContainerColor = OttWhite.copy(alpha = 0.20f)
                                                                 ),
-                                                                scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
-                                                                shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+                                                                shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
                                                                 modifier = Modifier
                                                                     .focusProperties {
                                                                         left = if (hasWatchNow) watchNowFocusRequester else backButtonFocusRequester
@@ -854,95 +885,14 @@ fun MovieDetailScreen(
                                                                     .fillMaxWidth()
                                                                     .padding(vertical = 4.dp)
                                                             ) {
-                                                                Row(
-                                                                    modifier = Modifier.padding(8.dp),
-                                                                    verticalAlignment = Alignment.CenterVertically,
-                                                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                                                ) {
-                                                                    // 16:9 Thumbnail Box
-                                                                    Box(
-                                                                        modifier = Modifier
-                                                                            .width(96.dp)
-                                                                            .aspectRatio(16f / 9f)
-                                                                            .clip(RoundedCornerShape(8.dp))
-                                                                            .background(OttSurfaceElevated),
-                                                                        contentAlignment = Alignment.Center
-                                                                    ) {
-                                                                        val thumbUrl = episode.image?.takeIf { it.isNotBlank() } ?: movieMeta.image
-                                                                        if (thumbUrl.isNotBlank()) {
-                                                                            val thumbRequest = remember(context, thumbUrl) {
-                                                                                buildOttImageRequest(context, thumbUrl)
-                                                                            }
-                                                                            AsyncImage(
-                                                                                model = thumbRequest,
-                                                                                contentDescription = episode.title,
-                                                                                contentScale = ContentScale.Crop,
-                                                                                modifier = Modifier.fillMaxSize()
-                                                                            )
-                                                                        }
-                                                                        Icon(
-                                                                            imageVector = Icons.Default.PlayArrow,
-                                                                            contentDescription = null,
-                                                                            tint = Color.White,
-                                                                            modifier = Modifier.size(16.dp)
-                                                                        )
-                                                                    }
-                                                                    Column(modifier = Modifier.weight(1f)) {
-                                                                        Text(
-                                                                            text = episode.title,
-                                                                            fontSize = 13.sp,
-                                                                            color = Color.White,
-                                                                            fontWeight = FontWeight.Bold,
-                                                                            maxLines = 1,
-                                                                            overflow = TextOverflow.Ellipsis
-                                                                        )
-                                                                        val sub = listOfNotNull(
-                                                                            episode.episodeNumber?.let { "Ep $it" },
-                                                                            episode.date,
-                                                                            episode.duration
-                                                                        ).joinToString(" • ")
-                                                                        if (sub.isNotBlank()) {
-                                                                            Spacer(modifier = Modifier.height(2.dp))
-                                                                            Text(
-                                                                                text = sub,
-                                                                                fontSize = 11.sp,
-                                                                                color = Color.LightGray,
-                                                                                maxLines = 1,
-                                                                                overflow = TextOverflow.Ellipsis
-                                                                            )
-                                                                        }
-                                                                    }
-                                                                }
+                                                                Text(
+                                                                    text = TitleUtils.cleanTitle(dl.title),
+                                                                    fontSize = 13.sp,
+                                                                    color = Color.White,
+                                                                    modifier = Modifier.padding(10.dp)
+                                                                )
                                                             }
                                                         }
-                                                    }
-                                                }
-                                            } else if (!vegaLink.directLinks.isNullOrEmpty()) {
-                                                // Movies direct quality links
-                                                vegaLink.directLinks.forEach { dl ->
-                                                    Surface(
-                                                        onClick = {
-                                                            onDirectLinkClick(dl, "${movieMeta.title} (${dl.title})")
-                                                        },
-                                                        colors = ClickableSurfaceDefaults.colors(
-                                                            containerColor = Color.Transparent,
-                                                            focusedContainerColor = OttWhite.copy(alpha = 0.20f)
-                                                        ),
-                                                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
-                                                        modifier = Modifier
-                                                            .focusProperties {
-                                                                left = if (hasWatchNow) watchNowFocusRequester else backButtonFocusRequester
-                                                                right = FocusRequester.Cancel
-                                                            }
-                                                            .fillMaxWidth()
-                                                            .padding(vertical = 4.dp)
-                                                    ) {
-                                                        Text(
-                                                            text = dl.title,
-                                                            fontSize = 13.sp,
-                                                            color = Color.White,
-                                                            modifier = Modifier.padding(10.dp)
-                                                        )
                                                     }
                                                 }
                                             }
@@ -953,6 +903,169 @@ fun MovieDetailScreen(
                         }
                     }
                 }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun TvEpisodeCard(
+    badgeMeta: EpisodeBadgeMeta,
+    dateText: String?,
+    thumbUrl: String,
+    returnFocusRequester: FocusRequester,
+    onClick: () -> Unit
+) {
+    val context = LocalContext.current
+    Surface(
+        onClick = onClick,
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = OttSurface,
+            focusedContainerColor = OttWhite.copy(alpha = 0.22f),
+            pressedContainerColor = OttWhite.copy(alpha = 0.30f)
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
+        modifier = Modifier
+            .focusProperties {
+                left = returnFocusRequester
+                right = FocusRequester.Cancel
+            }
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(108.dp)
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(OttSurfaceElevated)
+            ) {
+                if (thumbUrl.isNotBlank()) {
+                    val thumbRequest = remember(context, thumbUrl) {
+                        buildOttImageRequest(context, thumbUrl)
+                    }
+                    AsyncImage(
+                        model = thumbRequest,
+                        contentDescription = badgeMeta.displayTitle,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.22f))
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(4.dp)
+                        .background(OttAmberStreaming, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                ) {
+                    Text(
+                        text = badgeMeta.qualityBadge,
+                        color = OttBgPrimary,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(26.dp)
+                        .background(Color.Black.copy(alpha = 0.58f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                if (!badgeMeta.bottomRightTag.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(4.dp)
+                            .background(Color.Black.copy(alpha = 0.78f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = badgeMeta.bottomRightTag,
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = badgeMeta.displayTitle,
+                    fontSize = 13.sp,
+                    color = OttWhite,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                val hasMeta = badgeMeta.seasonLabel != null || badgeMeta.episodeLabel != null || !dateText.isNullOrBlank()
+                if (hasMeta) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (badgeMeta.seasonLabel != null) {
+                            Text(
+                                text = badgeMeta.seasonLabel,
+                                fontSize = 11.sp,
+                                color = OttTextSecondary,
+                                fontWeight = FontWeight.Medium
+                            )
+                            if (badgeMeta.episodeLabel != null || !dateText.isNullOrBlank()) {
+                                Text(
+                                    text = "\u2022",
+                                    fontSize = 11.sp,
+                                    color = OttTextSecondary
+                                )
+                            }
+                        }
+                        if (badgeMeta.episodeLabel != null) {
+                            Box(
+                                modifier = Modifier
+                                    .background(OttAmberStreaming.copy(alpha = 0.22f), RoundedCornerShape(999.dp))
+                                    .padding(horizontal = 7.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = badgeMeta.episodeLabel,
+                                    fontSize = 10.sp,
+                                    color = OttAmberStreaming,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1
+                                )
+                            }
+                        } else if (!dateText.isNullOrBlank()) {
+                            Text(
+                                text = dateText,
+                                fontSize = 11.sp,
+                                color = OttTextSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                 }
             }
         }

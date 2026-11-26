@@ -5,7 +5,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -126,6 +125,7 @@ fun CategoryScreen(
             }
         ) {
             // Tab 0: Movies
+            var moviesTabFocused by remember { mutableStateOf(false) }
             Tab(
                 selected = selectedTab == CategoryTabType.MOVIES,
                 onClick = {
@@ -133,19 +133,24 @@ fun CategoryScreen(
                     selectedTab = CategoryTabType.MOVIES
                     moviesViewModel.refreshProvidersAndInit()
                 },
+                modifier = Modifier
+                    .onFocusChanged { moviesTabFocused = it.isFocused }
+                    .background(
+                        if (moviesTabFocused) Color(0xFF26A69A).copy(alpha = 0.14f) else Color.Transparent
+                    ),
                 text = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Outlined.Movie,
                             contentDescription = null,
-                            tint = if (selectedTab == CategoryTabType.MOVIES) Color(0xFF26A69A) else Color.Gray,
+                            tint = if (selectedTab == CategoryTabType.MOVIES || moviesTabFocused) Color(0xFF26A69A) else Color.Gray,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = stringResource(id = R.string.tab_movies),
-                            color = if (selectedTab == CategoryTabType.MOVIES) Color(0xFF26A69A) else Color.Gray,
-                            fontWeight = if (selectedTab == CategoryTabType.MOVIES) FontWeight.Bold else FontWeight.Medium,
+                            color = if (selectedTab == CategoryTabType.MOVIES || moviesTabFocused) Color(0xFF26A69A) else Color.Gray,
+                            fontWeight = if (selectedTab == CategoryTabType.MOVIES || moviesTabFocused) FontWeight.Bold else FontWeight.Medium,
                             fontSize = 15.sp
                         )
                         if (movieCategories.isNotEmpty()) {
@@ -162,25 +167,31 @@ fun CategoryScreen(
             )
 
             // Tab 1: Live TV
+            var liveTvTabFocused by remember { mutableStateOf(false) }
             Tab(
                 selected = selectedTab == CategoryTabType.LIVE_TV,
                 onClick = {
                     userManuallySelectedTab = true
                     selectedTab = CategoryTabType.LIVE_TV
                 },
+                modifier = Modifier
+                    .onFocusChanged { liveTvTabFocused = it.isFocused }
+                    .background(
+                        if (liveTvTabFocused) Color(0xFF26A69A).copy(alpha = 0.14f) else Color.Transparent
+                    ),
                 text = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Outlined.Tv,
                             contentDescription = null,
-                            tint = if (selectedTab == CategoryTabType.LIVE_TV) Color(0xFF26A69A) else Color.Gray,
+                            tint = if (selectedTab == CategoryTabType.LIVE_TV || liveTvTabFocused) Color(0xFF26A69A) else Color.Gray,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = stringResource(id = R.string.tab_live_tv),
-                            color = if (selectedTab == CategoryTabType.LIVE_TV) Color(0xFF26A69A) else Color.Gray,
-                            fontWeight = if (selectedTab == CategoryTabType.LIVE_TV) FontWeight.Bold else FontWeight.Medium,
+                            color = if (selectedTab == CategoryTabType.LIVE_TV || liveTvTabFocused) Color(0xFF26A69A) else Color.Gray,
+                            fontWeight = if (selectedTab == CategoryTabType.LIVE_TV || liveTvTabFocused) FontWeight.Bold else FontWeight.Medium,
                             fontSize = 15.sp
                         )
                         if (tvCategoriesWithCount.isNotEmpty()) {
@@ -527,7 +538,7 @@ fun MovieCategoryCard(
             .height(130.dp)
             .scale(scale)
             .onFocusChanged { isFocused = it.isFocused }
-            .focusable()
+            .clip(RoundedCornerShape(16.dp))
             .clickable { onClick() },
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(
@@ -649,7 +660,7 @@ fun CategoryCard(
             .height(130.dp)
             .scale(scale)
             .onFocusChanged { isFocused = it.isFocused }
-            .focusable()
+            .clip(RoundedCornerShape(16.dp))
             .clickable { onClick() },
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(
